@@ -1,0 +1,19 @@
+{
+  "name": "krux-mod",
+  "version": "0.7.1",
+  "description": "Krux jako mod Claude Code: polska persona technicznego orka w prompcie systemowym, kotwica głosu w każdej turze, komenda /krux z panelem kuźni i animowany kowal nad promptem.",
+  "author": {
+    "name": "Karol Kiljan",
+    "url": "https://github.com/karolkiljan"
+  },
+  "homepage": "https://github.com/karolkiljan/krux-mod",
+  "repository": "https://github.com/karolkiljan/krux-mod",
+  "license": "MIT",
+  "keywords": [
+    "polish",
+    "persona",
+    "orc",
+    "mod"
+  ],
+  "types": "./types/index.d.ts"
+}

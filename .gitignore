@@ -1,0 +1,7 @@
+.claude-plugin/types/
+node_modules/
+*.log
+.venv/
+.scratch/
+.DS_Store
+docs/superpowers/

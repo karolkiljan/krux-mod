@@ -1,0 +1,146 @@
+# Kontrakt utrzymania moda Krux
+
+## Drzewo plików
+
+```text
+.claude-plugin/{plugin.json,marketplace.json}  manifest i lokalny marketplace
+hooks/hooks.json                              wskazuje hooks module (`modules`)
+hooks/register.ts                             wszystkie hooki moda
+hooks/voice.ts                                czyste funkcje: frazy, komendy, sekcje, słowa, rodzaj roboty narzędzia (`workOf`), opis narzędzi, kto pisze prośbę (`fromPerson`), ruch nieodwracalny (`isDestructive`, `riskHint`)
+hooks/roster.ts                               horda w jednej tabeli: fach, odmiana imienia, charakter, fartuch
+hooks/band.ts                                 czysty plan pasa nad promptem: podpis, orkowie na płótnie, wysokość, kreska
+hooks/crew.ts                                 czyste przejścia sceny poza Kruxem: wysłani kumple, dymek i znaki reakcji / oddania zwoju (`crewAfter`)
+hooks/forge.ts                                moduł powierzchni `Client`: płótno, sloty, marsz, reakcje, rzut zwoju, zmęczenie, drzemka i odsłanianie dymka
+hooks/sprites.ts                              katalog scen, oś czynności orka (`Track`), humor, scena wielu orków, dymek, efekty płótna i chwyt zwoju (`withCatch`, `behind`)
+hooks/palette.ts                              kolory pikseli (`PALETTE`) i zarezerwowane fartuchy kumpli (`MATE_APRONS`)
+hooks/apron.ts                                fartuchy i znaki fachu: hełm Groma, nos Niucha, pędzel Ochry, lont Lonta (`dress`)
+hooks/stage.ts                                warsztat czynności: `Act`, stójka, pomocnicy rysunku, oś czasu, zejście do stójki
+hooks/acts/*.ts                               co najmniej 3 czynności każdej sceny; także test/seal/build/tear/think/write; `rest.ts` to czekanie na hordę
+hooks/mood.ts                                 czyste funkcje: humor ze zdarzeń kroniki i z wyniku roboty kumpla (`mateMoodAfter`), imię kumpla z zadania, teksty dymka
+hooks/gauge.ts                                miernik głosu jednej odpowiedzi (metryki z benchmarku pluginu)
+hooks/lore.ts                                 kronika sesji i notka o życiu hordy
+hooks/board.ts                                czyste funkcje tablicy Sztolni (stan roboty): plan z listy zadań i ostatni przebieg testów (`boardAfter`, `testRunOf`), odtworzenie z historii (`replayBoard`), odczyt zużycia (`usageOf`), paski i podpisy
+hooks/muster.ts                               czyste funkcje apelu hordy w Sztolni: start, ostatnie narzędzie, koniec, czas i kolejność orków
+hooks/git.ts                                  czysty odczyt `git status --porcelain=v2 --branch` i `git log`, oba z `--no-optional-locks` (nie ruszają indeksu Morry) i `core.quotePath=false` (`gitOf`: liczby, pliki, commity z `pushed`), krótki podpis repo i narzędzia, po których repo czytamy od nowa
+hooks/threads.ts                              czyste wątki Sztolni: spec narzędzia `watki`, przejścia (`threadsAfter`), raport dla modelu, odtworzenie z historii
+hooks/shaft.ts                                czyste drzewo panelu Sztolni (`shaftTree`): z `Box`/`Text` i danych (tablica, wiersze apelu, zużycie, zegar, szerokość); kolory iskry i skóry orka dla paneli
+voice/{persona,konkret,flow}.md               jedyne źródło tekstów trafiających do promptu
+docs/research/                                notatki ze źródeł naukowych do zmian głosu
+skills/krux-horda/SKILL.md                    horda na żądanie
+types/index.d.ts                              kontrakt `$.state` (`krux-mod.*`)
+tests/{voice,gauge,mood,sprites,canary,band,forge,board,muster,shaft,git,threads,mod}.test.ts testy `claude plugin test`
+tests/scripts-regression.mjs                  testy skryptów: `node --test tests/scripts-regression.mjs`
+scripts/act-sheet.ts                          arkusz PNG i walidacja klatek: `npx tsx scripts/act-sheet.ts <scena|plik.ts:EKSPORT> <plik.png> [czynność]`
+scripts/voice-bench.mjs                       pomiar głosu na modelu (A/B kotwicy)
+scripts/tui-shot.py                           zrzut prawdziwego ekranu: `claude` w pty, emulator `pyte`, kroki i tekst ekranu
+```
+
+`.claude-plugin/types/` pisze silnik przy każdym załadowaniu z `--plugin-dir` — nie edytować, jest w `.gitignore`.
+
+## Macierz zdarzeń
+
+| Zdarzenie | Warunek | Skutek |
+|---|---|---|
+| `session.start` | zawsze | tryby z `$.store` do `$.state`, teksty z `voice/`, `prefersReducedMotion`, ostrzeżenie o pluginie `krux`, rejestracja `/krux` i narzędzia `watki` (`mcp__krux-mod__watki`), odczyt `$.session.usage()` i stanu repo |
+| `classic.SessionStart` | `clear`, `resume`, `fork` | tryby z `$.store`, `prefersReducedMotion` i stan repo od nowa (te komendy zerują `$.state`) |
+| `tool.call` `mcp__krux-mod__watki` | model otwiera albo zamyka wątki | `threadsAfter` w środku `update`, wynik tekstem (obiekt silnik odrzuca): otwarte wątki z id; narzędzie silnik odkłada jak MCP, więc model widzi samą nazwę, póki jej nie wyszuka |
+| `tool.call` | dowolny wątek, `Bash`, `Edit`, `Write`, `MultiEdit`, `NotebookEdit`, wynik bez `deny` | `git status --porcelain=v2 --branch` i `git log -n 10` przez `$.process.run` (5 s), zapis tylko przy zmianie; poza repo `null` |
+| `prompt.compose` | dowolny | na końcu sekcje `krux-mod:persona`, `krux-mod:konkret`, `krux-mod:flow` aktywnych trybów, `scope: session` |
+| `prompt.submit` | dokładna fraza `włącz/wyłącz krux/konkret/flow` od człowieka (`fromPerson`) | zapis trybu, neutralna notka dla modelu, bez kotwicy; cytat w raporcie subagenta nie przełącza trybu |
+| `prompt.submit` | pierwszy prompt po starcie, `/resume` albo restarcie, z dowolną personą i od kogokolwiek | `replay` z `$.session.messages()` odtwarza licznik tur, kronikę, dryf, tablicę Sztolni (`replayBoard`) i wątki (`replayThreads`); bez historii nic; sprawdzenie i zapis `replayed` w jednym `update` |
+| `prompt.submit` | fraza `włącz krux` (także `/krux on` i przycisk) | licznik tur na 0, więc następny prompt dostaje pełną kotwicę |
+| `prompt.submit` | inny tekst, persona `on` | kotwica w `context`: pełna w turze 0, co `REFRESH_TURNS` i po dryfie (z poprawką i do 2 zdaniami odpowiedzi przepisanymi na bezokolicznik), inaczej `VOICE_SHORT`; gdy prośbę pisze człowiek (`fromPerson`: `composer`, `bridge`, `sdk`, `slack-ping`, `channel`, `auto-continuation`, albo `plugin` z `asUser: true`), do tego notka o hordzie po `QUIET_TURNS` cichych turach (kumpel z charakterem z `ROSTER`, miejsce i forma z kodu, fakt z kroniki, gdy jest), i linia `formatHint`: `FORMAT_HINT` rodzaju prośby z limitem słów albo `LENGTH_HINT` (do 150 słów); prośba o ruch nieodwracalny (`riskHint`: komenda z `isDestructive` albo „usuń tabelę”, „skasuj gałąź”, „puść migrację”) zamiast notki o hordzie dostaje na końcu `RISK_HINT`, a notka czeka na zwykłą turę; raport subagenta, wiadomość innej sesji czy harmonogram dostają samą kotwicę |
+| `session.compact` | wątek główny, persona `on` | `COMPACT_NOTE` dopisany do instrukcji; po kompakcji (nie `precompute`) licznik tur na 0, więc wraca pełna kotwica |
+| `prompt.submit` | są notki z panelu | notki przed kotwicą, jednorazowo |
+| `command.run` `/krux` | argumenty | przełącznik z notką w `context`, `status`, pomoc albo panel |
+| `turn.start`, `tool.call`, `turn.complete` | wątek główny | licznik uderzeń tury i sesji, opis roboty dla paska; wynik `tool.call` do kroniki |
+| `turn.step` | strumień modelu w głównym wątku albo u kumpla na scenie | `thinking` → `think`, `text` → `write`, `tool` → wstępna scena narzędzia bez argumentów (`describeToolAhead`), poza `Bash`: jego scenę zna dopiero `tool.call`, więc kawałek jej nie zgaduje; zmiana rodzaju kawałka ustawia opis i `startedAt`, kolejne kawałki tej samej fazy w żądaniu nie resetują czasu; `tool.call` uściśla opis z argumentów; strumień zachowuje kawałki i wynik końcowy bez zmian, a błąd obserwacji gubi tylko scenę |
+| `agent.spawn` | pętla główna (bez `parentAgentId`), silnik dał `agentId` | ork wbiega z prawej krawędzi do swojego slotu; imię z `description`, potem `prompt` (`mateIn`), bez imienia szary ork |
+| `tool.call` | `agentId` orka na scenie | poza orka ze sceny narzędzia (bez rogu), dymek z jego krokiem, chyba że trzyma wtręt po zdarzeniu; po wyniku zdarzenie z jego narzędzia zmienia tylko jego humor (`mateMoodAfter`), daje jego wtręt na 4 s i znak jego reakcji ciała w `cues`, a kronika Kruxa go nie liczy |
+| `tool.call` | wątek główny, zdarzenie kroniki (smród, zielone, budowanie padłe albo przeszłe (`build`, błąd także z wyjścia), commit, rozbiórka (`tear`), zawał; kolor testów z wyjścia jak na tablicy (`testPassed`), test i budowanie w tle to jeszcze nie przebieg; nieudany łańcuch z samych odczytów `look`/`trail` to nie zawał, `cd` nie liczy się do łańcucha; odczyt z inną robotą zachowuje błąd) | humor według tabeli w `mood.ts`, wtręt w dymku na 4 s i znak reakcji ciała Kruxa w `cues` (komentuje kumpel z fachem, reaguje Krux); `$.clock.after` startuje po zapisie dymka i go gasi; bez zdarzenia humor gaśnie po 8 wywołaniach |
+| `turn.complete` | `agentId` orka na scenie | ork najpierw schodzi do stójki w swoim slocie (rekwizyt nie znika skokiem), oddaje Kruxowi zwój przez `handoff`, potem maszeruje w prawo za krawędź; do marszu slot jest jego; sam ubytek w `running` nie oznacza oddania zwoju; jego dymek znika |
+| `turn.complete` | wątek główny, `reason: answer`, persona `on` | werdykt miernika zastępuje `drift` (za krótka odpowiedź albo ostrzeżenie przed ruchem nieodwracalnym: `null`, poprawka jedzie raz; tabela i cytat `>` to nie proza Kruxa, punkt listy kończy zdanie), kumple z odpowiedzi do kroniki |
+| `ui.render` `Spinner` | persona `on`, brak `message` | orkowe słowo, stałe w obrębie tury |
+| `ui.render` `AssistantMessage` | terminal, persona `on`, każdy blok odpowiedzi | kreska z lewej (`borderStyle: 'quote'`, kolor Kruxa) dzieli rozmowę na bloki; `quote` stawia pusty wiersz nad i pod, więc treść idzie `marginTop: -1`, a blok `marginBottom: -1` (zrzut: tabliczka, zaraz `▎⏺`) |
+| `ui.render` `AssistantMessage` | terminal, persona `on`, pierwszy blok z kropką (`isFirstOfReply`) w turze; silnik stawia kropkę po każdej grupie narzędzi, a stanu w trakcie rysowania zapisać nie wolno, więc `turn.start` zaznacza turę w pamięci modułu i pierwszy blok zabiera tabliczkę po `requestId`; historia sprzed pierwszej żywej tury ma tabliczkę na każdej kropce | tabliczka `⚒ Krux` (bold, iskra) na pustym wierszu, który silnik stawia nad wiadomością (`absolute`, `top: 0`), bez własnego wiersza; model jej nie czyta |
+| `ui.render` `UserMessage` | terminal, persona `on`, prośbę pisze człowiek (`fromPerson`) | tabliczka `Morra` (bold, `#5b9bd5`) tak samo na pustym wierszu nad promptem |
+| `ui.render` `SessionMode` | aktywne tryby | etykiety `krux`, `konkret`, `flow` |
+| `ui.render` `AbovePrompt` | terminal, persona i animacje `on`, brak ankiety; w spoczynku także `kowal` `on` | na górze szara kreska `─` na `bodyColumns` (oddziela pas od odpowiedzi), pod nią podpis (28 kolumn) z lewej, za nim płótno `Client`: stała liczba slotów (Krux i do 3 kumpli w `running` według `$.agent.list()`), każdy ork robi wszystko w swoim prostokącie, poza wejściem z prawej i zejściem w prawo; dymek nad slotem tego, kto ostatnio coś zrobił; scena według narzędzia (`Edit`/`Write` młot, `Bash` według rodzaju komendy z `workOf` (odczyt na przedzie łańcucha nie ukrywa roboty za nim): `test` próba stali, `seal` pieczęć, `build` piec, `tear` rozbiórka, `trail`/`look` pochodnia, `install`/`dig` kilof; `Grep` pochodnia, `Glob`/`ToolSearch`/`Monitor` krzak, `Read`/`Skill`/`TaskOutput`/`ReadNotifications` zwój, `SubagentHandback` (kumpel oddaje raport) zwój, `TodoWrite`/`TaskCreate`/`TaskUpdate`/plan mode mapa na sztaludze, `WebFetch`/`WebSearch`/`SendMessage` i zewnętrzne MCP kruk, własne `mcp__krux-mod__watki` mapa, `AskUserQuestion` znak zapytania, `Agent` róg — tylko Krux, kumpel zamiast rogu młot; `turn.step` ustawia `think`/`write` dla myślenia/tekstu), a gdy Krux czeka na hordę (`Agent` albo dawny `Task` w toku, albo spoczynek z kumplem na scenie, albo róg z `Agent`, gdy kumpel właśnie oddał zwój: świeży znak `handoff`) — szezlong i podpis „Krux czekać na hordę”; zwój kumpla Krux stojący w swoim slocie łapie dłonią (`withCatch`), a zwój leci za skórą, twarzą i fartuchem każdego orka (`behind`); scena gra swoje czynności po kolei, każdą ok. 9 s (stójka → wejście → pętla → zejście), pierwszą wybiera `seed` z klucza orka i klatki; nowa scena czeka co najmniej 1,5 s osobno dla każdego orka, a w marszu i w trakcie zejścia do końca, potem stara schodzi do stójki 2× szybciej (co druga klatka, końcowa stójka zachowana) i dopiero wchodzi nowa; ork po marszu zaczyna od stójki, na starcie płótna od razu w pętli, w bezruchu stoi z rekwizytem (pierwsza klatka pętli); wysokość stała: 6 wierszy płótna plus kreska (puste wiersze dymka, gdy nikt nie mówi), przy `maxRows < 7` albo za wąsko na dymek 3 wiersze i dymek w drugiej linii podpisu jako `Imię: tekst`, przy `maxRows < 3` jedna linia tekstu; kreska tylko wtedy, gdy pas mieści się z nią w `maxRows`; za wąsko — najpierw kumple (`+N z hordy`), potem jedna linia tekstu (`truncate-end`); po zwężeniu kumpel za ostatnim slotem wchodzi do wolnego albo schodzi; jeden klucz `forge`: w spoczynku (`rest`) zegar płótna stoi, chyba że ktoś maszeruje albo na scenie kuje agent w tle — kumpel, który kończy w spoczynku, najpierw schodzi marszem w prawo; tylko ograniczony ruch (`still`) zdejmuje go bez marszu; za płótnem, gdy panelu Sztolni nie widać (`$.ui.panes()`: zamknięty, `isPlaced` false, bo czeka na szerszy terminal, albo za inną kartą) i zostaje co najmniej 18 kolumn, skrót tablicy (`shaftDigest`); po to zabiera pusty slot kumpla, ale nie spycha kumpla ze sceny i nie zmienia wysokości pasa, przy prawej krawędzi pasa, najwyżej 64 kolumny (`DIGEST_MAX`): najnowszy wątek z liczbą, repo w drodze (`main → origin/main ↑6 ●2`; czyste i równe milczy), zadanie w toku z `zrobione/wszystkie`, komenda ostatnich testów z liczbami, kontekst z oknami limitów (czerwień od 80% w którymkolwiek) — każda linia tylko, gdy jest z czego, i najwyżej tyle linii, ile wierszy płótna, od góry |
+| `ui.render` `Pane` `krux` | panel otwarty | palenisko, przyciski 1–6 w równych komórkach (`MODE_CELL`), zawijane do szerokości panelu, horda |
+| `session.start`, `/krux sztolnia`, przycisk 6 | tryb `sztolnia` | panel `sztolnia` (`columns: 56`) otwarty albo zamknięty; bez pytania silnik stawia go od 144 kolumn |
+| `tool.call` | wątek główny, wynik bez `deny` | tablica: plan z `TodoWrite` (cała lista), `TaskCreate` (id z wyniku), `TaskUpdate` (status, temat, `deleted` usuwa); komenda testów (`workOf` = `test`, nie w tle) zapisuje przebieg z `text` wyniku: liczby z ostatniego podsumowania (cargo sumuje binaria), nazwy bez czasów (także `✖` i `ℹ fail N` domyślnego reportera `node --test`), a padłe testy w wyjściu dają `✗` także przy kodzie 0 (`| tail`); nieudane wywołanie listy zadań planu nie rusza; zapis tylko przy zmianie; potem odczyt `$.session.usage()`, zapis tylko przy zmianie |
+| `tool.call` | pętla kumpla, wynik bez `deny` | tylko komenda testów trafia na tablicę, z imieniem kumpla z apelu albo `ork`; jego lista zadań nie rusza planu |
+| `turn.complete` | wątek główny | odczyt `$.session.usage()` i stanu repo |
+| `agent.spawn` | pętla główna, silnik dał `agentId` | wpis w apelu (`muster`: start z `$.clock.now()`, imię z `mateIn`), zegar apelu: co 1 s zapis `musterNow` (przerysowuje tylko Sztolnię), póki ork z apelu biega według zdarzeń i `$.agent.list()`; ostatni tyk też zapisuje i zdejmuje ze sceny orków spoza `running`; gdy `$.agent.list()` zawiedzie, zegar staje, a Sztolnia pokazuje niepotwierdzony bieg najwyżej 30 min; `session.start` (także reload modułu) wznawia zegar, gdy apel ma biegnących |
+| `tool.call` | `agentId` z apelu | ostatnie narzędzie orka w apelu, z celem |
+| `turn.complete` | `agentId` z apelu | koniec orka w apelu (pierwszy koniec zostaje) |
+| `ui.close` `sztolnia` | krzyżyk Morry (`origin: person`) | tryb `sztolnia` off w `$.store`, toast z drogą powrotu |
+| `ui.render` `Pane` `sztolnia` | panel otwarty | na górze to, co stoi zawsze („Git”, „Commity”), pod nim to, co przychodzi i odchodzi, więc góra nie skacze; sekcje tylko z treścią: „Wątki” (`○` todo, `⚠` ryzyko na czerwono, `?` czeka na Morrę w kolorze iskry), „Plan” (najwyżej 8 wierszy, najpierw wypadają najstarsze zrobione z dopiskiem `+N wcześniej` nad listą, potem ogon z dopiskiem `+N dalej` pod listą; `zrobione/wszystkie`, `✓` zrobione, `▸` w toku w kolorze iskry, `·` czeka), „Testy” (`✓`/`✗`, komenda ucinana w środku, kto puścił — imię się nie łamie, liczby z polską odmianą, do 5 nazw padających), „Horda” (tylko biegnący według zdarzeń i `$.agent.list()`: imię w kolorze fartucha, zadanie, czas `m:ss`, `└` ostatnie narzędzie), „Git” (`⎇ gałąź → upstream`, potem z dwukropkiem: konflikty, do wypchnięcia, do ściągnięcia, zmienione, nowe, pod nimi pliki z literą stanu i `+N dalej`; czyste i równe repo to `✓`; poza repo sekcji brak), „Commity” (ostatnie od najnowszego, `↑` niewypchnięte w kolorze iskry, `·` wypchnięte; hash się nie łamie); listy repo rosną z wysokością panelu (`scroll.bodyRows`: 4/3, 8/6, 12/10 plików/commitów); „Kontekst” przypięty do dołu panelu (pasek i procent okna, tokeny `136k / 200k`, okna limitów z paskiem i resetem względem `$.clock.now()`, koszt sesji); bez wątków, planu, testów i hordy linia „Tablica pusta” (samo repo to nie robota); diffu i drzewa zmian nie rysuje, to robi `/diff` silnika |
+
+## Niezmienniki
+
+- Od wersji 0.3.0 głos prowadzi mod. `voice/persona.md` wyszedł z body `skills/krux/SKILL.md` pluginu Krux 3.8.0; dobry pomysł z moda można potem przenieść do pluginu, ale nie odwrotnie z automatu. Instrukcje piszemy poprawną polszczyzną, głos niosą pary przykładów.
+- `VOICE_ANCHOR` mieści się w 1000 znaków (test). Kotwica jedzie co turę, bo pomiar pluginu na Claude pokazał, że bez niej gramatyka orka wygasa; mod skraca ją do `VOICE_SHORT`, tylko gdy miernik (`hooks/gauge.ts`) nie widzi dryfu. Pomiar: `node scripts/voice-bench.mjs` (tryb `stream`, ~$0,45 za przebieg); zmiana kotwicy wymaga A/B co najmniej 2 na 2 przebiegi. Para „Robak siedzieć”, nie „Robak siedzi” musi zostać w kotwicy: bez niej przebieg zgubił bezokoliczniki (55 zamiast ~160). Ta sama para stoi w `VOICE_SHORT`: z nią środek sesji trzyma bezokoliczniki bez poprawek dryfu (A/B w `docs/research/2026-10-04-komunikacja.md`).
+- Łamiemy ramę zdania, nie dane: negacja, liczby, ścieżki i komunikaty błędów dosłownie; czas przy bezokoliczniku niesie osobne słowo („już”, „zaraz”). Pomiar tokenów pokazał, że gramatyka orka jest tokenowo obojętna — oszczędza tylko krótsze zdanie i wycięte słowa (np. „jest”).
+- `orcish` w `hooks/gauge.ts` przepisuje tylko formy z pewną regułą (`-łem/-łam`, zdanie od `-am/-uję`, słownik 3. osoby); czego nie umie bez błędu, nie rusza (test). Rzeczowniki, które wyglądają jak `-łem` („zawałem”, „hasłem”, „źródłem”), stoją w `NOUN_LEM`: nie liczą się jako pierwsza osoba i nie wracają w kotwicy jako „Krux zawać”.
+- Miernik nie sądzi odpowiedzi z ostrzeżeniem przed ruchem nieodwracalnym (słowa ostrzeżenia albo komenda z `isDestructive`) ani cytatu `>`: kontrakt persony każe tam pełne zdania i neutralny tekst do wklejenia, więc poprawka dryfu nie może za nie ciąć następnej tury (test).
+- Metryki w `hooks/gauge.ts` są portem `scripts/context-smoke.js` pluginu; zmiana progu wymaga przykładu w `tests/gauge.test.ts`.
+- Notka o hordzie podaje imię i fakt z sesji, gdy kronika go ma; bez faktu prosi o coś z dnia kumpla. Kumplowi nie przypisuje roboty w repo. Fakt ma każdy fach: testy Młot, commity Piryt, zawał Niuch, budowanie albo edycje Grom, pliki interfejsu Ochra, rozbiórka Lont; spośród kumpli z faktem wybiera seed, nie ostatnie zdarzenie, bo inaczej przy częstych commitach gadał w kółko Piryt. Charakter (`trait`), miejsce i formę wstawki daje kod: model brał „jeśli pasuje” za rozkaz i stawiał kumpla na końcu w 31 z 32 tur benchu.
+- O Morrze i o kumplach bez rodzaju: persona uczy „Morra wybrać”, nie „Morra wybrał”, charakter kumpla to sam czasownik, notka nie mówi „był” (test). Liczby w tekstach moda stoją przy bezokoliczniku albo w etykiecie („2 na 2 padać”, „padłe: 2”), więc nie potrzebują odmiany (test).
+- O tym, w której turze odzywa się kumpel, decyduje kod (`lifeNote`, `QUIET_TURNS`), nie kotwica: model nie wykona instrukcji częstotliwości typu „co kilka odpowiedzi”. Kotwica i persona nie zapraszają hordy bez notki. Źródła: `docs/research/2026-10-04-komunikacja.md`.
+- Przykłady w `voice/persona.md` nie mogą powtarzać tej samej formuły zamknięcia: model kopiuje powierzchnię przykładów. Bench liczy `repeatedClosings` i `consentClosings`.
+- Sekcje moda idą zawsze na końcu, jako `session`: tekst zmienny nie może siedzieć po stronie `shared` cache'a.
+- Opis narzędzia w pasku zawsze zaczyna się od „Krux”. Kumpla z hordy nie dopisujemy do roboty, której nikt mu nie zlecił (test).
+- Ścieżka modułu `Client` to literał `'./forge.ts'` — silnik czyta go ze źródła; zmienna jest odrzucana przy ładowaniu.
+- Tabliczki, kreska bloków odpowiedzi, pas nad promptem i płótno w panelu `/krux` stoją tylko na `terminal` (`GRID_SURFACE`): liczą siatkę znaków (pusty wiersz nad wiadomością, piksele z półbloków), a Desktop rysuje je krzywo — tabliczka wchodzi na tekst, piksele mają przerwy (zrzut z 2026-10-06). Inne powierzchnie dostają odpowiedź silnika bez zmian (test). Moduł `Client` dostaje tabelę terminala bez `Svg`, więc orki dla Desktopu musiałyby iść jako `Svg` z `register.ts`. W `bandPlan` `hasClient` zostaje na terminal bez `Client`: wtedy kreska liczy się dla jednej linii tekstu, a dymek trafia do tej linii.
+- `$` przekazujemy tylko do funkcji z najwyższego poziomu `register.ts`; `voice.ts`, `roster.ts`, `band.ts`, `crew.ts`, `forge.ts`, `sprites.ts`, `stage.ts`, `palette.ts`, `apron.ts`, `acts/*.ts`, `mood.ts`, `gauge.ts`, `lore.ts`, `board.ts`, `muster.ts`, `git.ts`, `threads.ts` i `shaft.ts` nie znają `$`. Decyzje pasa liczy `bandPlan`, przejścia sceny `crewAfter`, drzewo Sztolni `shaftTree`: testy idą przez te interfejsy, nie przez piksele.
+- Trwały stan to wyłącznie tryby w `$.store`: każdy pod osobnym kluczem `mode.<tryb>`, żeby dwie sesje przełączające różne tryby nie nadpisały się nawzajem; stary obiekt `modes` służy tylko za źródło trybów jeszcze niezapisanych osobno. Kronika, dryf, licznik tur (`turns`, `strikes`, `sessionStrikes`), opis roboty (`activity`), ruch (`still`), znacznik odtworzenia (`replayed`), humor, scena (`crew`: horda, dymek i `cues`), licznik czekania (`waiting`), tablica Sztolni (`board`), odczyt zużycia (`usage`) apel hordy (`muster`, `musterNow`), stan repo (`git`) i wątki (`threads`) żyją tylko w `$.state` sesji (apel nie wraca po wznowieniu); po wznowieniu (`--resume`, restart) `replay` z historii odtwarza kronikę, dryf, licznik tur i humor z ostatniego zdarzenia (sceny nie), a `replayBoard` plan i ostatni przebieg testów (przebieg na Kruxa, bo historia nie mówi, który ork wołał), `replayThreads` wątki z wywołań narzędzia (raport narzędzia niesie oryginalne id, więc przycięta historia nie przenumerowuje wątków), raz na pusty `$.state`. Nowy tryb wymaga wpisu w `MODES`, `DEFAULT_MODES` i `types/index.d.ts`. Nowy kumpel to wpis w `ROSTER` i imię w `KruxMate`; resztę tabel hordy liczy się z `ROSTER`. Kronikę liczymy w środku `update`, nie przez odczyt i zapis osobno.
+- Rodzaj roboty narzędzia (edycja, `Agent`, rodzaj komendy powłoki) rozstrzyga tylko `workOf` w `voice.ts`; tablica Sztolni rozpoznaje przebieg testów przez `workOf` = `test`, nie własnym wzorem, a scena i podpis `Bash` biorą rodzaj z tej samej decyzji (`bashKind`), więc pas nie mówi co innego niż kronika (test).
+- Sztolnia pokazuje stan roboty, nie statystykę: bez wykresów, osi i zliczeń. Czego silnik daje natywnie (diff, drzewo zmian: `/diff`), panel nie dubluje. Każdy stan ma znak, nie tylko kolor (`✓`, `▸`, `·`, `✗`, `●`).
+- Dymek podaje tylko fakty z sesji. Kumpel mówi w nim wyłącznie, gdy stoi na scenie (wysłany przez `Agent`): o swoim kroku, o wyniku swojej roboty albo o zdarzeniu z kroniki (test). Dymek wisi nad orkiem po kluczu (`agentId` albo `krux`), nie po imieniu: dwa bezimienne orki mają osobne dymki. Teksty dymków siedzą w `mood.ts`, bo nie trafiają do promptu.
+- `KruxCrew.bubble` przechowuje tylko `step` albo `event`; typ wyklucza `thought`, bo myśl powstaje podczas rysowania. `KruxCrew.cues` przechowuje do 8 świeżych znaków `{ key, kind, until }`: zdarzenie kroniki dla wykonawcy albo `handoff` dla kończącego kumpla. `until` ma jednostkę ms od epoki; brak `cues` w stanie starszej sesji oznacza pustą listę.
+- Czynność (`Act` w `hooks/stage.ts`) zaczyna się po stójce i wraca do niej wejściem puszczonym wstecz; nic nie pojawia się skokiem — rekwizyt wjeżdża, rośnie albo jest wnoszony. Klatka: najwyżej 6 × 22, tylko znaki z `PALETTE`, bez fartuchów kumpli, zawsze 'b' (fartuch) i 0 albo 2 piksele 'r' (oczy, po nich humor maluje brwi) — test. Każda scena ma co najmniej 3 czynności (test); pierwsza w tablicy to pierwotna. Czynność należy do jednej sceny (test): pożyczona grałaby od nowa przy przejściu między scenami.
+- `KruxActivity.startedAt?` i `KruxHordeMember.startedAt?` to początek pojedynczej aktywności w ms od epoki, nie początek tury ani całego zadania agenta. `bandPlan` przekazuje je jako `ForgeOrc.workAt?`; zmiana czasu resetuje zmęczenie także wtedy, gdy scena pozostaje taka sama. Po 67 klatkach × 150 ms (około 10 s) pojawia się pot, po 200 klatkach (30 s) okresowe ocieranie czoła. Bez `workAt` dodatkowego zmęczenia nie ma.
+- Opcjonalne `BandInput.cues?` / `ForgeProps.cues?` przenoszą znaki na płótno; brak oznacza pustą listę. `ForgeProps.now?` przekazuje aktualny czas dla początkowego wieku pracy przy montowaniu płótna. `Actor.cue` pamięta identyfikator i klatkę reakcji, żeby render jej nie powtarzał; `Actor.handoff` trzyma początek i długość rzutu, który opóźnia `leftAt` do zakończenia lotu. Zdarzenie jest przejściową informacją ekranową, nie dodatkową pracą modelu.
+- `withCue` zmienia postawę stojącego orka (przysiad, uniesiona ręka, przydeptanie robaka, osłona przed zawałem) i zachowuje twarz oraz rekwizyty. Pozy leżące, siedzące i pochylone dostają tylko efekty zdarzenia. Stojący znaczy: szczęka w trzecim wierszu, pod nią fartuch, niżej nogi na ziemi (`standingX`); sama szczęka nad fartuchem pasuje też do Kruxa na szezlongu i w fotelu, który nie może wstać skokiem (test). Ta sama miara rządzi chwytem zwoju (`withCatch`): Krux łapie go dłonią tylko na stojąco w swoim slocie. Przy kompletnej klatce kanarka `canaryResult` zastępuje efekty testów śpiewem lub opadnięciem ptaka; wynik pochodzi z kroniki narzędzia, nigdy z pętli czynności. Reakcja trwa 14 klatek, potem wraca bazowa czynność.
+- Dymek na płótnie odsłania 3 znaki co 150 ms; zmiana mówcy albo tekstu rozpoczyna odsłanianie od nowa. Tekstowy fallback podaje cały dymek od razu. Po 200 tyknięciach bezczynności Krux zamyka oczy i pokazuje runę snu; praca resetuje licznik. Reakcje, marsz i oddanie zwoju kończą się przed zamrożeniem sceny.
+- `still` (`prefersReducedMotion`) wyłącza marsz, reakcje, rzut zwoju, zmęczenie i drzemkę; dymek pojawia się w całości. Zmiany scen nadal pokazują statyczny rekwizyt. Grom, Niuch i Ochra zachowują znaki fachu, a Lont lont.
+- Zgody na narzędzia obsługuje wyłącznie silnik. Mod nie rejestruje `tool.check`; scena `ask` dotyczy `AskUserQuestion`, nie okna zgody.
+- Humor działa tylko na ekranie. Linia o humorze dla modelu wymaga A/B 2 na 2 przebiegi jak każda zmiana kotwicy.
+- Wersja stoi w dwóch miejscach: `.claude-plugin/plugin.json` i `.claude-plugin/marketplace.json`.
+
+## Komendy przed wydaniem
+
+```bash
+claude plugin validate .
+claude plugin test .
+git diff --check
+```
+
+Wygląd (ramki, kolory, układ) `claude plugin test` nie widzi: testy sprawdzają drzewo, nie farbę silnika. Zrzut prawdziwego ekranu, z modem z tego folderu i tanim modelem (transkrypt sesji dziecka się nie zapisuje):
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install pyte
+.venv/bin/python scripts/tui-shot.py --cols 120 --rows 40 --cmd 'claude --model haiku' \
+  'until:Try:30' 'type:Powiedz: tak.' 'key:enter' 'until:done:120' 'wait:4' 'shot' 'fg:⚒ Krux'
+```
+
+Szerokość pod 144 kolumny pokazuje pas bez panelu Sztolni, 180 z panelem. Przy podpowiedzi komend `key:esc` przed `key:enter`, inaczej Enter bierze podświetloną. Sesja dziecka dzieli `$.store` z prawdziwymi: przełączony tryb trzeba przełączyć z powrotem i sprawdzić `/krux status`.
+
+Typy (`tsc`) — po pierwszym załadowaniu z `--plugin-dir` silnik kładzie deklaracje w `.claude-plugin/types/`, wtedy `npx -p typescript@5 tsc -p .`.
+
+## Agent skills
+
+### Issue tracker
+
+Issues i specy jako pliki markdown w `.scratch/<feature>/` w repo. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Pięć kanonicznych ról, napis etykiety = nazwa roli, zapisany w linii `Status:` pliku issue. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` i `docs/adr/` w korzeniu repo. See `docs/agents/domain.md`.
+
+`CONTEXT.md`, `docs/adr/` i `.scratch/` powstają leniwie, gdy skill pierwszy raz ich potrzebuje. Ich brak to stan zamierzony, nie błąd do zgłoszenia.

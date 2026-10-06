@@ -1,0 +1,4 @@
+{
+  "description": "Hooks module moda Krux",
+  "modules": ["./register.ts"]
+}

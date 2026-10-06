@@ -1,0 +1,21 @@
+{
+  "name": "krux-mod-marketplace",
+  "metadata": {
+    "description": "Krux jako mod Claude Code — persona w prompcie systemowym, komenda /krux i animowana kuźnia."
+  },
+  "owner": {
+    "name": "karolkiljan",
+    "url": "https://github.com/karolkiljan"
+  },
+  "plugins": [
+    {
+      "name": "krux-mod",
+      "source": "./",
+      "description": "Krux jako mod Claude Code: persona orka w prompcie systemowym, kotwica głosu, /krux i animowany kowal.",
+      "version": "0.7.1",
+      "author": {
+        "name": "Karol Kiljan"
+      }
+    }
+  ]
+}
