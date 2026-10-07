@@ -5,6 +5,7 @@ import {
   HELP,
   FORMAT_HINT,
   LENGTH_HINT,
+  MODES,
   RISK_HINT,
   VOICE_ANCHOR,
   VOICE_SHORT,
@@ -13,6 +14,7 @@ import {
   describeToolAhead,
   parseCommand,
   parsePhrase,
+  modelNote,
   personaSections,
   formatHint,
   fromPerson,
@@ -81,6 +83,24 @@ test('/krux help lists note saving and the daily report', () => {
   expect(HELP).toContain('/krux raport')
 })
 
+test('chat defaults off and commands toggle it without changing the voice sections', () => {
+  expect(DEFAULT_MODES.czat).toBe(false)
+  expect(MODES).toContain('czat')
+  expect(parseCommand('czat')).toEqual({ kind: 'toggle', toggle: { mode: 'czat', on: 'flip' } })
+  expect(parseCommand('CZAT on')).toEqual({ kind: 'toggle', toggle: { mode: 'czat', on: true } })
+  expect(parseCommand('czat off')).toEqual({ kind: 'toggle', toggle: { mode: 'czat', on: false } })
+  expect(modelNote('czat', true)).toContain('czat włączony')
+  expect(modelNote('czat', false)).toContain('czat wyłączony')
+  expect(statusLine(applyToggle(DEFAULT_MODES, { mode: 'czat', on: 'flip' }))).toContain('czat: on')
+  expect(HELP).toContain('/krux czat [on|off]')
+  expect(HELP).toContain('/krux dziennik')
+})
+
+test('the journal command selects a card instead of toggling a persistent mode', () => {
+  expect(parseCommand('  DZIENNIK ')).toEqual({ kind: 'journal' })
+  expect(parseCommand('dziennik off')).toEqual({ kind: 'help', unknown: 'dziennik off' })
+})
+
 test('a flip toggles one mode and leaves the others', async () => {
   const next = applyToggle(DEFAULT_MODES, { mode: 'konkret', on: 'flip' })
   expect(next).toEqual({ ...DEFAULT_MODES, konkret: true })
@@ -88,19 +108,19 @@ test('a flip toggles one mode and leaves the others', async () => {
 })
 
 test('status distinguishes automatic konkret from a manual mode and keeps the other modes', () => {
-  expect(statusLine(DEFAULT_MODES)).toBe('persona: on · konkret: off · flow: off · animacje: on · kowal: on · sztolnia: on')
-  expect(statusLine(DEFAULT_MODES, true)).toBe('persona: on · konkret: auto · flow: off · animacje: on · kowal: on · sztolnia: on')
+  expect(statusLine(DEFAULT_MODES)).toBe('persona: on · konkret: off · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off')
+  expect(statusLine(DEFAULT_MODES, true)).toBe('persona: on · konkret: auto · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off')
   for (const automatic of [false, true]) {
-    expect(statusLine({ ...DEFAULT_MODES, konkret: true }, automatic)).toBe('persona: on · konkret: on · flow: off · animacje: on · kowal: on · sztolnia: on')
+    expect(statusLine({ ...DEFAULT_MODES, konkret: true }, automatic)).toBe('persona: on · konkret: on · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off')
   }
 })
 
 test('sections follow the plugin order: persona, konkret, flow', async () => {
   const texts = { persona: 'P', konkret: 'K', flow: 'F' }
-  const all = personaSections({ persona: true, konkret: true, flow: true, animacje: false, kowal: false, sztolnia: false }, texts)
+  const all = personaSections({ persona: true, konkret: true, flow: true, animacje: false, kowal: false, sztolnia: false, czat: true }, texts)
   expect(all.map(section => section.id)).toEqual(['krux-mod:persona', 'krux-mod:konkret', 'krux-mod:flow'])
   expect(all.every(section => section.scope === 'session')).toBe(true)
-  expect(personaSections({ persona: false, konkret: false, flow: false, animacje: true, kowal: true, sztolnia: false }, texts)).toEqual([])
+  expect(personaSections({ persona: false, konkret: false, flow: false, animacje: true, kowal: true, sztolnia: false, czat: true }, texts)).toEqual([])
 })
 
 test('the anchor keeps the plugin budget of 1000 characters', async () => {

@@ -1,4 +1,4 @@
-export type KruxMode = 'persona' | 'konkret' | 'flow' | 'animacje' | 'kowal' | 'sztolnia'
+export type KruxMode = 'persona' | 'konkret' | 'flow' | 'animacje' | 'kowal' | 'sztolnia' | 'czat'
 
 export type KruxModes = Record<KruxMode, boolean>
 
@@ -156,6 +156,24 @@ export type KruxThreadKind = 'todo' | 'risk' | 'ask'
 export type KruxThread = { id: number; kind: KruxThreadKind; text: string }
 export type KruxThreads = { next: number; items: KruxThread[] }
 
+// Wpis dziennika narzędzi: kto (Krux, kumpel z imieniem albo `ork`), jakie narzędzie,
+// na czym, wynik i chwila (ms od epoki); `id` to `tool_use_id`, gdy silnik go dał.
+export type KruxJournalEntry = {
+  id: string | null
+  who: 'Krux' | KruxMate | 'ork'
+  agentId: string | null
+  tool: string
+  target: string
+  ok: boolean | null
+  summary: string
+  at: number
+}
+// Dziennik sesji: najwyżej ostatnie 200 wpisów, najnowszy na końcu.
+export type KruxJournal = { entries: KruxJournalEntry[] }
+
+// Karta panelu Sztolni: stan roboty albo dziennik narzędzi.
+export type KruxShaftTab = 'stan' | 'dziennik'
+
 declare module 'claude-code' {
   interface PluginState {
     'krux-mod': {
@@ -185,6 +203,9 @@ declare module 'claude-code' {
       // Początek bieżącej tury i ostatni prompt człowieka, ms od epoki.
       turnAt: number | null
       seenAt: number | null
+      // Dziennik narzędzi (tylko sesja) i karta panelu Sztolni.
+      journal: KruxJournal
+      shaftTab: KruxShaftTab
     }
   }
 }

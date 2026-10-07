@@ -2,9 +2,9 @@ import { expect, test } from 'claude-code/testing'
 
 import type { KruxTask, KruxUsage } from '../types'
 import { EMPTY_BOARD } from '../hooks/board'
-import { KRUX_COLOR, shaftDigest, shaftTree } from '../hooks/shaft'
+import { KRUX_COLOR, shaftDigest, shaftTabs, shaftTree } from '../hooks/shaft'
 import { EMPTY_THREADS } from '../hooks/threads'
-import type { ShaftData, ShaftElements } from '../hooks/shaft'
+import type { ShaftData, ShaftElements, ShaftTabElements } from '../hooks/shaft'
 
 // Elementy jak z `$.ui.resolve`: zwykłe obiekty z typem i propsami.
 type Node = { type: string; props: Record<string, unknown> }
@@ -376,4 +376,47 @@ test('a long task subject gives way while the stuck-task suffix keeps its space'
 test('pending, completed and undated tasks never get a stuck-task suffix', () => {
   const tasks = [{ ...task('Czeka', 'pending'), startedAt: 0 }, { ...task('Gotowe', 'completed'), startedAt: 0 }, task('Historia', 'in_progress')]
   expect(texts(section(draw({ board: { tasks, test: null }, now: 60 * 60_000 }), 'plan')!).map(line => line.text)).toEqual(['Plan', '1/3', '· Czeka', '✓ Gotowe', '▸ Historia'])
+})
+
+const TAB_ELEMENTS = {
+  ...ELEMENTS,
+  Button: (props: Record<string, unknown>) => ({ type: 'Button', props }),
+} as unknown as ShaftTabElements
+
+test('shaft tabs highlight either active card with a sign and spark color', () => {
+  for (const active of ['stan', 'dziennik'] as const) {
+    const root = shaftTabs(TAB_ELEMENTS, active, () => {}) as unknown as Node
+    const cells = children(root) as Node[]
+    const buttons = cells.map(cell => children(cell)[1] as Node)
+    const marks = cells.map(cell => children(cell)[0] as Node)
+    expect(buttons.map(button => button.props.label)).toEqual(['Stan', 'Dziennik'])
+    expect(marks.map(mark => texts(mark)[0]?.text)).toEqual(active === 'stan' ? ['▸', '·'] : ['·', '▸'])
+    expect(buttons.map(button => button.props.plain)).toEqual([true, true])
+    const chosen = buttons[active === 'stan' ? 0 : 1]!
+    const other = buttons[active === 'stan' ? 1 : 0]!
+    expect(marks[active === 'stan' ? 0 : 1]!.props.color).toBe(KRUX_COLOR)
+    expect(buttons.every(button => button.props.color === undefined)).toBe(true)
+    expect(chosen.props.dimColor).not.toBe(true)
+    expect(other.props.dimColor).toBe(true)
+    expect(root.props.flexWrap).toBe('wrap')
+  }
+})
+
+test('tab rendering never calls onPress and each button passes its own card', async () => {
+  const chosen: string[] = []
+  const root = shaftTabs(TAB_ELEMENTS, 'stan', async tab => { chosen.push(tab) }) as unknown as Node
+  expect(chosen).toEqual([])
+  const buttons = (children(root) as Node[]).map(cell => children(cell)[1] as Node)
+  await (buttons[1]!.props.onPress as () => Promise<void>)()
+  await (buttons[0]!.props.onPress as () => Promise<void>)()
+  expect(chosen).toEqual(['dziennik', 'stan'])
+  expect(buttons.map(button => button.props.key)).toEqual(['shaft-tab-stan', 'shaft-tab-dziennik'])
+})
+
+test('tab buttons also accept a synchronous handler', () => {
+  let chosen = ''
+  const root = shaftTabs(TAB_ELEMENTS, 'dziennik', tab => { chosen = tab }) as unknown as Node
+  const button = children(children(root)[0] as Node)[1] as Node
+  ;(button.props.onPress as () => void)()
+  expect(chosen).toBe('stan')
 })

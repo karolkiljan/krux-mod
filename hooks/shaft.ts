@@ -1,9 +1,9 @@
 // Drzewo panelu Sztolni: otwarte wątki, stan repo, plan, ostatni przebieg
 // testów, horda w biegu, kontekst i limity. Czysta funkcja: stan czyta `register.ts`, tu tylko elementy i dane.
 
-import type { BoxProps, ElementConstructor, RenderElement, RenderNode, TextProps } from 'claude-code'
+import type { BoxProps, ButtonProps, ElementConstructor, RenderElement, RenderNode, TextProps } from 'claude-code'
 
-import type { KruxBoard, KruxGit, KruxThreads, KruxUsage } from '../types'
+import type { KruxBoard, KruxGit, KruxShaftTab, KruxThreads, KruxUsage } from '../types'
 import { limitName, meter, planCount, planRows, readiness, resetIn, stuckMinutes, testLine, testsStale, tokens } from './board'
 import { gitBusy, gitShort } from './git'
 import type { MusterRow } from './muster'
@@ -21,6 +21,29 @@ const ALARM_COLOR = '#e0322b'
 const PLAN_ROWS = 8
 
 export type ShaftElements = { Box: ElementConstructor<BoxProps>; Text: ElementConstructor<TextProps> }
+
+export type ShaftTabElements = ShaftElements & { Button: ElementConstructor<ButtonProps> }
+
+// Nagłówek wspólnego panelu. Wywołujący przekazuje zapis wybranej karty;
+// samo tworzenie drzewa nie zmienia stanu i nie uruchamia callbacka.
+export function shaftTabs({ Box, Text, Button }: ShaftTabElements, active: KruxShaftTab, onPress: (tab: KruxShaftTab) => void | Promise<void>): RenderElement {
+  return Box({
+    key: 'shaft-tabs',
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    columnGap: 1,
+    children: (['stan', 'dziennik'] as const).map(tab => Box({
+      key: `shaft-tab-cell-${tab}`,
+      flexDirection: 'row',
+      columnGap: 1,
+      children: [
+        // Button nie przyjmuje koloru. Znak aktywnej karty rysuje Text.
+        Text({ dimColor: tab !== active, ...(tab === active ? { color: KRUX_COLOR } : {}), children: [tab === active ? '▸' : '·'] }),
+        Button({ key: `shaft-tab-${tab}`, label: tab === 'stan' ? 'Stan' : 'Dziennik', plain: true, dimColor: tab !== active, onPress: () => onPress(tab) }),
+      ],
+    })),
+  })
+}
 
 export type ShaftData = {
   board: KruxBoard

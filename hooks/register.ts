@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register } from 'claude-code'
+import type { EngineInterface, Register, RenderElement, RenderInput } from 'claude-code'
 
 import type { KruxActivity, KruxBoard, KruxEvent, KruxGit, KruxHordeMember, KruxMode, KruxModes, KruxTestRun } from '../types'
 import { CAPTION_COLUMNS, CAPTION_GAP, bandPlan } from './band'
@@ -16,7 +16,10 @@ import { GIT_CHECK, GIT_LOG, GIT_STATUS, GIT_UNPUSHED, GIT_TOOLS, gitOf } from '
 import { EMPTY_THREADS, THREAD_SPEC, THREAD_TOOL_NAME, replayThreads, saveThread, threadsAfter, threadsReport } from './threads'
 import { dayReport } from './report'
 import { EMPTY_MUSTER, anyRunning, musterDone, musterRows, musterSpawn, musterTool } from './muster'
-import { KRUX_COLOR, ORC_COLOR, shaftDigest, shaftTree } from './shaft'
+import { KRUX_COLOR, ORC_COLOR, shaftDigest, shaftTabs, shaftTree } from './shaft'
+import { chatTree } from './chat'
+import type { AvatarSpeaker } from './avatar'
+import { EMPTY_JOURNAL, journalAfter, journalTree, toolLine } from './journal'
 import { forgeColumns } from './sprites'
 import {
   DEFAULT_MODES,
@@ -84,6 +87,15 @@ const threads = atom({ plugin: 'krux-mod', key: 'threads' } as const, EMPTY_THRE
 const autoKonkret = atom({ plugin: 'krux-mod', key: 'autoKonkret' } as const, false)
 const turnAt = atom({ plugin: 'krux-mod', key: 'turnAt' } as const, null)
 const seenAt = atom({ plugin: 'krux-mod', key: 'seenAt' } as const, null)
+const journal = atom({ plugin: 'krux-mod', key: 'journal' } as const, { entries: [] })
+const shaftTab = atom({ plugin: 'krux-mod', key: 'shaftTab' } as const, 'stan')
+
+// Godzina pierwszego rysunku po id wiadomości, bez niedozwolonego zapisu $.state
+// w ui.render. Nie ma zegara historii: redraw i resize zachowują tę samą godzinę.
+const messageTimes = new Map<string, number>()
+let journalWatch: { cancel: () => void } | null = null
+let journalWatchVersion = 0
+let journalWatchRequests = 0
 
 // Teksty głosu czyta session.start; reload modułu czyta je od nowa.
 let texts: Texts = { persona: '', konkret: '', flow: '' }
@@ -156,6 +168,10 @@ async function readText($: EngineInterface, name: string): Promise<string> {
 
 // Tryby i ruch od nowa: na starcie i po komendach, które zerują `$.state`.
 async function loadSession($: EngineInterface): Promise<void> {
+  messageTimes.clear()
+  journalWatch?.cancel()
+  journalWatch = null
+  journalWatchVersion += 1
   await loadModes($)
   await loadMotion($)
 }
@@ -366,6 +382,90 @@ async function shaftShown($: EngineInterface, on: boolean): Promise<boolean> {
   return (await $.ui.panes()).some(pane => pane.id === SHAFT_PANE && pane.isPlaced && pane.isShown)
 }
 
+// Raport zadania powłoki też ma task.id. Dopiero apel lub lista potwierdza agenta;
+// null oznacza potwierdzonego orka bez imienia, undefined — nieznanego nadawcę.
+async function reportMate($: EngineInterface, agentId: string): Promise<AvatarSpeaker | undefined> {
+  const run = (await read($, muster)).runs.find(one => one.agentId === agentId)
+  if (run !== undefined) return run.mate
+  try {
+    const agent = (await $.agent.list()).find(one => one.id === agentId)
+    return agent === undefined ? undefined : mateIn(agent.description, '')
+  } catch {
+    return undefined
+  }
+}
+
+type MessageInput = RenderInput<'AssistantMessage' | 'UserMessage', 'terminal'>
+
+// Dziś wiadomości nie mają czasu ani bodyColumns w kontrakcie. Przyjmujemy
+// timestamp/createdAt (ms lub ISO), jeśli host je poda; inaczej czas pierwszego
+// rysunku. Bez pomiaru szerokości zostaje natywna treść, bez zgadywania 80 kolumn.
+async function drawChat($: EngineInterface, e: MessageInput, speaker: AvatarSpeaker, content: RenderElement): Promise<RenderElement> {
+  const props = e.props as unknown as Record<string, unknown>
+  const columns = props.bodyColumns ?? props.columns ?? e.viewport?.columns
+  if (typeof columns !== 'number' || !Number.isFinite(columns) || columns <= 0) return content
+  const key = `${e.component}:${e.requestId}`
+  let at = messageTimes.get(key)
+  for (const value of [props.timestamp, props.createdAt]) {
+    const time = typeof value === 'number' ? value : typeof value === 'string' ? Date.parse(value) : NaN
+    if (Number.isFinite(time) && Number.isFinite(new Date(time).getTime())) { at = time; break }
+  }
+  if (at === undefined) {
+    const first = await $.clock.now()
+    at = messageTimes.get(key) ?? first
+  }
+  // Dwa równoległe pierwsze rysunki tego id nie zastępują sobie czasu.
+  if (!messageTimes.has(key)) messageTimes.set(key, at)
+  const date = new Date(at)
+  const time = [date.getHours(), date.getMinutes()].map(value => String(value).padStart(2, '0')).join(':')
+  return chatTree($.ui.resolve(e), { speaker, time, columns, content })
+}
+
+async function journalShown($: EngineInterface, surface: string): Promise<boolean> {
+  if (surface !== GRID_SURFACE) return false
+  const now = await read($, modes)
+  if (!now.czat || !now.sztolnia || (await read($, shaftTab)) !== 'dziennik') return false
+  const shown = await shaftShown($, true)
+  watchJournalVisibility($, shown)
+  return shown
+}
+
+// ui.panes jest snapshotem, nie zależnością renderu. Zakładki silnika nie mają
+// zdarzenia zmiany widoczności: jeden zegar sprawdza ją, póki czat ma Dziennik.
+// Nie rysuje co tyk ani nie zapisuje stanu z ui.render; unieważnia tylko zmianę.
+function watchJournalVisibility($: EngineInterface, visible: boolean): void {
+  journalWatchRequests += 1
+  if (journalWatch !== null) return
+  const version = ++journalWatchVersion
+  const tick = (delay = 250) => {
+    journalWatch = $.clock.after(delay, async () => {
+      if (version !== journalWatchVersion) return
+      const requested = journalWatchRequests
+      try {
+        const now = await read($, modes)
+        if (version !== journalWatchVersion) return
+        const tab = await read($, shaftTab)
+        if (version !== journalWatchVersion) return
+        if (!now.czat || !now.sztolnia || tab !== 'dziennik') {
+          // Aktywny render mógł wrócić, gdy ten tyk czekał na stary odczyt off.
+          if (requested !== journalWatchRequests) tick()
+          else journalWatch = null
+          return
+        }
+        const shown = await shaftShown($, true)
+        if (version !== journalWatchVersion) return
+        if (shown !== visible) { visible = shown; $.ui.invalidate('ui.render') }
+        tick()
+      } catch (error) {
+        if (version !== journalWatchVersion) return
+        try { $.ui.log(`dziennik: widoczność: ${String(error)}`) } catch { /* Zegar ma odzyskać odczyt. */ }
+        tick(1000)
+      }
+    })
+  }
+  tick()
+}
+
 // Panel i skrót pasa odświeżają utknięcie przy 15 min, potem na pełnych minutach.
 // Nowy plan unieważnia poprzedni timer; zegar apelu pozostaje wspólną zależnością.
 let boardClock = 0
@@ -468,8 +568,8 @@ export const register: Register = on => {
     try {
       await $.command.register({
         name: 'krux',
-        description: 'Kuźnia Kruxa: persona, konkret, flow, animacje, kowal, horda',
-        argumentHint: '[on|off|konkret|flow|animacje|kowal|sztolnia|zapisz <tekst>|raport|status]',
+        description: 'Kuźnia Kruxa: persona, konkret, flow, animacje, kowal, czat, dziennik, horda',
+        argumentHint: '[on|off|konkret|flow|animacje|kowal|sztolnia|czat|dziennik|zapisz <tekst>|raport|status]',
         immediate: true,
       })
     } catch (error) {
@@ -481,6 +581,8 @@ export const register: Register = on => {
   // /clear, /resume i /branch zerują $.state, a session.start już nie wraca.
   on('classic.SessionStart', { source: ['clear', 'resume', 'fork'] }, async ($, e, next) => {
     await loadSession($)
+    await update($, journal, () => EMPTY_JOURNAL)
+    await update($, shaftTab, () => 'stan')
     await refreshGit($)
     return next(e)
   }).catch(($, e, next) => { hookFailure($, 'classic.SessionStart', next.error); return next(e) })
@@ -557,6 +659,14 @@ export const register: Register = on => {
     if (command.kind === 'report') {
       await restore($)
       return { text: dayReport(await read($, git), await read($, board), await read($, threads), await read($, lore)) }
+    }
+    if (command.kind === 'journal') {
+      await update($, shaftTab, () => 'dziennik')
+      const opened = (await $.ui.panes()).some(pane => pane.id === SHAFT_PANE)
+      if (!(await read($, modes)).sztolnia) await setModes($, { mode: 'sztolnia', on: true })
+      // Ponowne open pokazuje także panel czekający na szerokość albo ukrytą kartę.
+      if (!opened || !await shaftShown($, true)) await syncShaftPane($, true)
+      return {}
     }
     if (command.kind === 'toggle') {
       const { next: now, on: isOn, note } = await setModes($, command.toggle)
@@ -652,6 +762,9 @@ export const register: Register = on => {
     if (result.deny === undefined) {
       const isError = result.isError === true
       const text = typeof result.text === 'string' ? result.text : ''
+      const who = e.agentId === undefined ? 'Krux' : (await read($, muster)).runs.find(one => one.agentId === e.agentId)?.mate ?? 'ork'
+      const at = await $.clock.now()
+      await update($, journal, current => journalAfter(current, { tool, input, result: result.result, text: result.text, isError, tool_use_id: e.tool_use_id, agentId: e.agentId, who, at }))
       if (e.agentId === undefined) {
         const run = await boardStep($, tool, input, result.result, { text, isError, who: 'Krux' })
         await afterOwnTool($, tool, input, isError, text, run?.failures[0])
@@ -720,7 +833,7 @@ export const register: Register = on => {
   on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
     const now = await read($, modes)
     const automatic = await read($, autoKonkret)
-    const labels = (['persona', 'konkret', 'flow'] as const)
+    const labels = (['persona', 'konkret', 'flow', 'czat'] as const)
       .filter(mode => now[mode] || (mode === 'konkret' && automatic))
       .map(mode => (mode === 'persona' ? 'krux' : mode === 'konkret' && !now.konkret ? 'konkret (auto)' : mode))
     if (labels.length === 0) return next(e)
@@ -733,7 +846,10 @@ export const register: Register = on => {
   // Każdy blok odpowiedzi stoi przy kresce w kolorze Kruxa (`quote`: krawędź
   // z lewej), więc długa rozmowa dzieli się na bloki; pierwszy dostaje tabliczkę.
   on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
-    if (e.surface !== GRID_SURFACE || !(await read($, modes)).persona) return next(e)
+    if (e.surface !== GRID_SURFACE) return next(e)
+    const now = await read($, modes)
+    if (now.czat) return drawChat($, e, 'Krux', await next(e))
+    if (!now.persona) return next(e)
     const theirs = await next(e)
     const { Box, Text } = $.ui.resolve(e)
     const block = Box({ borderStyle: 'quote', borderColor: KRUX_COLOR, marginBottom: -1, children: [Box({ marginTop: -1, children: [theirs] })] })
@@ -743,11 +859,37 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'UserMessage' }, async ($, e, next) => {
-    if (e.surface !== GRID_SURFACE || !fromPerson(e.props.origin) || !(await read($, modes)).persona) return next(e)
+    if (e.surface !== GRID_SURFACE) return next(e)
+    const now = await read($, modes)
+    if (now.czat) {
+      // task.id łączy raport po tożsamości, from.name samo nie dowodzi subagenta.
+      const id = e.props.task?.id
+      if (id !== undefined) {
+        const mate = await reportMate($, id)
+        if (mate !== undefined) return drawChat($, e, mate, await next(e))
+      }
+      if (fromPerson(e.props.origin)) return drawChat($, e, 'Morra', await next(e))
+      return next(e)
+    }
+    if (!fromPerson(e.props.origin) || !now.persona) return next(e)
     const theirs = await next(e)
     const { Box, Text } = $.ui.resolve(e)
     const plate = Box({ key: 'nameplate', position: 'absolute', top: 0, left: 0, children: [Text({ bold: true, color: MORRA_COLOR, children: [NAMEPLATE.morra] })] })
     return Box({ flexDirection: 'column', children: [theirs, plate] })
+  })
+
+  // Złączenie po tool_use_id, nigdy po nazwie narzędzia ani requestId grupy.
+  // Bez wpisu (np. narzędzie w toku albo stara historia) pełny wiersz silnika.
+  on('ui.render', { component: ['ToolUse', 'ToolResult', 'ToolGroup'] }, async ($, e, next) => {
+    if (!await journalShown($, e.surface)) return next(e)
+    const entries = (await read($, journal)).entries
+    const calls = e.component === 'ToolGroup' ? e.props.calls : [e.props]
+    const matched = calls.map(call => call.tool_use_id === undefined ? undefined : entries.findLast(entry => entry.id === call.tool_use_id))
+    // Grupa jest całością: brak choć jednego id nie może zgubić jego wyniku.
+    if (matched.length === 0 || matched.some(entry => entry === undefined)) return next(e)
+    const columns = e.viewport?.columns
+    if (columns === undefined || !Number.isFinite(columns) || columns <= 0) return next(e)
+    return toolLine($.ui.resolve(e), matched as NonNullable<typeof matched[number]>[], columns)
   })
 
   // Pas nad promptem: podpis z lewej, za nim Krux i wysłani kumple, dymek nad
@@ -860,16 +1002,21 @@ export const register: Register = on => {
   // Sztolnia: stan roboty. Plan, ostatni przebieg testów, horda w biegu,
   // kontekst i limity; drzewo buduje `shaft.ts`. Diff i drzewo zmian rysuje silnik (`/diff`).
   on('ui.render', { component: 'Pane', requestId: SHAFT_PANE }, async ($, e) => {
+    const table = $.ui.resolve(e)
+    const tab = await read($, shaftTab)
+    const tabs = shaftTabs(table, tab, async selected => { await update($, shaftTab, () => selected) })
+    const now = await $.clock.now()
+    if (tab === 'dziennik') return table.Box({ flexDirection: 'column', children: [tabs, journalTree(table, await read($, journal), e.props.bodyColumns, now)] })
     const plan = await read($, board)
     // Odczyt tyknięcia apelu zapisuje panel na przerysowanie co 1 s: czas orków płynie.
     await read($, musterNow)
     const ids = await runningIds($)
-    const now = await $.clock.now()
     const horde = musterRows(await read($, muster), now, ids, 6)
-    return shaftTree($.ui.resolve(e), { board: plan, horde, usage: await read($, usage), git: await read($, git), threads: await read($, threads), now, columns: e.props.bodyColumns, rows: e.props.scroll.bodyRows })
+    const content = shaftTree(table, { board: plan, horde, usage: await read($, usage), git: await read($, git), threads: await read($, threads), now, columns: e.props.bodyColumns, rows: Math.max(0, e.props.scroll.bodyRows - 1) })
+    return table.Box({ flexDirection: 'column', children: [tabs, content] })
   })
 
-  // Panel /krux: kuźnia, tryby pod klawiszami 1–6, horda.
+  // Panel /krux: kuźnia, tryby pod klawiszami 1–7, horda.
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const now = await read($, modes)
     const isStill = (await read($, still)) || !now.animacje
@@ -915,8 +1062,7 @@ export const register: Register = on => {
           flexDirection: 'column',
           children: [
             Text({ bold: true, children: ['Tryby'] }),
-            // Przyciski zawijają się do szerokości panelu: w jednym rzędzie 6 trybów
-            // nie mieści się, a bez zawijania 4–6 wypadają poza panel.
+            // Przyciski zawijają się do szerokości panelu w równych komórkach.
             Box({
               flexDirection: 'row',
               flexWrap: 'wrap',
@@ -939,7 +1085,7 @@ export const register: Register = on => {
             ),
           ],
         }),
-        Text({ dimColor: true, children: ['1–6 przełączają · Esc zamyka · skill hordy: /krux-mod:krux-horda'] }),
+        Text({ dimColor: true, children: ['1–7 przełączają · Esc zamyka · skill hordy: /krux-mod:krux-horda'] }),
       ],
     })
   })

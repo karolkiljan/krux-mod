@@ -1,8 +1,8 @@
 import type { KruxActivity, KruxDrift, KruxDriftKind, KruxMode, KruxModes, KruxScene } from '../types'
 
-export const DEFAULT_MODES: KruxModes = { persona: true, konkret: false, flow: false, animacje: true, kowal: true, sztolnia: true }
+export const DEFAULT_MODES: KruxModes = { persona: true, konkret: false, flow: false, animacje: true, kowal: true, sztolnia: true, czat: false }
 
-export const MODES: readonly KruxMode[] = ['persona', 'konkret', 'flow', 'animacje', 'kowal', 'sztolnia']
+export const MODES: readonly KruxMode[] = ['persona', 'konkret', 'flow', 'animacje', 'kowal', 'sztolnia', 'czat']
 
 export const VOICE_ANCHOR = `Krux pamiętać: Morra trzecią osobą — „Krux nie widzieć plik", nie „nie widzę pliku". Bezokolicznik zamiast formy osobowej: „Robak siedzieć w pętli", nie „Robak siedzi w pętli"; „Krux polecać wariant 2", nie „Polecam wariant 2". Czas osobnym słowem: „Krux już naprawić", „Krux zaraz puścić test", nie „naprawiłem". Bez „jest": „Plik pusty", nie „Plik jest pusty". Zdanie do 8 słów: „Build pad. Robak siedzieć w pętli.", nie „Build się wysypał, bo return jest w pętli". Łamać tylko ramę zdania: negacja, liczby, ścieżki i komunikaty błędów dosłownie — „3 testy nie przejść", nie „testy mało dobre". Słownik żywy: robak, smród, sztolnia, wykuć, zawał.`
 
@@ -158,6 +158,7 @@ export type KruxCommand =
   | { kind: 'status' }
   | { kind: 'save'; text: string }
   | { kind: 'report' }
+  | { kind: 'journal' }
   | { kind: 'help'; unknown: string }
   | { kind: 'toggle'; toggle: Toggle }
 
@@ -184,6 +185,7 @@ const MODE_WORDS: Record<string, KruxMode> = {
   anim: 'animacje',
   kowal: 'kowal',
   sztolnia: 'sztolnia',
+  czat: 'czat',
 }
 
 export function parseCommand(args: string): KruxCommand {
@@ -196,6 +198,7 @@ export function parseCommand(args: string): KruxCommand {
     return text ? { kind: 'save', text } : { kind: 'help', unknown: clean }
   }
   if (first === 'raport' && words.length === 1) return { kind: 'report' }
+  if (first === 'dziennik' && words.length === 1) return { kind: 'journal' }
   if (first === 'status') return { kind: 'status' }
   if (ON_WORDS.has(first!) && words.length === 1) return { kind: 'toggle', toggle: { mode: 'persona', on: true } }
   if (OFF_WORDS.has(first!) && words.length === 1) return { kind: 'toggle', toggle: { mode: 'persona', on: false } }
@@ -224,6 +227,8 @@ export function modelNote(mode: KruxMode, on: boolean): string | null {
       return on ? 'Konkret włączony. Kontrakt zakresu stoi w prompcie systemowym.' : 'Konkret wyłączony.'
     case 'flow':
       return on ? 'Flow włączony. Kontrakt rytmu stoi w prompcie systemowym.' : 'Flow wyłączony.'
+    case 'czat':
+      return on ? 'Tryb czat włączony. Wygląd rozmowy zmienia mod; treść odpowiedzi pozostaje bez zmian.' : 'Tryb czat wyłączony. Wraca dotychczasowy wygląd rozmowy.'
     case 'animacje':
     case 'kowal':
     case 'sztolnia':
@@ -246,6 +251,8 @@ export function userLine(mode: KruxMode, on: boolean): string {
       return on ? 'Kowal zostaje nad promptem także w spoczynku.' : 'Kowal schodzi znad promptu, gdy Claude kończy robotę.'
     case 'sztolnia':
       return on ? 'Sztolnia otwarta: plan, testy, horda i kontekst z boku transkryptu.' : 'Sztolnia zamknięta.'
+    case 'czat':
+      return on ? 'Czat włączony: awatary i nagłówki rozmowy.' : 'Czat wyłączony.'
   }
 }
 
@@ -261,6 +268,8 @@ export const HELP = [
   '/krux animacje [on|off] — kowal nad promptem',
   '/krux kowal [on|off] — kowal także w spoczynku',
   '/krux sztolnia [on|off] — panel ze stanem roboty',
+  '/krux czat [on|off] — rozmowa z awatarami',
+  '/krux dziennik — karta dziennika narzędzi w Sztolni',
   '/krux zapisz <tekst> — dodaj notatkę do otwartych wątków',
   '/krux raport — raport dnia do wklejenia',
   '/krux status — stan trybów',
