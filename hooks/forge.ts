@@ -1,7 +1,7 @@
 import type { ClientModule } from 'claude-code'
 
 import type { KruxCue, KruxEvent, KruxMood, KruxSpeaker } from '../types'
-import { CATCH_X, CUE_FRAMES, SPEAKER_COLOR, bandColumns, behind, bubbleLines, canvasColumns, catchStep, caughtScroll, dress, frameGrid, runsOf, slotX, stageGrid, tossFlight, tossFrames, tossGrid, tossScroll, trackGrid, trackOff, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withNap } from './sprites'
+import { CATCH_X, CUE_FRAMES, FRAME_MS, SPEAKER_COLOR, bandColumns, behind, bubbleLines, canvasColumns, catchStep, caughtScroll, dress, frameGrid, runsOf, slotX, stageGrid, tossFlight, tossFrames, tossGrid, tossScroll, trackDozing, trackGrid, trackOff, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withNap } from './sprites'
 import type { Face, Placed, StageScene, Track } from './sprites'
 
 // Moduł powierzchni: rysuje Kruxa, kumpli i dymek na wątku rysującym, z własnym
@@ -45,8 +45,6 @@ type Actor = {
 }
 
 type ForgeState = { frame: number; actors: Record<string, Actor>; idle: boolean; reduced?: boolean; snoozing?: boolean; said?: { id: string; at: number } }
-
-const FRAME_MS = 150
 
 // Kolumny na klatkę w marszu: przez całe płótno w około 3 s.
 const WALK_SPEED = 3
@@ -141,14 +139,16 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
       const enter = outside ? freedAt(actors, slot, frame) : frame
       // Scena rusza dopiero w slocie: marsz kończy się stójką, z niej wchodzi czynność.
       // Na starcie płótna ork już jest w pętli roboty.
-      const track = trackStart(orc.scene, orc.key, enter, first ? 'in-loop' : Math.ceil((from - slotX(slot)) / WALK_SPEED))
+      const track = trackStart(orc.scene, orc.key, enter, first ? 'in-loop' : Math.ceil((from - slotX(slot)) / WALK_SPEED), orc.face)
       // Wiek roboty przy montowaniu płótna: ork, który kuje od dawna, poci się od razu.
       const worked = orc.workAt === undefined ? null : Math.max(0, Math.floor(((props.now ?? orc.workAt) - orc.workAt) / FRAME_MS))
       actors[orc.key] = { face: orc.face, mood: orc.mood, track, slot, enter, from, leftAt: null, workAt: orc.workAt, ...(worked === null ? {} : { effortAt: frame - worked }) }
       changed = true
     } else {
       let next = was
-      const track = trackTo(was.track, orc.scene, orc.key, frame, frozen)
+      let track = trackTo(was.track, orc.scene, orc.key, frame, frozen)
+      // Kumpel, który dostał imię, gra odtąd czynności swojego fachu.
+      if (track.face !== orc.face) track = { ...track, face: orc.face }
       if (track !== was.track) next = { ...next, track }
       if (orc.mood !== was.mood || orc.face !== was.face) next = { ...next, mood: orc.mood, face: orc.face }
       if (orc.workAt !== was.workAt) next = { ...next, workAt: orc.workAt, effortAt: frame }
@@ -203,7 +203,7 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
       const catching = key === 'krux' ? caught : null
       if (catching !== null) raw = withCatch(raw, catching)
       if (actor.leftAt === null && !frozen && !reacting && catching === null && actor.workAt !== undefined) raw = withEffort(raw, frame - (actor.effortAt ?? frame))
-      if (key === 'krux' && frozen && state.snoozing) raw = withNap(raw)
+      if (key === 'krux' && ((frozen && state.snoozing) || trackDozing(actor.track, frame))) raw = withNap(raw)
     }
     const rows = at.walking ? walkerRows(frame, actor.face) : dress(raw, actor.face)
     if (tossing) {

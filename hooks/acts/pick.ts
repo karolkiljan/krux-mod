@@ -1,5 +1,5 @@
-import { SLIDE, STAND, draw, line, noise, pusher, stander } from '../stage'
-import type { Act, Frame, Layer } from '../stage'
+import { SLIDE, STAND, at, croucher, draw, line, noise, pusher, stander } from '../stage'
+import type { Act, Frame, Layer, Look, Point } from '../stage'
 
 // Kopalnia przy Bash. Skała wyrasta z ziemi albo przesuwa się z prawej z narzędziem w sobie,
 // Krux chwyta trzonek i bierze się do roboty; przy zejściu wbija narzędzie z powrotem i skała odchodzi.
@@ -171,4 +171,76 @@ const auger: Act = {
   loop: drillLoop,
 }
 
-export const PICK_ACTS: Act[] = [rock, shovel, auger]
+// ——— Podkop Lonta ———
+// Lont w przykucu podkopuje głaz małym kilofkiem, wyjmuje z fartucha laskę dynamitu, wsuwa ją
+// w dołek, aż z ziemi wystaje sam lont, i kiwa głową. Głaz z ładunkiem zapada się w ziemię,
+// na jego miejscu wyrasta nowy, a Lont podnosi kilofek do kolejnego podkopu.
+const BOULDER: Frame = ['..kkk.', '.kkqkk', 'kkkkkq', 'kqkkkk']
+const BOULDER_AT = 10
+// Dołek pod głazem rośnie piksel po pikselu przy każdym uderzeniu.
+const HOLE: readonly Point[] = [[10, 5], [11, 5], [12, 5]]
+
+// Głaz `sink` pikseli pod ziemią z wykopanymi `dug` pikselami dołka i ładunkiem `charge`.
+function boulder(sink: number, dug = 0, charge: readonly Layer[] = [], dx = 0): Layer[] {
+  const hole = HOLE.slice(0, dug)
+  // Dołek wycina piksele z głazu; ładunek siedzi w dołku i opada razem z głazem.
+  const cut = draw([BOULDER, BOULDER_AT, 2]).map((row, y) =>
+    [...row].map((cell, x) => (hole.some(([hx, hy]) => hx === x && hy === y) ? '.' : cell)).join(''))
+  return [[cut, dx, sink], ...charge.map(([sprite, x, y]) => [sprite, x + dx, y + sink] as Layer)]
+}
+
+// Lont w przykucu; dłoń w punkcie `hand`, ręka od fartucha.
+function crouched(look: Look, hand: Point | null): Layer[] {
+  return [[croucher(look), 0, 0], ...(hand === null ? [] : line([6, 4], hand, 'g'))]
+}
+
+// Kilofek w dłoni: trzonek od dłoni do obucha.
+function trowel(hand: Point, head: Point): Layer[] {
+  return [...crouched('right', hand), ...line(hand, head, 'h').slice(1), at('S', head[0], head[1])]
+}
+const RAISED: Layer[] = trowel([7, 3], [8, 1])
+const strike = (target: Point): Layer[] => trowel([8, 4], [target[0] - 1, target[1]])
+// Kilofek odłożony na ziemię przy kolanie.
+const DROPPED: Layer[] = [at('h', 6, 5), at('S', 7, 5)]
+
+// Laska w dołku: czerwień w ziemi, lont sterczy przed głazem.
+const PLANTED: Layer[] = [at('d', 11, 5), at('d', 12, 5), at('h', 9, 5), at('h', 9, 4)]
+
+function undermining(t: number): Frame {
+  // 0–5: zamach i uderzenie trzy razy, dołek rośnie, odłamki pryskają w górę.
+  if (t < 6) {
+    const k = Math.floor(t / 2)
+    if (t % 2 === 0) return draw(...boulder(0, k), ...RAISED, ...(k > 0 ? [at('q', 9, 2), at('k', 11, 0)] : []))
+    return draw(...boulder(0, k + 1), ...strike(HOLE[k]!), at('q', HOLE[k]![0] - 1, 3))
+  }
+  // 6: odłożyć kilofek; 7: sięgnąć do fartucha; 8: laska w dłoni.
+  if (t === 6) return draw(...boulder(0, 3), ...DROPPED, ...crouched('right', [7, 4]))
+  if (t === 7) return draw(...boulder(0, 3), ...DROPPED, ...crouched('mid', null), at('g', 5, 4))
+  if (t === 8) return draw(...boulder(0, 3), ...DROPPED, ...crouched('right', [6, 4]), [['dd'], 7, 4], at('h', 6, 5))
+  // 9–10: wsunąć laskę w dołek; 11: zostaje sam lont, kiwnąć głową.
+  if (t === 9) return draw(...boulder(0, 3, [[['dd'], 9, 5]]), ...DROPPED, ...crouched('right', [8, 4]), at('h', 8, 5))
+  if (t === 10) return draw(...boulder(0, 3, PLANTED), ...DROPPED, ...crouched('right', [8, 4]))
+  if (t === 11) return draw(...boulder(0, 3, PLANTED), ...DROPPED, ...crouched('mid', null))
+  // 12–13: głaz z ładunkiem zapada się w ziemię; 14–15: wyrasta nowy, Lont bierze kilofek.
+  if (t < 14) return draw(...boulder(t === 12 ? 2 : 4, 3, PLANTED), ...DROPPED, ...crouched('right', t === 13 ? [7, 4] : null))
+  return draw(...boulder(t === 14 ? 2 : 1), ...trowel([7, 4], t === 14 ? [8, 5] : [8, 3]))
+}
+
+const undermine: Act = {
+  name: 'podkop',
+  who: ['Lont'],
+  intro: [
+    // Głaz z kilofkiem u stóp wjeżdża z prawej.
+    ...SLIDE.map(dx => draw(...boulder(0, 0, [], dx), ...DROPPED.map(([s, x, y]) => [s, x + dx, y] as Layer), [STAND, 0, 0])),
+    draw(...boulder(0), ...DROPPED, [stander('right'), 0, 0]),
+    // Przykucnąć, chwycić kilofek i unieść go.
+    draw(...boulder(0), ...DROPPED, ...crouched('right', [7, 4])),
+    draw(...boulder(0), ...trowel([7, 4], [8, 5])),
+    draw(...boulder(0), ...trowel([7, 4], [8, 3])),
+    draw(...boulder(0), ...RAISED),
+  ],
+  length: 16,
+  loop: undermining,
+}
+
+export const PICK_ACTS: Act[] = [rock, shovel, auger, undermine]

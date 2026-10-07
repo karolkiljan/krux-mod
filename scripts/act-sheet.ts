@@ -1,9 +1,13 @@
 // Arkusz klatek czynności do oglądania i sprawdzania. Wymaga `sips` (macOS).
 //   npx tsx scripts/act-sheet.ts <scena> [plik.png] [nazwa czynności]
 //   npx tsx scripts/act-sheet.ts hooks/acts/<plik>.ts:<EKSPORT> [plik.png] [nazwa czynności]
+//   npx tsx scripts/act-sheet.ts gesty [plik.png] [nazwa gestu]
 // Drugi zapis czyta sam plik czynności, bez katalogu scen: nową scenę widać i da się
 // ją sprawdzić, zanim trafi do `ACTS`. Każda czynność to wiersze klatek: stójka,
-// wejście, pętla; między czynnościami pusty wiersz. Skrypt wypisuje złamane zasady
+// wejście, pętla; między czynnościami pusty wiersz. Trzeci zapis rysuje gesty wiercenia
+// (`hooks/fidget.ts`): każdy gest na kilku pozach bazowych (stójka i początki pętli
+// różnych czynności, także siedzącej i pochylonej), wiersz to poza i wszystkie kroki gestu;
+// sprawdza go na początku pętli każdej czynności z `ACTS`. Skrypt wypisuje złamane zasady
 // klatek (te same, które pilnuje `tests/sprites.test.ts`) i wtedy kończy się kodem 1.
 import { execFileSync } from 'node:child_process'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
@@ -13,11 +17,12 @@ import { pathToFileURL } from 'node:url'
 
 import { dress } from '../hooks/apron.ts'
 import { MATE_APRONS, PALETTE } from '../hooks/palette.ts'
+import { GESTURES, headOf } from '../hooks/fidget.ts'
 import { H, STAND, W, moodOf, pad } from '../hooks/stage.ts'
 import type { Act, Frame } from '../hooks/stage.ts'
 
 const PER_ROW = 5
-const S = 9
+const SCALE = 9
 const GAP = 2
 
 async function actsOf(source: string): Promise<readonly Act[]> {
@@ -45,7 +50,7 @@ function framesOf(act: Act): { label: string; rows: Frame }[] {
 
 // Zasady klatki: prostokąt, paleta bez fartuchów kumpli, fartuch 'b', 0 albo 2 oczy,
 // dwie brwi przy złości, jeden lont Lonta tuż przy głowie.
-function problemsOf(label: string, rows: Frame): string[] {
+function problemsOf(label: string, rows: Frame, wick = true): string[] {
   const out: string[] = []
   if (rows.length > H) out.push(`${label}: ${rows.length} wierszy, najwyżej ${H}`)
   rows.forEach((row, y) => {
@@ -63,6 +68,7 @@ function problemsOf(label: string, rows: Frame): string[] {
     const changed = grid.flatMap((row, y) => [...row].flatMap((cell, x) => (cell === frown[y]![x] ? [] : [`${cell}${frown[y]![x]}`])))
     if (changed.join(',') !== 'gG,gG') out.push(`${label}: brwi przy złości zmieniają ${changed.join(',') || 'nic'}, mają dokładnie dwa piksele skóry 'g' nad oczami`)
   }
+  if (!wick) return out
   const lont = dress(grid, 'Lont')
   const sparks = lont.flatMap((row, y) => [...row].flatMap((cell, x) => (cell === 'o' && grid[y]![x] !== 'o' ? [[x, y] as const] : [])))
   if (sparks.length !== 1) {
@@ -75,14 +81,19 @@ function problemsOf(label: string, rows: Frame): string[] {
   return out
 }
 
-function sheet(acts: readonly Act[], out: string): void {
+// Paski czynności: stójka, wejście, pętla, po `PER_ROW` klatek w wierszu.
+function actStrips(acts: readonly Act[]): string[][][] {
   const strips: string[][][] = []
   for (const act of acts) {
     const frames = [STAND, ...act.intro, ...Array.from({ length: act.length }, (_, t) => act.loop(t, t))].map(pad)
     for (let i = 0; i < frames.length; i += PER_ROW) strips.push(frames.slice(i, i + PER_ROW))
     strips.push([])
   }
-  const width = PER_ROW * (W + GAP) * S
+  return strips
+}
+
+function sheet(strips: readonly (readonly string[][])[], out: string, perRow = PER_ROW, S = SCALE): void {
+  const width = perRow * (W + GAP) * S
   const height = strips.length * (H + GAP) * S
   const px = Buffer.alloc(width * height * 3, 30)
   strips.forEach((strip, r) =>
@@ -125,10 +136,74 @@ function sheet(acts: readonly Act[], out: string): void {
   }
 }
 
+// Pozy bazowe arkusza gestów: stójka i początki pętli, w tym poza siedząca, leżąca i pochylona.
+const GESTURE_POSES: readonly (readonly [string, string])[] = [
+  ['hammer', 'kowadło'],
+  ['torch', 'węszenie'],
+  ['lounge', 'fotel'],
+  ['lounge', 'szezlong'],
+  ['read', 'księga'],
+  ['scout', 'luneta'],
+]
+
+// Zmiana pozy, której gest robić nie wolno: piksel rekwizytu albo fartucha poza głową.
+function trespassOf(label: string, base: Frame, rows: Frame): string[] {
+  const head = headOf(base)
+  const before = pad(base)
+  const after = pad(rows)
+  const near = (x: number, y: number) => head !== null && y >= head.top && y <= head.top + 2 && x >= head.x - 1 && x <= head.x + 4
+  const hit = before.flatMap((row, y) =>
+    [...row].flatMap((cell, x) => (cell === after[y]![x] || cell === '.' || (near(x, y) && 'gGrt'.includes(cell)) ? [] : [`${cell}→${after[y]![x]} (${x}, ${y})`])),
+  )
+  return hit.length > 0 ? [`${label}: gest zasłania rekwizyt albo fartuch: ${hit.join(', ')}`] : []
+}
+
+async function gestureSheet(out: string, only: string | undefined): Promise<string[]> {
+  const { ACTS } = (await import('../hooks/sprites.ts')) as { ACTS: Record<string, readonly Act[]> }
+  const gestures = GESTURES.filter(gesture => only === undefined || gesture.name === only)
+  if (gestures.length === 0) throw new Error(`brak gestu „${only}”: ${GESTURES.map(gesture => gesture.name).join(', ')}`)
+  const shown = GESTURE_POSES.flatMap(([scene, name]) => ACTS[scene]?.filter(act => act.name === name).map(act => act.loop(0, 0)) ?? [])
+  const bases = [STAND, ...shown]
+  const strips = gestures.flatMap(gesture => [...bases.map(base => Array.from({ length: gesture.length }, (_, t) => pad(gesture.apply(base, t)))), []])
+  sheet(strips, out, Math.max(...gestures.map(gesture => gesture.length)), 5)
+  const problems: string[] = []
+  const poses = [{ label: 'stójka', rows: STAND }, ...Object.entries(ACTS).flatMap(([scene, acts]) => acts.map(act => ({ label: `${scene}/${act.name}`, rows: act.loop(0, 0) })))]
+  for (const gesture of gestures) {
+    // Lont nosi lont tylko w gestach, które sam gra.
+    const wick = gesture.who === undefined || gesture.who.includes('Lont')
+    let moved = 0
+    let checked = 0
+    for (const pose of poses) {
+      // Poza, która sama łamie zasady, to sprawa jej czynności, nie gestu.
+      if (problemsOf(pose.label, pose.rows, wick).length > 0) continue
+      checked += 1
+      let changed = false
+      for (let t = 0; t < gesture.length; t += 1) {
+        const rows = gesture.apply(pose.rows, t)
+        const label = `${gesture.name}/${pose.label}/${t}`
+        problems.push(...problemsOf(label, rows, wick), ...trespassOf(label, pose.rows, rows))
+        if (pad(rows).join('') !== pad(pose.rows).join('')) changed = true
+      }
+      if (changed) moved += 1
+      else if (pose.rows === STAND) problems.push(`${gesture.name}: nie widać go na stójce`)
+    }
+    console.log(`${gesture.name}${gesture.who === undefined ? '' : ` (${gesture.who.join(', ')})`}: ${gesture.length} kroków, widać na ${moved}/${checked} pozach`)
+    if (moved * 2 < checked) problems.push(`${gesture.name}: widać go na mniej niż połowie póz (${moved}/${checked})`)
+  }
+  return problems
+}
+
 async function main(): Promise<void> {
   if (process.platform !== 'darwin') throw new Error('Arkusz PNG wymaga macOS i polecenia sips; ta platforma nie jest obsługiwana.')
   const source = process.argv[2] ?? 'lounge'
   const only = process.argv[4]
+  if (source === 'gesty') {
+    const out = process.argv[3] ?? join(mkdtempSync(join(tmpdir(), 'act-sheet-output-')), 'gesty.png')
+    const problems = await gestureSheet(out, only)
+    console.log(out)
+    report(problems)
+    return
+  }
   const all = await actsOf(source)
   const acts = all.filter(act => only === undefined || act.name === only)
   if (acts.length === 0) throw new Error(`brak czynności „${only}”: ${all.map(act => act.name).join(', ')}`)
@@ -141,9 +216,13 @@ async function main(): Promise<void> {
     for (const { label, rows } of framesOf(act)) problems.push(...problemsOf(label, rows))
   }
   const out = process.argv[3] ?? join(mkdtempSync(join(tmpdir(), 'act-sheet-output-')), 'sheet.png')
-  sheet(acts, out)
+  sheet(actStrips(acts), out)
   console.log(out)
   for (const act of acts) console.log(`${act.name}: wejście ${act.intro.length}, pętla ${act.length}`)
+  report(problems)
+}
+
+function report(problems: readonly string[]): void {
   if (problems.length > 0) {
     console.log(`\nZłamane zasady (${problems.length}):\n${problems.join('\n')}`)
     process.exitCode = 1

@@ -1,4 +1,4 @@
-import { SLIDE, STAND, at, draw, flame, head, lerp, line, noise, stander } from '../stage'
+import { SLIDE, STAND, at, croucher, draw, flame, head, lerp, line, noise, pusher, stander, stroll } from '../stage'
 import type { Act, Frame, Layer, Look } from '../stage'
 
 // Piec przy budowaniu, typach i lincie. Piec z kupką węgla i ceber z koszem żaru wjeżdżają
@@ -217,4 +217,73 @@ const blow: Act = {
   loop: bellowsLoop,
 }
 
-export const BUILD_ACTS: Act[] = [stoke, quench, blow]
+// ——— Kęs ———
+const BENDING_ANVIL: Frame = ['ssssss', '..ss..']
+const SMALL_FORGE: Frame = ['.kkk', 'kRRk', 'koRk', 'kkkk']
+const BILLET_PATH = [18, 18, 17, 16, 15, 14, 13, 13, 13, 13, 14, 15, 16, 17, 18, 18] as const
+
+function billetProps(dx: number): Layer[] {
+  return [[BENDING_ANVIL, 11 + dx, 4], [SMALL_FORGE, 17 + dx, 2]]
+}
+
+// Dwie szczęki obejmują rozgrzany koniec; uchwyt pozostaje w dłoni podczas gięcia.
+function billetTongs(tip: number, bent: boolean, dx = 0): Layer[] {
+  return [...line([tip - 5 + dx, 3], [tip - 1 + dx, 3], 'h'), at('S', tip - 1 + dx, 2),
+    at('S', tip - 1 + dx, 4), [[bent ? 'RR' : 'RRR', bent ? '..R' : ''], tip + dx, 3]]
+}
+
+function billetWork(t: number): Frame {
+  const tip = BILLET_PATH[t]!
+  return draw(...billetProps(0), [[...head('right'), ...pusher(t).slice(3)], tip - 13, 0],
+    ...billetTongs(tip, t >= 8 && t <= 13),
+    // Kęs naciska na róg kowadła; po powrocie do pieca ponownie się prostuje.
+    ...(t === 8 || t === 9 ? [at('y', 16, 2), at('o', 17, 1)] : []))
+}
+
+// Kęs: Grom wyciąga stal szczypcami, zagina ją na rogu i wraca do pieca.
+const billet: Act = {
+  name: 'kęs',
+  who: ['Grom'],
+  intro: [
+    ...SLIDE.map(dx => draw(...billetProps(dx), ...billetTongs(18, false, dx), [STAND, 0, 0])),
+    ...stroll(5, [...billetProps(0), ...billetTongs(18, false)]),
+    billetWork(0),
+  ],
+  length: BILLET_PATH.length,
+  loop: billetWork,
+}
+
+// ——— Próba twardości ———
+const TEST_BENCH: Frame = ['hhhhhhhhhhh', '.x.......x.']
+const HARD_STEEL: Frame = ['snnnnnss']
+const SCRATCH_PATH = [11, 11, 12, 13, 14, 15, 16, 16, 16, 15, 14, 13, 12, 11] as const
+
+function scriber(tip: number, y: number, dx = 0): Layer[] {
+  return [[['hhSS'], tip - 4 + dx, y], at('j', tip + dx, y + 1)]
+}
+
+function hardnessWork(t: number): Frame {
+  const tip = SCRATCH_PATH[t]!
+  const lifted = t >= 8 && t <= 12
+  const y = lifted ? 1 : 2
+  const nod = t === 10 || t === 11
+  return draw([TEST_BENCH, 9, 4], [HARD_STEEL, 11, 3],
+    [nod ? croucher('right') : stander('right'), 0, 0],
+    ...line([6, nod ? 4 : 3], [tip - 5, y], 'g'), ...scriber(tip, y),
+    ...(t === 4 || t === 5 ? [at('y', tip + 1, 2), at('o', tip + 2, 1)] : []))
+}
+
+// Próba twardości: Młot prowadzi rysik po stali, podnosi go i kiwa głową nad rysą.
+const hardness: Act = {
+  name: 'próba twardości',
+  who: ['Młot'],
+  intro: [
+    ...SLIDE.map(dx => draw([TEST_BENCH, 9 + dx, 4], [HARD_STEEL, 11 + dx, 3], ...scriber(11, 2, dx), [STAND, 0, 0])),
+    draw([TEST_BENCH, 9, 4], [HARD_STEEL, 11, 3], ...scriber(11, 2), [stander('right', 'g'), 0, 0]),
+    hardnessWork(0),
+  ],
+  length: SCRATCH_PATH.length,
+  loop: hardnessWork,
+}
+
+export const BUILD_ACTS: Act[] = [stoke, quench, blow, billet, hardness]

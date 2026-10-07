@@ -79,4 +79,40 @@ const pondering: Act = {
   loop: mapFrame,
 }
 
-export const THINK_ACTS: Act[] = [weighing, counting, pondering]
+// ——— Nasłuchiwanie kamertonu ———
+// Piryt uderza widełkami o stal, przysuwa je do ucha i słucha.
+// Drgający ząb przesuwa się o piksel; oboje oczu zamyka na chwilę.
+const SOUND_BENCH: Frame = ['hhhhhhhhhhhhh', '.x.........x.']
+const SOUND_STEEL: Frame = ['sssss', 'S.S.S', 'SSSSS']
+const FORK_X = [10, 11, 12, 13, 12, 11, 10, 9, 8, 8, 8, 8, 8, 8, 9, 10] as const
+
+function soundBench(dx: number): Layer[] {
+  return [[SOUND_BENCH, 8 + dx, 4], [SOUND_STEEL, 15 + dx, 1]]
+}
+
+function forkAt(x: number, ringing: boolean): Layer[] {
+  const fork: Frame = ringing ? ['s..s', 's..s', 'sss.', '.h..', '.h..'] : ['s.s', 's.s', 'sss', '.h.', '.h.']
+  return [[fork, x, 0]]
+}
+
+function forkLoop(t: number): Frame {
+  const x = FORK_X[t]!
+  const listening = t >= 8 && t <= 11
+  return draw(...soundBench(0), ...forkAt(x, t >= 4 && t <= 11 && t % 2 === 1),
+    [stander(listening ? 'shut' : 'right', 'gg'), 0, 0], ...line([8, 3], [x + 1, 3], 'g'))
+}
+
+const tuningFork: Act = {
+  name: 'kamerton',
+  who: ['Piryt'],
+  intro: [
+    ...SLIDE.map(dx => draw(...soundBench(dx), ...forkAt(10 + dx, false), [STAND, 0, 0])),
+    draw(...soundBench(0), ...forkAt(10, false), [stander('right', 'g'), 0, 0]),
+    draw(...soundBench(0), ...forkAt(10, false), [stander('right', 'gg'), 0, 0], ...line([8, 3], [9, 3], 'g')),
+    forkLoop(0),
+  ],
+  length: FORK_X.length,
+  loop: forkLoop,
+}
+
+export const THINK_ACTS: Act[] = [weighing, counting, pondering, tuningFork]

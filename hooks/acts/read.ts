@@ -1,4 +1,4 @@
-import { draw, flame, head, lerp, line, stander, stroll, walker } from '../stage'
+import { SLIDE, at, draw, flame, head, lerp, line, pingPong, stander, stroll, walker } from '../stage'
 import type { Act, Frame, Layer, Look, Point } from '../stage'
 
 // Czytanie: zwój, księga na pulpicie, kamienna tablica z runami, książka przy świecy.
@@ -184,4 +184,74 @@ const candleAct: Act = {
   loop: candleLoop,
 }
 
-export const READ_ACTS: Act[] = [scrollAct, book, runes, candleAct]
+// ——— Niuch: obwąchiwanie zwoju ———
+// Nos zbliża się do starego pergaminu; kichnięcie wygania pył za prawą krawędź.
+const SNIFF_SCROLL: Frame = ['hpppph', 'hpnpph', 'hpppph']
+const SNIFF_LEAN = [0, 1, 2, 2, 1, 0, 1, 2, 1, 0, 0, 0, 0, 0, 0, 0] as const
+
+function sniffScrollLoop(t: number): Frame {
+  const x = SNIFF_LEAN[t]!
+  const sneeze = t >= 8 && t <= 10
+  const dust: Layer[] = t >= 9 ? [
+    at('m', 15 + 2 * (t - 9), 1),
+    ...(t >= 10 ? [at('p', 14 + 2 * (t - 9), 2), at('m', 15 + 2 * (t - 9), 3)] : []),
+  ] : []
+  return draw(
+    [stander(sneeze ? 'shut' : 'right'), x, 0],
+    ...line([x + 5, 3], [8, 3], 'g'),
+    [SNIFF_SCROLL, 9, 1],
+    ...dust,
+  )
+}
+
+const sniffScroll: Act = {
+  name: 'obwąchiwanie',
+  who: ['Niuch'],
+  intro: [
+    // Zwój wjeżdża do dłoni; Niuch wyciąga rękę, zanim pergamin do niej dotrze.
+    ...SLIDE.map(dx => draw([stander('right', dx <= 2 ? 'ggg' : dx <= 4 ? 'gg' : 'g'), 0, 0], [SNIFF_SCROLL, 9 + dx, 1])),
+    sniffScrollLoop(0),
+  ],
+  length: 16,
+  loop: sniffScrollLoop,
+}
+
+// ——— Piryt: lupa jubilera ———
+// Szkło i zwój przyjeżdżają na pulpicie; lupa wędruje wzdłuż drobnych run.
+const JEWEL_SCROLL: Frame = ['hpppppph', 'hpnnpnph']
+const JEWEL_DESK: Frame = ['hhhhhhhhh', 'x......x.']
+const JEWEL_LENS: Frame = ['.ss.', 'siis', '.ss.']
+
+function jewelerProps(dx: number, lensX: number): Layer[] {
+  return [[JEWEL_DESK, 11 + dx, 4], [JEWEL_SCROLL, 11 + dx, 2], [JEWEL_LENS, lensX + dx, 0], at('h', lensX + dx + 1, 3)]
+}
+
+function jewelerPose(lensX: number, look: Look): Frame {
+  return draw(
+    [stander(look), 2, 0],
+    ...line([7, 3], [lensX, 3], 'g'),
+    ...jewelerProps(0, lensX),
+  )
+}
+
+function jewelerLoop(t: number): Frame {
+  const sweep = pingPong(t, 4)
+  const rows = jewelerPose(9 + sweep, sweep < 2 ? 'mid' : 'right')
+  return t % 4 === 2 ? draw([rows, 0, 0], at('j', 10 + sweep, 1)) : rows
+}
+
+const jeweler: Act = {
+  name: 'lupa jubilera',
+  who: ['Piryt'],
+  intro: [
+    // Pulpit wjeżdża z lupą; Piryt podchodzi i przesuwa szkło pod oko.
+    ...SLIDE.map(dx => draw(...jewelerProps(dx, 15), [stander('right'), 0, 0])),
+    ...stroll(2, jewelerProps(0, 15)),
+    ...[15, 14, 13, 12, 11, 10].map(x => jewelerPose(x, 'right')),
+    jewelerLoop(0),
+  ],
+  length: 16,
+  loop: jewelerLoop,
+}
+
+export const READ_ACTS: Act[] = [scrollAct, book, runes, candleAct, sniffScroll, jeweler]

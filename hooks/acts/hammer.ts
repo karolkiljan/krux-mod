@@ -1,4 +1,4 @@
-import { SLIDE, STAND, draw, lerp, noise, pingPong, pusher, stander } from '../stage'
+import { SLIDE, STAND, at, draw, lerp, line, noise, pingPong, pusher, stander } from '../stage'
 import type { Act, Frame, Layer } from '../stage'
 
 // Kuźnia przy Edit i Write. Każdy warsztat wjeżdża z prawej z narzędziem na sobie,
@@ -53,6 +53,7 @@ const anvilAt = (x: number): Layer[] => [[ANVIL, x, 4], [['hhhhhSSS'], x - 3, 3]
 // Kowadło: wjeżdża z młotem na grzbiecie, Krux chwyta trzonek i unosi młot; pętla to zamach, uderzenie, iskry.
 const anvil: Act = {
   name: 'kowadło',
+  who: ['Krux', 'Grom'],
   intro: [
     ...SLIDE.map(dx => draw(...anvilAt(ANVIL_AT + dx), [STAND, 0, 0])),
     draw(...anvilAt(ANVIL_AT), [REACH, 0, 0]),
@@ -142,5 +143,91 @@ const grind: Act = {
   loop: grindLoop,
 }
 
+// ——— Nity ———
+const PLATES: Frame = ['sssSssSsss', '..x....x..']
+const RIVET_SWING = [[9, 0], [9, 0], [10, 1], [11, 3], [11, 3], [10, 2], [9, 1], [9, 0],
+  [10, 0], [11, 1], [12, 2], [14, 3], [14, 3], [13, 2], [11, 1], [10, 0]] as const
+
+function rivetWork(x: number, y: number, strike = false): Frame {
+  return draw(
+    [PLATES, 9, 4], [STAND, 0, 0],
+    ...line([5, 3], [7, 2], 'g'), ...line([6, 3], [8, 3], 'g'),
+    ...line([8, 2], [x + 1, y + 1], 'h'), [['SSS'], x, y],
+    ...(strike ? [at('y', x + 3, 2), at('o', x + 4, 1)] : []),
+  )
+}
+
+// Nity: Grom chwyta młot obiema rękami i na zmianę zbija dwa łączenia blach.
+const rivets: Act = {
+  name: 'nity',
+  who: ['Grom'],
+  intro: [
+    ...SLIDE.map(dx => draw([PLATES, 9 + dx, 4], [['hhhhhSSS'], 8 + dx, 2], [STAND, 0, 0])),
+    draw([PLATES, 9, 4], [['hhhhhSSS'], 8, 2], [REACH, 0, 0]),
+    rivetWork(11, 2), rivetWork(10, 1), rivetWork(9, 0),
+  ],
+  length: RIVET_SWING.length,
+  loop: t => {
+    const [x, y] = RIVET_SWING[t]!
+    return rivetWork(x, y, t === 3 || t === 4 || t === 11 || t === 12)
+  },
+}
+
+// ——— Poziomica ———
+const LEVEL: Frame = ['ssiiiss', 'sssssss']
+const LEVEL_BUBBLE = [0, 0, 1, 1, 1, 0, -1, -1, 0, 0, 0, 0] as const
+
+function levelWork(t: number): Frame {
+  return draw([BENCH, BENCH_AT + 2, 4], [LEVEL, 9, 2], at('y', 12 + LEVEL_BUBBLE[t]!, 2),
+    [stander('right', 'ggg'), 0, 0],
+    // Wolna dłoń puka w koniec poziomicy, bąbel wychyla się i wraca do środka.
+    ...line([6, 3], t === 2 || t === 3 ? [9, 1] : [7, 3], 'g'))
+}
+
+// Poziomica: Ochra podnosi przyrząd z ławy, puka w ramkę i obserwuje bąbel.
+const level: Act = {
+  name: 'poziomica',
+  who: ['Ochra'],
+  intro: [
+    ...SLIDE.map(dx => draw([BENCH, BENCH_AT + 2 + dx, 4], [LEVEL, 9 + dx, 3], at('y', 12 + dx, 3), [STAND, 0, 0])),
+    draw([BENCH, BENCH_AT + 2, 4], [LEVEL, 9, 3], at('y', 12, 3), [REACH, 0, 0]),
+    levelWork(0),
+  ],
+  length: LEVEL_BUBBLE.length,
+  loop: levelWork,
+}
+
+// ——— Pilnik ———
+const CLAMP: Frame = ['..s..', '..s..', '.SSS.', 'xxxxx']
+
+function fileTool(dx: number, y: number): Layer[] {
+  return [[['hh'], 7 + dx, y], ...line([9 + dx, y], [15 + dx, y + 1], 's')]
+}
+
+function fileWork(t: number): Frame {
+  const dx = lerp(0, 2, pingPong(t, 8) / 8)
+  const chips: Layer[] = []
+  // Opiłki rodzą się na krawędzi przy pchnięciu, opadają przez dwie klatki.
+  for (let age = 0; age < 2; age++) {
+    const born = t - age
+    if (born >= 2 && born <= 8) chips.push(at('m', 16 + age, 4 + age))
+  }
+  return draw([BENCH, BENCH_AT + 2, 4], [CLAMP, 13, 2],
+    [stander('right'), 0, 0], ...line([6, 3], [7 + dx, 2], 'g'),
+    ...fileTool(dx, 2), ...chips)
+}
+
+// Pilnik: ork zdejmuje narzędzie z ławy, wygładza stal w imadle; opiłki spadają.
+const filing: Act = {
+  name: 'pilnik',
+  intro: [
+    ...SLIDE.map(dx => draw([BENCH, BENCH_AT + 2 + dx, 4], [CLAMP, 13 + dx, 2], ...fileTool(dx, 3), [STAND, 0, 0])),
+    draw([BENCH, BENCH_AT + 2, 4], [CLAMP, 13, 2], ...fileTool(0, 3), [stander('right', 'g'), 0, 0]),
+    fileWork(0),
+  ],
+  length: 16,
+  loop: fileWork,
+}
+
 // Miech dmucha w palenisko, więc gra w scenie budowania (`build.ts`), nie przy kowadle.
-export const HAMMER_ACTS: Act[] = [anvil, plane, grind]
+export const HAMMER_ACTS: Act[] = [anvil, plane, grind, rivets, level, filing]

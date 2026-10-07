@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine, TestBody } from 'claude-code/testing'
 import type { AgentStatus, SessionUsage, TurnStepChunk } from 'claude-code'
 
-import { ACTS, PALETTE, SPEAKER_COLOR } from '../hooks/sprites'
+import { PALETTE, SPEAKER_COLOR, actsFor } from '../hooks/sprites'
 import type { StageScene } from '../hooks/sprites'
 import { replay } from '../hooks/lore'
 import { COMPACT_NOTE, FORMAT_HINT, LENGTH_HINT, RISK_HINT, VOICE_ANCHOR, VOICE_SHORT } from '../hooks/voice'
@@ -367,10 +367,11 @@ test('the smith moves: frames change on the frame clock', async ($, on) => {
   expect(after).not.toBe(before)
 })
 
-// Kolory rekwizytów sceny, których nie ma w porównywanych scenach ani na samym orku.
+// Kolory rekwizytów sceny Kruxa, których nie ma w porównywanych scenach ani na samym orku.
+// Czynności innego fachu Krux nie gra, więc ich kolory nie świadczą o scenie.
 function propColors(scene: StageScene, ...others: StageScene[]): Set<string> {
   const cells = (of: StageScene) =>
-    new Set(ACTS[of].flatMap(act => [...act.intro, ...Array.from({ length: act.length }, (_, t) => act.loop(t, t))]).join('').split(''))
+    new Set(actsFor(of, 'Krux').flatMap(act => [...act.intro, ...Array.from({ length: act.length }, (_, t) => act.loop(t, t))]).join('').split(''))
   const taken = new Set([...'.gGrtb', ...others.flatMap(other => [...cells(other)])])
   // Pomarańcz dymka Kruxa to ten sam kolor co iskra: dymek nie świadczy o scenie.
   return new Set([...cells(scene)].filter(cell => !taken.has(cell)).map(cell => PALETTE[cell]!).filter(color => color !== SPEAKER_COLOR.Krux))

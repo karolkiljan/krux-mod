@@ -1,4 +1,4 @@
-import { STAND, at, croucher, draw, head, noise, stander, walker } from '../stage'
+import { STAND, at, croucher, draw, head, line, noise, stander, walker } from '../stage'
 import type { Act, Frame, Layer, Look } from '../stage'
 
 // Rozglądanie się za plikami: ork czai się w krzaku, patrzy przez lunetę i obchodzi teren z włócznią.
@@ -139,4 +139,34 @@ const burrow: Act = {
   loop: burrowLoop,
 }
 
-export const SCOUT_ACTS: Act[] = [bush, spy, patrol, burrow]
+// ——— Niuch: badanie wiatru ———
+// Zwilżony palec w górze; liść wlatuje z prawej i przemyka za orkiem.
+const WIND_LEAF: Frame = ['.f', 'lh']
+
+function windHand(tip: number): Layer[] {
+  return [...line([5, 3], [7, 2], 'g'), ...line([7, 2], [7, tip], 'g'), at('i', 7, tip)]
+}
+
+function windLoop(t: number): Frame {
+  const x = 22 - 2 * t
+  const y = t < 4 ? 1 : t < 8 ? 2 : 3
+  return draw([WIND_LEAF, x, y], [stander(t < 8 ? 'right' : 'mid'), 0, 0], ...windHand(0))
+}
+
+const wind: Act = {
+  name: 'wiatr',
+  who: ['Niuch'],
+  intro: [
+    // Palec do ust, potem nad głowę; liść na starcie dopiero za krawędzią.
+    draw([stander('right', 'g'), 0, 0]),
+    draw([stander('right'), 0, 0], at('g', 6, 2)),
+    draw([stander('right'), 0, 0], at('i', 6, 2), at('g', 6, 3)),
+    draw([stander('right'), 0, 0], ...windHand(2)),
+    draw([stander('right'), 0, 0], ...windHand(1)),
+    windLoop(0),
+  ],
+  length: 16,
+  loop: windLoop,
+}
+
+export const SCOUT_ACTS: Act[] = [bush, spy, patrol, burrow, wind]

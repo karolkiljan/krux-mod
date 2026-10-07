@@ -203,4 +203,90 @@ const wall: Act = {
   loop: t => wallWork(t),
 }
 
-export const TEAR_ACTS: Act[] = [dynamite, haul, wall]
+// ——— Miarka Lonta ———
+// Na kamiennej ławie leży lont odwinięty ze szpuli. Lont przykłada nóż jak miarkę trzy razy z rzędu,
+// za każdym razem stawia kredą znak na lontie, dopiero za trzecim tnie. Odcięty kawałek zwija
+// do dłoni, a szpula odwija nowy lont na całą ławę.
+const BENCH: Frame = ['kkkkkkkkkkkk', '.x........x.', '.x........x.']
+const BENCH_AT = 8
+// Szpula na ławie w dwóch położeniach: kręci się, gdy odwija lont.
+const SPOOL: readonly Frame[] = [['.h.', 'hxh', '.h.'], ['h.h', '.x.', 'h.h']]
+const SPOOL_AT = 19
+// Nóż leży płasko: rękojeść z lewej, ostrze z prawej; trzy piksele to jedna miara.
+const KNIFE: Frame = ['xss']
+const SPANS = [8, 11, 14] as const
+// Kreda na lontie na końcu każdej miary; po trzeciej cięcie tuż za znakiem.
+const CHALK = SPANS.map(x => x + 2)
+const CUT = 17
+
+// Ława przesunięta o `dx`: lont od `from` do szpuli, przerwa w `gap`, kreda na `marks`.
+function bench(dx: number, from: number, opts: { gap?: number; marks?: readonly number[]; turn?: number } = {}): Layer[] {
+  const fuse: Layer[] = []
+  for (let x = from; x < SPOOL_AT; x += 1) if (x !== opts.gap) fuse.push(at((opts.marks ?? []).includes(x) ? 'j' : 'h', x + dx, 2))
+  return [[BENCH, BENCH_AT + dx, 3], ...fuse, [SPOOL[(opts.turn ?? 0) % 2]!, SPOOL_AT + dx, 0]]
+}
+
+// Lont w kroku: `step` przestawia nogi, gdy przesuwa się wzdłuż ławy.
+function lont(x: number, look: Look, step = 0): Layer {
+  return [[...head(look), 'bbbbbb', '.bGGb.', step % 2 === 0 ? '.G..G.' : '..GG..'], x, 0]
+}
+
+// Dłoń z orka w punkcie `hand`: ręka od fartucha.
+function reach(orcX: number, hand: Point): Layer[] {
+  return line([orcX + 6, 3], hand, 'g')
+}
+
+// Miara `k`: nóż leży na lontie, Lont trzyma rękojeść.
+function laid(k: number, look: Look, marks: readonly number[]): Frame {
+  const x0 = SPANS[k]!
+  return draw(...bench(0, BENCH_AT, { marks }), lont(x0 - 8, look), [KNIFE, x0, 1], ...reach(x0 - 8, [x0 - 1, 1]))
+}
+
+// Między miarami nóż przeskakuje nad lontem, Lont przestępuje.
+function hop(k: number, marks: readonly number[]): Frame {
+  const x0 = SPANS[k]! + 1
+  return draw(...bench(0, BENCH_AT, { marks }), lont(x0 - 8, 'right', 1), [KNIFE, x0 + 1, 0], ...reach(x0 - 8, [x0, 0]))
+}
+
+function measuring(t: number): Frame {
+  // 0–5: trzy miary, za każdą znak kredą; po trzeciej kiwnąć głową na widza: zgadza się.
+  if (t === 0) return laid(0, 'right', [CHALK[0]])
+  if (t === 1) return hop(0, CHALK.slice(0, 1))
+  if (t === 2) return laid(1, 'right', CHALK.slice(0, 2))
+  if (t === 3) return hop(1, CHALK.slice(0, 2))
+  if (t < 6) return laid(2, t === 4 ? 'right' : 'mid', CHALK)
+  // 6–8: unieść nóż ostrzem w dół nad lont i ciąć tuż za trzecim znakiem.
+  if (t < 9) {
+    const down = t === 7 ? 1 : 0
+    return draw(...bench(0, BENCH_AT, { marks: CHALK, gap: t === 6 ? undefined : CUT }), lont(6, 'right'),
+      ...reach(6, [CUT - 1, down]), [['x', 's'], CUT, down])
+  }
+  // 9–11: zwinąć odcięty kawałek do dłoni, cofając się wzdłuż ławy.
+  if (t < 12) {
+    const end = [13, 10, 7][t - 9]!
+    const orcX = Math.max(0, end - 8)
+    const piece: Layer[] = []
+    for (let x = BENCH_AT; x <= end; x += 1) piece.push(at(CHALK.includes(x) ? 'j' : 'h', x, 2))
+    return draw(...bench(0, CUT + 1), ...piece, lont(orcX, 'right', t), ...reach(orcX, [end, 2]), [['s', 'x'], end, 0])
+  }
+  // 12–14: szpula odwija nowy lont na całą ławę; 15: nóż wraca nad pierwszą miarę.
+  if (t < 15) return draw(...bench(0, [15, 11, BENCH_AT][t - 12]!, { turn: t }), lont(0, 'right'), ...reach(0, [7, 2]), [['s', 'x'], 7, 0])
+  return draw(...bench(0, BENCH_AT), lont(0, 'right'), [KNIFE, 8, 0], ...reach(0, [7, 1]))
+}
+
+const measure: Act = {
+  name: 'miarka',
+  who: ['Lont'],
+  intro: [
+    // Ława z lontem, szpulą i nożem wjeżdża z prawej.
+    ...SLIDE.map(dx => draw(...bench(dx, BENCH_AT), [KNIFE, 8 + dx, 1], [STAND, 0, 0])),
+    // Spojrzeć na lont i sięgnąć po nóż.
+    draw(...bench(0, BENCH_AT), [KNIFE, 8, 1], [stander('right'), 0, 0]),
+    draw(...bench(0, BENCH_AT), [KNIFE, 8, 1], [stander('right', 'g'), 0, 0]),
+    draw(...bench(0, BENCH_AT), [KNIFE, 8, 1], lont(0, 'right'), ...reach(0, [7, 1])),
+  ],
+  length: 16,
+  loop: measuring,
+}
+
+export const TEAR_ACTS: Act[] = [dynamite, haul, wall, measure]

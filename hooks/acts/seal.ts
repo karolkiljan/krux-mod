@@ -99,4 +99,33 @@ const tie: Act = {
   loop: tieLoop,
 }
 
-export const SEAL_ACTS: Act[] = [wax, press, tie]
+// ——— Pieczęć pod światło ———
+// Piryt podnosi pergamin ku świecy i mruży oboje oczu.
+// Pieczęć jedzie na pergaminie, świeca na stole; nic nie znika.
+const SEALED_PAPER: Frame = ['ppdpp', 'pdydp', 'ppdpp']
+const CANDLE: Frame = ['.y.', '.o.', '.p.', '.p.', 'sss']
+
+function lightBench(dx: number, x: number, y: number): Layer[] {
+  return [[BENCH, BENCH_X + dx, 4], [CANDLE, 18 + dx, 0], [SEALED_PAPER, x + dx, y]]
+}
+
+function lightLoop(t: number): Frame {
+  const x = 10 + Math.floor(pingPong(t, 8) / 3)
+  const y = t < 3 || t >= 13 ? 1 : 0
+  return draw(...lightBench(0, x, y), [stander(t >= 6 && t <= 9 ? 'shut' : 'right', 'gg'), 0, 0], ...line([8, 3], [x, y + 2], 'g'))
+}
+
+const light: Act = {
+  name: 'pod światło',
+  who: ['Piryt'],
+  intro: [
+    ...SLIDE.map(dx => draw(...lightBench(dx, 10, 1), [STAND, 0, 0])),
+    draw(...lightBench(0, 10, 1), [stander('right', 'g'), 0, 0]),
+    draw(...lightBench(0, 10, 1), [stander('right', 'gg'), 0, 0], ...line([8, 3], [9, 3], 'g')),
+    lightLoop(0),
+  ],
+  length: 16,
+  loop: lightLoop,
+}
+
+export const SEAL_ACTS: Act[] = [wax, press, tie, light]

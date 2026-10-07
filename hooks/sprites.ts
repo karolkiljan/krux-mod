@@ -19,8 +19,9 @@ import { NAMELESS_APRON, dress } from './apron'
 import type { Face } from './apron'
 import { PALETTE } from './palette'
 import { MATES, ROSTER } from './roster'
-import { H, W, actFrame, at, dots, draw, flame, leadIn, moodOf, pad, restFrame, settleFrames, stander, walker } from './stage'
-import type { Act, Frame, Layer } from './stage'
+import { GESTURES } from './fidget'
+import { H, W, actFrame, at, dots, draw, finalLoop, flame, leadIn, legAt, moodOf, noise, pad, restFrame, rotation, settleFrames, stander, walker } from './stage'
+import type { Act, Frame, Layer, Leg, Route } from './stage'
 
 // Siatki pikseli kowala i hordy. Czyste funkcje: płótno `forge.ts` tylko je rysuje.
 
@@ -66,10 +67,56 @@ function finish(rows: Frame, variant: 'band' | 'pane', mood: KruxMood, blink: bo
   return grid.map((row, y) => `${row}..${hearthRow(frame, y)}`)
 }
 
+// Takt płótna: klatka co 150 ms.
+export const FRAME_MS = 150
+const SECOND = 1000 / FRAME_MS
+
+// Czynność sceny przy robocie gra około 30 s, potem następna z tej samej sceny.
+const WORK_FRAMES = Math.round(30 * SECOND)
+
+// Czynności sceny, które gra ten ork: bez `who` każdy, z `who` tylko wymieniony fach.
+export function actsFor(scene: StageScene, face: Face): Act[] {
+  return ACTS[scene].filter(act => act.who === undefined || (face !== null && act.who.includes(face)))
+}
+
+function gesturesFor(face: Face) {
+  return GESTURES.filter(gesture => gesture.who === undefined || (face !== null && gesture.who.includes(face)))
+}
+
+// Czekanie na hordę opowiada historię i idzie tylko naprzód: krótko fotel albo szezlong,
+// dłużej ryby albo szezlong, potem znowu coś innego, na końcu ognisko. Progi pływają o ±25%.
+const WAIT_STAGES = [20, 60, 180]
+
+function waitLegs(seed: number): Leg[] {
+  const named = (name: string) => REST_ACTS.find(act => act.name === name)!
+  const pick = (names: string[], i: number) => names[Math.floor(noise(seed, i, 11) * names.length)]!
+  const first = pick(['fotel', 'szezlong'], 0)
+  const second = pick(['ryby', 'szezlong'].filter(name => name !== first), 1)
+  const third = pick(['ryby', 'szezlong', 'fotel'].filter(name => name !== second), 2)
+  const ends = WAIT_STAGES.map((seconds, i) => Math.round(seconds * (0.75 + 0.5 * noise(seed, i, 13)) * SECOND))
+  return [
+    { act: named(first), frames: ends[0]! },
+    { act: named(second), frames: ends[1]! - ends[0]! },
+    { act: named(third), frames: ends[2]! - ends[1]! },
+    { act: named('ognisko'), frames: Infinity },
+  ]
+}
+
+// Przy ognisku Krux zasypia po minucie.
+const DOZE_FRAMES = Math.round(60 * SECOND)
+
+// Trasa orka w scenie: `first` to czynność, od której rusza epizod roboty.
+export function routeOf(scene: StageScene, face: Face, seed: number, first = seed): Route {
+  const gestures = gesturesFor(face)
+  const every = 3 + (seed % 2)
+  if (scene === 'lounge') return { legs: waitLegs(seed), cyclic: false, gestures, every, seed }
+  return { legs: rotation(actsFor(scene, face), first, WORK_FRAMES), cyclic: true, gestures, every, seed }
+}
+
 // Siatka pikseli jednej klatki: `step` liczy od początku sceny, `seed` wybiera pierwszą czynność,
 // `frame` to zegar płótna dla szumu ognia i wody.
-export function frameGrid(step: number, variant: 'band' | 'pane', scene: StageScene = 'hammer', mood: KruxMood = 'calm', seed = 0, frame = step): string[] {
-  return finish(actFrame(ACTS[scene], seed, step, frame), variant, mood, step % BLINK_EVERY === BLINK_EVERY - 1, frame)
+export function frameGrid(step: number, variant: 'band' | 'pane', scene: StageScene = 'hammer', mood: KruxMood = 'calm', seed = 0, frame = step, face: Face = 'Krux'): string[] {
+  return finish(actFrame(routeOf(scene, face, seed), step, frame), variant, mood, step % BLINK_EVERY === BLINK_EVERY - 1, frame)
 }
 
 // ——— Oś czynności jednego orka ———
@@ -78,14 +125,37 @@ export function frameGrid(step: number, variant: 'band' | 'pane', scene: StageSc
 
 export type Track = {
   scene: StageScene
+  // Kto gra: od fachu zależą czynności i gesty.
+  face: Face
   // Klatka, od której gra obecna scena (po marszu i po zejściu poprzedniej).
   since: number
   // Klatka, w której ta scena przyszła: od niej liczy się przytrzymanie.
   setAt: number
-  // Wybiera pierwszą czynność sceny.
+  // Los epizodu: gesty, historia czekania.
   seed: number
+  // Czynność, od której rusza epizod roboty.
+  first: number
+  // Czynność, od której ruszy następny epizod każdej sceny: epizody się różnią.
+  memory: Partial<Record<StageScene, number>>
   // Przerwana scena, która jeszcze schodzi do stójki; `fast`, gdy czeka już nowa.
-  leaving: { scene: StageScene; seed: number; step: number; at: number; fast?: boolean } | null
+  leaving: { scene: StageScene; seed: number; first: number; step: number; at: number; fast?: boolean } | null
+}
+
+function routeOfTrack(track: Pick<Track, 'scene' | 'face' | 'seed' | 'first'>): Route {
+  return routeOf(track.scene, track.face, track.seed, track.first)
+}
+
+// Przed zmianą sceny: następny epizod tej sceny ruszy od czynności po obecnej.
+function remember(track: Track, frame: number): Track['memory'] {
+  if (track.scene === 'lounge') return track.memory
+  return { ...track.memory, [track.scene]: track.first + legAt(routeOfTrack(track), Math.max(0, frame - track.since)) + 1 }
+}
+
+// Nowy epizod sceny: los z klatki, czynność z pamięci albo z losu.
+function episode(track: Track, scene: StageScene, key: string, frame: number): Pick<Track, 'scene' | 'seed' | 'first' | 'memory'> {
+  const memory = remember(track, frame)
+  const seed = seedOf(key, frame)
+  return { scene, seed, first: memory[scene] ?? seed, memory }
 }
 
 // Scena gra co najmniej 1,5 s: szybkie Read, Grep, Read nie mogą mrugać co klatkę.
@@ -100,10 +170,10 @@ function seedOf(key: string, frame: number): number {
 
 // Nowa oś w klatce `frame`: `'in-loop'` — ork już w pętli roboty (start płótna);
 // liczba — tyle klatek marszu do slotu, potem stójka i wejście czynności.
-export function trackStart(scene: StageScene, key: string, frame: number, start: 'in-loop' | number): Track {
+export function trackStart(scene: StageScene, key: string, frame: number, start: 'in-loop' | number, face: Face = key === 'krux' ? 'Krux' : null): Track {
   const seed = seedOf(key, frame)
-  const since = start === 'in-loop' ? frame - leadIn(ACTS[scene], seed) : frame + start
-  return { scene, since, setAt: frame, seed, leaving: null }
+  const since = start === 'in-loop' ? frame - leadIn(routeOf(scene, face, seed)) : frame + start
+  return { scene, face, since, setAt: frame, seed, first: seed, memory: {}, leaving: null }
 }
 
 // Nowa scena po przytrzymaniu: stara schodzi do stójki, dopiero potem wchodzi nowa.
@@ -111,9 +181,15 @@ export function trackStart(scene: StageScene, key: string, frame: number, start:
 // W bezruchu zmiana od razu, bez zejścia.
 export function trackTo(track: Track, scene: StageScene, key: string, frame: number, still: boolean): Track {
   if (scene === track.scene) return track
-  if (still) return { scene, since: frame, setAt: frame, seed: seedOf(key, frame), leaving: null }
+  if (still) return { ...track, ...episode(track, scene, key, frame), since: frame, setAt: frame, leaving: null }
   if (frame < track.since || frame - track.setAt < HOLD_FRAMES) return track
-  return { ...settle(track, frame, true), scene, setAt: frame, seed: seedOf(key, frame) }
+  return { ...track, ...settle(track, frame, true), ...episode(track, scene, key, frame), setAt: frame }
+}
+
+// Krux drzemie przy ognisku, gdy czekanie na hordę trwa długo.
+export function trackDozing(track: Track, frame: number): boolean {
+  if (track.scene !== 'lounge' || frame < track.since) return false
+  return (finalLoop(routeOfTrack(track), frame - track.since) ?? -1) >= DOZE_FRAMES
 }
 
 // Zejście w pośpiechu, gdy nowa scena już czeka: co druga klatka, stójka na końcu
@@ -122,15 +198,15 @@ function hurried(frames: Frame[]): Frame[] {
   return frames.filter((_, i) => i % 2 === 1 || i === frames.length - 1)
 }
 
-function settleOf(left: NonNullable<Track['leaving']>): Frame[] {
-  const frames = settleFrames(ACTS[left.scene], left.seed, left.step)
+function settleOf(left: NonNullable<Track['leaving']>, face: Face): Frame[] {
+  const frames = settleFrames(routeOfTrack({ ...left, face }), left.step)
   return left.fast === true ? hurried(frames) : frames
 }
 
 // Obecna scena schodzi do stójki od klatki `frame`: `since` to klatka, w której ork stoi.
 function settle(track: Track, frame: number, fast: boolean): Pick<Track, 'since' | 'leaving'> {
-  const left = { scene: track.scene, seed: track.seed, step: frame - track.since, at: frame, fast }
-  const back = settleOf(left).length
+  const left = { scene: track.scene, seed: track.seed, first: track.first, step: frame - track.since, at: frame, fast }
+  const back = settleOf(left, track.face).length
   return { since: frame + back, leaving: back > 0 ? left : null }
 }
 
@@ -144,13 +220,14 @@ export function trackOff(track: Track, frame: number): Track {
 // Siatka orka w klatce: w bezruchu poza z rekwizytem (pierwsza klatka pętli), w trakcie
 // zejścia przerwanej sceny jej klatka, potem obecna scena.
 export function trackGrid(track: Track, frame: number, variant: 'band' | 'pane', mood: KruxMood, still: boolean): string[] {
-  if (still) return finish(restFrame(ACTS[track.scene], track.seed), variant, mood, false, 0)
+  if (still) return finish(restFrame(routeOfTrack(track)), variant, mood, false, 0)
   const left = track.leaving
   if (left !== null && frame < track.since) {
-    const rows = settleOf(left)[frame - left.at]
+    const rows = settleOf(left, track.face)[frame - left.at]
     if (rows !== undefined) return finish(rows, variant, mood, false, frame)
   }
-  return frameGrid(Math.max(0, frame - track.since), variant, track.scene, mood, track.seed, frame)
+  const step = Math.max(0, frame - track.since)
+  return finish(actFrame(routeOfTrack(track), step, frame), variant, mood, step % BLINK_EVERY === BLINK_EVERY - 1, frame)
 }
 
 export type Run = { text: string; color?: string; backgroundColor?: string }

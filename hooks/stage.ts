@@ -1,6 +1,8 @@
 // Warsztat czynności: z czego składa się klatka orka, jak czynność wchodzi, gra i schodzi.
 // Czyste funkcje; `sprites.ts` tylko składa z nich scenę, a `acts/*.ts` rysują czynności.
 
+import type { KruxMate } from '../types'
+
 // Prostokąt jednego orka w pikselach. Komórka terminala niesie dwa piksele w pionie.
 export const W = 22
 export const H = 6
@@ -12,11 +14,13 @@ export type Frame = readonly string[]
 // zejście to wejście puszczone wstecz, więc ork wstaje z szezlonga, a nie znika.
 // Oczy to dokładnie dwa piksele 'r' (zamknięte oczy: zero) — humor maluje brwi nad nimi.
 // Fartuch to 'b': kumpel dostaje w tym miejscu swój kolor, więc rekwizyty go nie używają.
+// `who` zawęża czynność do orków jednego fachu; bez niego gra każdy.
 export type Act = {
   name: string
   intro: readonly Frame[]
   length: number
   loop: (t: number, frame: number) => Frame
+  who?: readonly ('Krux' | KruxMate)[]
 }
 
 // Stójka: od niej zaczyna się i na niej kończy każda czynność, także marsz na scenę.
@@ -144,67 +148,118 @@ export function bonfire(x: number, frame: number, size: number): Layer[] {
 }
 
 // ——— Oś czasu sceny ———
-// Scena ma kilka czynności; ta sama scena gra je po kolei, każdą przez około SEGMENT klatek:
-// stójka → wejście → pętla × k → zejście, potem następna czynność. `seed` wybiera pierwszą.
+// Trasa to kolejne odcinki: każdy gra jedną czynność przez około `frames` klatek,
+// stójka → wejście → pętla × k → zejście, potem następny odcinek. Trasa roboty krąży,
+// trasa czekania idzie tylko naprzód i kończy się odcinkiem bez końca.
 
-const SEGMENT = 60
+export type Leg = { act: Act; frames: number }
 
-type Spot = { act: Act; phase: 'stand' | 'intro' | 'loop' | 'outro'; i: number }
-
-function loopsOf(act: Act): number {
-  return Math.max(1, Math.round((SEGMENT - 1 - 2 * act.intro.length) / act.length))
+// Gest wiercenia: na chwilę zmienia pozę z początku pętli, nie puszcza rekwizytu.
+// `apply` dostaje tę pozę i krok gestu; klatka zostaje w zasadach czynności.
+export type Gesture = {
+  name: string
+  who?: readonly ('Krux' | KruxMate)[]
+  length: number
+  apply: (rows: Frame, t: number) => Frame
 }
 
-function totalOf(act: Act): number {
-  return 1 + 2 * act.intro.length + loopsOf(act) * act.length
+// `gestures` grają na początku co `every`-tego obiegu pętli; `seed` wybiera który.
+export type Route = { legs: readonly Leg[]; cyclic: boolean; gestures: readonly Gesture[]; every: number; seed: number }
+
+type Spot = { leg: number; act: Act; phase: 'stand' | 'intro' | 'loop' | 'outro'; i: number }
+
+function loopsOf(leg: Leg): number {
+  if (leg.frames === Infinity) return Infinity
+  return Math.max(1, Math.round((leg.frames - 1 - 2 * leg.act.intro.length) / leg.act.length))
 }
 
-function order(acts: readonly Act[], seed: number): Act[] {
-  const start = Math.abs(Math.trunc(seed)) % acts.length
-  return acts.map((_, j) => acts[(start + j) % acts.length]!)
+function totalOf(leg: Leg): number {
+  return 1 + 2 * leg.act.intro.length + loopsOf(leg) * leg.act.length
 }
 
-function spotOf(acts: readonly Act[], seed: number, step: number): Spot {
-  const queue = order(acts, seed)
-  const period = queue.reduce((sum, act) => sum + totalOf(act), 0)
-  let t = ((step % period) + period) % period
+// Odcinki po kolei od czynności `start`, każdy po `frames` klatek.
+export function rotation(acts: readonly Act[], start: number, frames: number): Leg[] {
+  const first = Math.abs(Math.trunc(start)) % acts.length
+  return acts.map((_, j) => ({ act: acts[(first + j) % acts.length]!, frames }))
+}
+
+function spotOf(route: Route, step: number): Spot {
+  const { legs } = route
+  const period = legs.reduce((sum, leg) => sum + totalOf(leg), 0)
+  let t = route.cyclic ? ((step % period) + period) % period : Math.max(0, step)
   let k = 0
-  while (t >= totalOf(queue[k]!)) t -= totalOf(queue[k++]!)
-  const act = queue[k]!
+  while (k < legs.length - 1 && t >= totalOf(legs[k]!)) t -= totalOf(legs[k++]!)
+  const act = legs[k]!.act
   const n = act.intro.length
-  const loops = loopsOf(act) * act.length
-  if (t === 0) return { act, phase: 'stand', i: 0 }
-  if (t <= n) return { act, phase: 'intro', i: t - 1 }
-  if (t <= n + loops) return { act, phase: 'loop', i: t - 1 - n }
-  return { act, phase: 'outro', i: t - 1 - n - loops }
+  const loops = loopsOf(legs[k]!) * act.length
+  // Trasa naprzód kończy się na ostatnim odcinku: po jego czasie pętla gra dalej.
+  if (!route.cyclic && k === legs.length - 1 && t >= totalOf(legs[k]!)) return { leg: k, act, phase: 'loop', i: t - 1 - n }
+  if (t === 0) return { leg: k, act, phase: 'stand', i: 0 }
+  if (t <= n) return { leg: k, act, phase: 'intro', i: t - 1 }
+  if (t <= n + loops) return { leg: k, act, phase: 'loop', i: t - 1 - n }
+  return { leg: k, act, phase: 'outro', i: t - 1 - n - loops }
 }
 
-function frameOf(spot: Spot, frame: number): Frame {
+// Gest w kroku `i` pętli: na początku co `every`-tego obiegu, gdy do końca pętli
+// starczy klatek. Odcinek bez końca też się wierci.
+function gestureAt(route: Route, spot: Spot): { gesture: Gesture; t: number } | null {
+  if (spot.phase !== 'loop' || route.gestures.length === 0) return null
+  const { act, i } = spot
+  const span = Math.max(act.length, Math.ceil(GESTURE_SPAN / act.length) * act.length)
+  const round = Math.floor(i / span)
+  if (round % route.every !== route.every - 1) return null
+  const t = i - round * span
+  const gesture = route.gestures[Math.floor(noise(route.seed, spot.leg, round) * route.gestures.length)]!
+  if (t >= gesture.length) return null
+  const loops = loopsOf(route.legs[spot.leg]!) * act.length
+  if (i - t + gesture.length > loops) return null
+  return { gesture, t }
+}
+
+// Obieg wiercenia liczy się w pełnych pętlach czynności, około 3 s.
+const GESTURE_SPAN = 20
+
+function frameOf(route: Route, spot: Spot, frame: number): Frame {
   const { act, phase, i } = spot
   if (phase === 'stand') return STAND
   if (phase === 'intro') return act.intro[i]!
-  if (phase === 'loop') return act.loop(i % act.length, frame)
+  if (phase === 'loop') {
+    const fidget = gestureAt(route, spot)
+    if (fidget !== null) return fidget.gesture.apply(act.loop((i - fidget.t) % act.length, frame - fidget.t), fidget.t)
+    return act.loop(i % act.length, frame)
+  }
   return act.intro[act.intro.length - 1 - i]!
 }
 
-export function actFrame(acts: readonly Act[], seed: number, step: number, frame: number): Frame {
-  return frameOf(spotOf(acts, seed, step), frame)
+export function actFrame(route: Route, step: number, frame: number): Frame {
+  return frameOf(route, spotOf(route, step), frame)
+}
+
+// Który odcinek trasy gra w kroku `step`: z niego pamięć sceny wybiera następny epizod.
+export function legAt(route: Route, step: number): number {
+  return spotOf(route, step).leg
+}
+
+// Ile klatek ostatni odcinek trasy naprzód już gra w pętli; przed nim `null`.
+export function finalLoop(route: Route, step: number): number | null {
+  if (route.cyclic) return null
+  const spot = spotOf(route, step)
+  return spot.leg === route.legs.length - 1 && spot.phase === 'loop' ? spot.i : null
 }
 
 // Klatki od stójki do pierwszej klatki pętli: płótno na starcie od razu pokazuje robotę.
-export function leadIn(acts: readonly Act[], seed: number): number {
-  return 1 + order(acts, seed)[0]!.intro.length
+export function leadIn(route: Route): number {
+  return 1 + route.legs[0]!.act.intro.length
 }
 
 // Poza w bezruchu: pierwsza klatka pętli pierwszej czynności, z rekwizytem w ręku.
-export function restFrame(acts: readonly Act[], seed: number): Frame {
-  const act = order(acts, seed)[0]!
-  return act.loop(0, 0)
+export function restFrame(route: Route): Frame {
+  return route.legs[0]!.act.loop(0, 0)
 }
 
 // Droga do stójki po przerwanej scenie: reszta wejścia albo całe zejście, na końcu stójka.
-export function settleFrames(acts: readonly Act[], seed: number, step: number): Frame[] {
-  const { act, phase, i } = spotOf(acts, seed, step)
+export function settleFrames(route: Route, step: number): Frame[] {
+  const { act, phase, i } = spotOf(route, step)
   const back = (from: number) => [...act.intro.slice(0, from)].reverse()
   if (phase === 'stand') return []
   if (phase === 'intro') return [...back(i), STAND]

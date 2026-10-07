@@ -1,8 +1,10 @@
 import { expect, test } from 'claude-code/testing'
 
-import { ACTS, BUBBLE_TEXT, CATCH_X, CUE_FRAMES, HOLD_FRAMES, ORC_GAP, ORC_WIDTH, PALETTE, bandColumns, behind, bubbleLines, canvasColumns, catchStep, caughtScroll, dress, frameGrid, forgeColumns, runsOf, slotX, stageGrid, tossFrames, trackGrid, trackOff, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withNap } from '../hooks/sprites'
+import { GESTURES } from '../hooks/fidget'
+import { MATES } from '../hooks/roster'
+import { ACTS, BUBBLE_TEXT, CATCH_X, CUE_FRAMES, FRAME_MS, HOLD_FRAMES, actsFor, routeOf, trackDozing, ORC_GAP, ORC_WIDTH, PALETTE, bandColumns, behind, bubbleLines, canvasColumns, catchStep, caughtScroll, dress, frameGrid, forgeColumns, runsOf, slotX, stageGrid, tossFrames, trackGrid, trackOff, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withNap } from '../hooks/sprites'
 import type { StageScene } from '../hooks/sprites'
-import { H, STAND, W, head, moodOf, pad, stander } from '../hooks/stage'
+import { H, STAND, W, actFrame, head, legAt, moodOf, pad, stander } from '../hooks/stage'
 
 test('every forge frame is a rectangle and two pixels make one cell', async () => {
   const width = forgeColumns('band', 1)
@@ -125,6 +127,96 @@ test('a scene holds a second and a half, and waits out a walk or a settle', asyn
   expect(trackTo(walking, 'read', 'a1', 15, false)).toBe(walking)
   // W bezruchu od razu, bez zejścia.
   expect(trackTo(track, 'read', 'krux', 1, true)).toMatchObject({ scene: 'read', since: 1, leaving: null })
+})
+
+// Sceny, do których wchodzi kumpel: rogu i czekania na hordę nie gra.
+const MATE_SCENES = (Object.keys(ACTS) as StageScene[]).filter(scene => scene !== 'horn' && scene !== 'lounge')
+
+test('every orc has at least three acts of its own in each scene it can enter', async () => {
+  for (const scene of Object.keys(ACTS) as StageScene[]) expect([scene, actsFor(scene, 'Krux').length >= 3]).toEqual([scene, true])
+  for (const face of [...MATES, null]) {
+    for (const scene of MATE_SCENES) expect([scene, face, actsFor(scene, face).length >= 3]).toEqual([scene, face, true])
+  }
+})
+
+test('at work an act plays about thirty seconds before the next one of the same scene', async () => {
+  const route = routeOf('hammer', 'Krux', 0)
+  const thirty = Math.round(30_000 / FRAME_MS)
+  for (let step = 0; step < thirty - 20; step += 10) expect([step, legAt(route, step)]).toEqual([step, 0])
+  expect(legAt(route, thirty + 20)).toBe(1)
+})
+
+test('the next episode of a scene starts from the act after the one it left', async () => {
+  const first = trackStart('hammer', 'krux', 0, 0)
+  const reading = trackTo(first, 'read', 'krux', 30, false)
+  expect(reading.memory.hammer).toBe(first.first + 1)
+  const back = trackTo(reading, 'hammer', 'krux', reading.since + HOLD_FRAMES, false)
+  expect(back.first).toBe(first.first + 1)
+  // Scena bez pamięci zaczyna od losu.
+  expect(reading.first).toBe(reading.seed)
+})
+
+test('waiting for the horde moves only forward and ends at the campfire', async () => {
+  const seen = new Set<string>()
+  for (let seed = 0; seed < 40; seed += 1) {
+    const route = routeOf('lounge', 'Krux', seed)
+    const names = route.legs.map(leg => leg.act.name)
+    expect(route.cyclic).toBe(false)
+    expect(['fotel', 'szezlong']).toContain(names[0])
+    expect(['ryby', 'szezlong']).toContain(names[1])
+    expect(names[3]).toBe('ognisko')
+    for (let i = 1; i < names.length; i += 1) expect(names[i]).not.toBe(names[i - 1])
+    const ends = route.legs.slice(0, 3).reduce<number[]>((sum, leg) => [...sum, (sum.at(-1) ?? 0) + leg.frames], [])
+    ends.forEach((end, i) => {
+      const seconds = (end * FRAME_MS) / 1000
+      const at = [20, 60, 180][i]!
+      expect([seed, i, seconds >= at * 0.74 && seconds <= at * 1.26]).toEqual([seed, i, true])
+    })
+    // Odcinki nigdy nie wracają: indeks odcinka rośnie z czasem.
+    let last = 0
+    for (let step = 0; step < 3000; step += 50) {
+      const leg = legAt(route, step)
+      expect(leg >= last).toBe(true)
+      last = leg
+    }
+    expect(last).toBe(3)
+    seen.add(names.join('>'))
+  }
+  expect(seen.size > 2).toBe(true)
+})
+
+test('Krux dozes off by the campfire after a minute, not before', async () => {
+  const track = trackStart('lounge', 'krux', 0, 0)
+  const route = routeOf('lounge', 'Krux', track.seed)
+  let campfire = 0
+  while (legAt(route, campfire) < 3) campfire += 1
+  expect(trackDozing(track, campfire + 10)).toBe(false)
+  expect(trackDozing(track, campfire + Math.round(70_000 / FRAME_MS))).toBe(true)
+  expect(trackDozing(trackStart('hammer', 'krux', 0, 0), 5000)).toBe(false)
+})
+
+test('gestures keep the frame rules on every loop pose and show up while working', async () => {
+  const mates = new Set(['N', 'M', 'P', 'O', 'L', 'T', 'u'])
+  for (const gesture of GESTURES) {
+    for (const [scene, acts] of Object.entries(ACTS)) {
+      for (const act of acts) {
+        for (let t = 0; t < gesture.length; t += 1) {
+          const rows = gesture.apply(act.loop(0, 0), t)
+          const label = `${gesture.name}/${scene}/${act.name}/${t}`
+          const cells = rows.join('')
+          expect([label, rows.length <= H && rows.every(row => row.length <= W)]).toEqual([label, true])
+          expect([label, [...cells].every(cell => cell === '.' || (PALETTE[cell] !== undefined && !mates.has(cell)))]).toEqual([label, true])
+          expect([label, [0, 2].includes([...cells].filter(cell => cell === 'r').length)]).toEqual([label, true])
+          expect([label, cells.includes('b')]).toEqual([label, true])
+        }
+      }
+    }
+  }
+  const route = routeOf('hammer', 'Krux', 0)
+  const act = route.legs[0]!.act
+  const lead = 1 + act.intro.length
+  const changed = Array.from({ length: 150 }, (_, i) => lead + i).some(step => actFrame(route, step, step).join('') !== act.loop((step - lead) % act.length, step).join(''))
+  expect(changed).toBe(true)
 })
 
 test('the bubble sits over its speaker, clipped to forty characters, inside the canvas', async () => {

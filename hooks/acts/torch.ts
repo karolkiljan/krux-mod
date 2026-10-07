@@ -1,4 +1,4 @@
-import { SQUAT, STAND, at, draw, head, noise, pingPong, stander } from '../stage'
+import { SLIDE, SQUAT, STAND, at, croucher, draw, head, line, noise, pingPong, stander } from '../stage'
 import type { Act, Frame, Layer } from '../stage'
 
 // Szukanie w treści plików: ork świeci, węszy, ogląda ślady przez lupę i płucze złoto.
@@ -195,4 +195,42 @@ const panning: Act = {
   loop: panLoop,
 }
 
-export const TORCH_ACTS: Act[] = [torchWall, magnify, sniff, panning]
+// ——— Niuch: trop w świetle pochodni ———
+// Nos tuż nad ziemią, dłoń na pochodni; światło wyławia kolejne odciski.
+const TRACK_PRINTS: Frame = ['h..h..h', '.h..h..']
+const TRACK_TORCH: Frame = ['y', 'o', 'h', 'h', 'h']
+const TRACK_BODY: Frame = ['', '', '', '..bbb', 'bbbbbb', '.G..G.']
+
+function trackProps(dx: number, lean = 0): Layer[] {
+  return [[TRACK_PRINTS, 15 + dx, 4], [TRACK_TORCH, 13 + dx + lean, 1]]
+}
+
+function trackLoop(t: number): Frame {
+  const lean = pingPong(t, 4) >= 2 ? 1 : 0
+  const legs = t % 4 < 2 ? '.G..G.' : '..G.G.'
+  const lit = 15 + 3 * (Math.floor(t / 4) % 3)
+  return draw(
+    ...trackProps(0, lean),
+    [[...TRACK_BODY.slice(0, 5), legs], 0, 0],
+    [head('right'), 5 + lean, 2],
+    ...line([6, 5], [12 + lean, 5], 'g'),
+    at(t % 2 === 0 ? 'y' : 'o', 13 + lean, 1),
+    at('y', lit, 4),
+  )
+}
+
+const track: Act = {
+  name: 'trop',
+  who: ['Niuch'],
+  intro: [
+    // Pochodnia i ślady wjeżdżają; Niuch kuca, pochyla nos i chwyta trzonek.
+    ...SLIDE.map(dx => draw(...trackProps(dx), [stander('right'), 0, 0])),
+    draw(...trackProps(0), [croucher('right'), 0, 0]),
+    ...[2, 4].map(x => draw(...trackProps(0), [TRACK_BODY, 0, 0], [head('right'), x, 1])),
+    trackLoop(0),
+  ],
+  length: 16,
+  loop: trackLoop,
+}
+
+export const TORCH_ACTS: Act[] = [torchWall, magnify, sniff, panning, track]

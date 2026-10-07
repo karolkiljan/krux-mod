@@ -22,6 +22,7 @@ function canaryLoop(t: number): Frame {
 
 const canary: Act = {
   name: 'kanarek',
+  who: ['Krux', 'Młot'],
   intro: [
     ...SLIDE.map(dx => draw(...cage(CAGE_X + dx, 0, false), [STAND, 0, 0])),
     draw(...cage(CAGE_X, 0, false), [stander('right', 'g'), 0, 0]),
@@ -93,7 +94,68 @@ const assay: Act = {
   loop: tubeLoop,
 }
 
-export const TEST_ACTS: Act[] = [canary, load, assay]
+// ——— Liczydło Młota ———
+// Koraliki na dwóch drutach przesuwają się tam i z powrotem.
+// Młot powtarza rachunek, prowadząc palcem drugi rząd.
+const ABACUS: Frame = ['hhhhhhhhh', 'hsssssssh', 'h.......h', 'hsssssssh', 'hhhhhhhhh']
+const ABACUS_X = 12
+
+function abacusAt(dx: number, shift: number): Layer[] {
+  return [[ABACUS, ABACUS_X + dx, 1], [['yy'], 14 + dx + shift, 2], [['yy'], 17 + dx - shift, 4]]
+}
+
+function abacusLoop(t: number): Frame {
+  const shift = Math.floor(pingPong(t, 4) * 3 / 4)
+  const handY = t < 7 || t === 15 ? 2 : t === 7 || t === 14 ? 3 : 4
+  const handX = handY === 4 ? 16 - shift : 13 + shift
+  return draw(...abacusAt(0, shift), [stander('right', 'gg'), 0, 0], ...line([8, 3], [handX, handY], 'g'))
+}
+
+const abacus: Act = {
+  name: 'liczydło',
+  who: ['Młot'],
+  intro: [
+    ...SLIDE.map(dx => draw(...abacusAt(dx, 0), [STAND, 0, 0])),
+    draw(...abacusAt(0, 0), [stander('right', 'g'), 0, 0]),
+    draw(...abacusAt(0, 0), [stander('right', 'gg'), 0, 0], ...line([8, 3], [10, 3], 'g')),
+    abacusLoop(0),
+  ],
+  length: 16,
+  loop: abacusLoop,
+}
+
+// ——— Próba dźwięku dzwonu ———
+// Dzwon wjeżdża z pobijakiem zawieszonym na belce, ręka zdejmuje pobijak. Po stuknięciu
+// jasna fala odchodzi od odlewu, a ręka wycofuje pobijak do następnej próby.
+const BELL: Frame = ['...h...', '..yyy..', '.yy.yy.', 'yyy.yyy', '...S...']
+const BELL_STAND: Frame = ['hhhhhhhhh', '........x', '........x', '........x', '........x', '......xxx']
+const BELL_TAP = [10, 10, 11, 12, 13, 12, 11, 10, 10, 10, 10, 10] as const
+// Pobijak na haku belki: trzonek w górze, obuch w dole.
+const HANGING: Frame = ['h', 'S']
+
+function bellAt(dx: number): Layer[] {
+  return [[BELL_STAND, 12 + dx, 0], [BELL, 12 + dx, 0]]
+}
+
+function bellLoop(t: number): Frame {
+  const x = BELL_TAP[t]!
+  const wave: Layer[] = t >= 5 && t <= 7 ? [[['j', '.', 'j'], 19 + t - 5, 1]] : []
+  return draw(...bellAt(0), [stander('right', 'gg'), 0, 0], ...line([8, 3], [x - 1, 3], 'g'), [['S', 'h'], x, 2], ...wave)
+}
+
+const bell: Act = {
+  name: 'dzwon',
+  intro: [
+    ...SLIDE.map(dx => draw(...bellAt(dx), [HANGING, 12 + dx, 1], [STAND, 0, 0])),
+    draw(...bellAt(0), [HANGING, 12, 1], [stander('right', 'g'), 0, 0]),
+    draw(...bellAt(0), [HANGING, 12, 1], [stander('right', 'gg'), 0, 0], ...line([8, 3], [11, 2], 'g')),
+    bellLoop(0),
+  ],
+  length: BELL_TAP.length,
+  loop: bellLoop,
+}
+
+export const TEST_ACTS: Act[] = [canary, load, assay, abacus, bell]
 
 // Wynik narzędzia dostaje osobną reakcję. Rozpoznajemy pełną klatkę po
 // obrysie, więc wynik nie zamienia fiolki ani próby obciążenia w kanarka.

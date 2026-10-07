@@ -85,4 +85,68 @@ const rolling: Act = {
   loop: scrollFrame,
 }
 
-export const WRITE_ACTS: Act[] = [quill, trimming, rolling]
+// ——— Kaligrafia Ochry ———
+// Sztaluga z arkuszem na wałku, kałamarz z pędzlem u nogi. Trzy runy, trzecia wychodzi krzywo:
+// Ochra przygląda się, ściera ją i kładzie prosto, potem przewija arkusz na czysty.
+const EASEL: Frame = ['xxxxxxxxx', '', '', '', '.x.....x.', '.x.....x.']
+const SHEET: Frame = ['ppppppp', 'ppppppp', 'ppppppp']
+const EASEL_AT = 7
+// Kałamarz u nogi Ochry; pędzel stoi w nim, póki Ochra go nie weźmie.
+const POT_AT = 6
+const DIPPED: Frame = ['n', 'h']
+// Runy: dwa piksele w pionie; trzecia krzywa, zanim Ochra ją poprawi.
+const RUNES: readonly Point[] = [[9, 1], [9, 2], [11, 1], [11, 2], [13, 1], [14, 2]]
+const STRAIGHT: Point = [13, 2]
+
+// Sztaluga z kałamarzem przesunięta o `dx`; `marks` to już położone piksele run, `scrolled` —
+// o ile wierszy arkusz przewinął się pod wałek.
+function easel(dx: number, marks: readonly Point[] = [], scrolled = 0): Layer[] {
+  return [
+    at('q', POT_AT + dx, 5),
+    [SHEET, EASEL_AT + 1 + dx, 1],
+    ...marks.map(([x, y]) => at('n', x + dx, y - scrolled)),
+    [EASEL, EASEL_AT + dx, 0],
+  ]
+}
+
+// Pędzel w dłoni: dłoń dwa piksele w lewo i w dół od czubka, trzonek między nimi.
+function brushAt(tip: Point, cell = 'n'): Layer[] {
+  const [x, y] = tip
+  return [...line([6, 3], [x - 2, y + 2], 'g'), at('h', x - 1, y + 1), at(cell, x, y)]
+}
+
+// Pędzel uniesiony przy twarzy, gdy Ochra patrzy na robotę.
+const RAISED: Layer[] = [at('g', 6, 3), at('h', 7, 2), at('n', 7, 1)]
+
+function calligraphy(t: number): Frame {
+  const orc = (look: 'mid' | 'right'): Layer => [stander(look), 0, 0]
+  // 0–5: runa po runie, piksel na klatkę; przy szóstym ręka się omsknęła.
+  if (t < 6) return draw(...easel(0, RUNES.slice(0, t)), orc('right'), ...brushAt(RUNES[t]!))
+  const fixed = [...RUNES.slice(0, 5), STRAIGHT]
+  // 6–7: unieść pędzel i przyjrzeć się krzywej runie.
+  if (t < 8) return draw(...easel(0, RUNES), orc('right'), ...RAISED)
+  // 8: zetrzeć krzywy piksel czystym pędzlem; 9: położyć go prosto.
+  if (t === 8) return draw(...easel(0, RUNES.slice(0, 5)), orc('right'), ...brushAt(RUNES[5]!, 'j'))
+  if (t === 9) return draw(...easel(0, fixed), orc('right'), ...brushAt(STRAIGHT))
+  // 10–11: teraz dobrze, Ochra spogląda z zadowoleniem.
+  if (t < 12) return draw(...easel(0, fixed), orc(t === 10 ? 'right' : 'mid'), ...RAISED)
+  // 12–13: arkusz przewija się pod wałek, 14: wychodzi czysty.
+  return draw(...easel(0, fixed, t - 11), orc('right'), ...RAISED)
+}
+
+const calligraphyAct: Act = {
+  name: 'kaligrafia',
+  who: ['Ochra'],
+  intro: [
+    // Sztaluga z kałamarzem wjeżdża z prawej, pędzel stoi w kałamarzu.
+    ...SLIDE.map(dx => draw(...easel(dx), [DIPPED, POT_AT + dx, 3], [STAND, 0, 0])),
+    // Sięgnąć po pędzel i unieść go przy twarzy.
+    draw(...easel(0), [DIPPED, POT_AT, 3], [stander('right'), 0, 0], at('g', POT_AT, 4)),
+    draw(...easel(0), [DIPPED, POT_AT, 2], [stander('right'), 0, 0], at('g', POT_AT, 3)),
+    draw(...easel(0), [stander('right'), 0, 0], ...RAISED),
+  ],
+  length: 15,
+  loop: calligraphy,
+}
+
+export const WRITE_ACTS: Act[] = [quill, trimming, rolling, calligraphyAct]
