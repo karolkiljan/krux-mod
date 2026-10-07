@@ -289,4 +289,46 @@ const measure: Act = {
   loop: measuring,
 }
 
-export const TEAR_ACTS: Act[] = [dynamite, haul, wall, measure]
+// ——— Łom Lonta ———
+// Stara belka na dwóch podporach wjeżdża z łomem wsuniętym pod lewy koniec. Lont trzy razy
+// ostrożnie sprawdza opór, dopiero potem odgina belkę wysoko i powoli opuszcza ją do następnej próby.
+const BEAM_AT = 14
+const BEAM_END = 20
+const BEAM_LIFT = [0, 1, 0, 1, 0, 1, 2, 3, 3, 2, 2, 1, 1, 0, 0, 0] as const
+
+// Prawy koniec belki zostaje na gwoździu; lewy podnosi łom. Podpory stoją na ziemi.
+function beamAt(dx: number, lift = 0): Layer[] {
+  return [
+    [['x....x', 'x....x'], BEAM_AT + 1 + dx, 4],
+    ...line([BEAM_AT + dx, 3 - lift], [BEAM_END + dx, 3], 'h'),
+    at('s', BEAM_END + dx, 3),
+  ]
+}
+
+// Zakrzywiony koniec łomu pod belką, długi stalowy trzon do dłoni.
+function crowbarAt(dx: number, lift = 0): Layer[] {
+  const grip: Point = [8 + dx, 3 - Math.min(2, lift)]
+  return [...line(grip, [BEAM_AT - 1 + dx, 4 - lift], 's'), at('S', BEAM_AT + dx, 4 - lift)]
+}
+
+function prying(t: number): Frame {
+  const lift = BEAM_LIFT[t]!
+  // Trzy małe pociągnięcia przed mocnym ruchem: rozbiórka dopiero po sprawdzeniu podpory.
+  return draw(...beamAt(0, lift), [stander('right'), 0, 0],
+    ...line([6, 3], [7, 3 - Math.min(2, lift)], 'g'), ...crowbarAt(0, lift))
+}
+
+const crowbar: Act = {
+  name: 'podważanie belki',
+  who: ['Lont'],
+  intro: [
+    // Belka z podporami i wsuniętym łomem wjeżdża z prawej.
+    ...SLIDE.map(dx => draw(...beamAt(dx), ...crowbarAt(dx), [STAND, 0, 0])),
+    draw(...beamAt(0), ...crowbarAt(0), [stander('right', 'g'), 0, 0]),
+    prying(0),
+  ],
+  length: BEAM_LIFT.length,
+  loop: prying,
+}
+
+export const TEAR_ACTS: Act[] = [dynamite, haul, wall, measure, crowbar]

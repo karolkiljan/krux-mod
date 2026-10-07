@@ -155,7 +155,41 @@ const bell: Act = {
   loop: bellLoop,
 }
 
-export const TEST_ACTS: Act[] = [canary, load, assay, abacus, bell]
+// ——— Próba zatrzasku Młota ———
+// Młot szarpie za kółko dwa razy: nie wierzy pierwszej próbie.
+// Sznur ciągnie zamkniętą skrzynię; wieko i zatrzask nie puszczają.
+const LOCKED_CHEST: Frame = ['.xxxxxxxx.', 'xhhhhhhhhx', 'xxxxssxxxx', 'xhhhhhhhhx', 'xxxxxxxxxx']
+const PULL_RING: Frame = ['.s.', 's.s', '.s.']
+const LATCH_PULL = [10, 10, 9, 8, 8, 9, 10, 10, 10, 10, 9, 8, 8, 9, 10, 10] as const
+
+function latchAt(dx: number, x: number): Layer[] {
+  const tug = x === 8 ? -1 : 0
+  return [[LOCKED_CHEST, 12 + dx + tug, 1],
+    ...line([x + dx + 2, 3], [15 + dx + tug, 3], 'm'),
+    [PULL_RING, x + dx, 2]]
+}
+
+function latchLoop(t: number): Frame {
+  const x = LATCH_PULL[t]!
+  // Przy drugim szarpnięciu zaciska oczy, ale nie wypuszcza kółka.
+  return draw(...latchAt(0, x), [stander(t === 11 || t === 12 ? 'shut' : 'right', 'gg'), 0, 0],
+    ...line([8, 3], [x, 3], 'g'), [PULL_RING, x, 2])
+}
+
+const latch: Act = {
+  name: 'próba zatrzasku',
+  who: ['Młot'],
+  intro: [
+    ...SLIDE.map(dx => draw(...latchAt(dx, 10), [STAND, 0, 0])),
+    draw(...latchAt(0, 10), [stander('right', 'g'), 0, 0]),
+    draw(...latchAt(0, 10), [stander('right', 'gg'), 0, 0], ...line([8, 3], [9, 3], 'g')),
+    latchLoop(0),
+  ],
+  length: LATCH_PULL.length,
+  loop: latchLoop,
+}
+
+export const TEST_ACTS: Act[] = [canary, load, assay, abacus, bell, latch]
 
 // Wynik narzędzia dostaje osobną reakcję. Rozpoznajemy pełną klatkę po
 // obrysie, więc wynik nie zamienia fiolki ani próby obciążenia w kanarka.

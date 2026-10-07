@@ -1,4 +1,4 @@
-import { STAND, at, croucher, draw, head, line, noise, stander, walker } from '../stage'
+import { SLIDE, STAND, at, croucher, draw, head, line, noise, pingPong, stander, walker } from '../stage'
 import type { Act, Frame, Layer, Look } from '../stage'
 
 // Rozglądanie się za plikami: ork czai się w krzaku, patrzy przez lunetę i obchodzi teren z włócznią.
@@ -169,4 +169,37 @@ const wind: Act = {
   loop: windLoop,
 }
 
-export const SCOUT_ACTS: Act[] = [bush, spy, patrol, burrow, wind]
+// ——— Niuch: nić zwiadowcy ———
+// Kłębek toczy się przed dłonią; biała nić znaczy drogę powrotną, potem się zwija.
+const THREAD_BALL: Frame = ['.jj.', 'jhhj', '.jj.']
+const THREAD_MARK = [[1, 0], [3, 1], [2, 2], [0, 1]] as const
+
+function threadBall(x: number, turn: number): Layer[] {
+  const [dx, dy] = THREAD_MARK[turn % 4]!
+  return [[THREAD_BALL, x, 3], at('n', x + dx, 3 + dy)]
+}
+
+function threadLoop(t: number): Frame {
+  const x = pingPong(t, 8)
+  return draw(
+    ...line([7, 5], [x + 8, 5], 'j'),
+    ...threadBall(x + 8, x),
+    [walker(t, t < 8 ? 'right' : 'left'), x, 0],
+    ...line([x + 5, 3], [x + 7, 4], 'g'),
+  )
+}
+
+const thread: Act = {
+  name: 'nić zwiadowcy',
+  who: ['Niuch'],
+  intro: [
+    // Kłębek przyjeżdża pod rękę; Niuch schyla dłoń i wyciąga początek nici.
+    ...SLIDE.map(dx => draw(...threadBall(8 + dx, 0), [stander('right'), 0, 0])),
+    draw(...threadBall(8, 0), [stander('right', 'g'), 0, 0], at('j', 7, 5)),
+    threadLoop(0),
+  ],
+  length: 16,
+  loop: threadLoop,
+}
+
+export const SCOUT_ACTS: Act[] = [bush, spy, patrol, burrow, wind, thread]

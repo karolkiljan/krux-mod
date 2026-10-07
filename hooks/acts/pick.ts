@@ -243,4 +243,48 @@ const undermine: Act = {
   loop: undermining,
 }
 
-export const PICK_ACTS: Act[] = [rock, shovel, auger, undermine]
+// ——— Rozpierak Lonta ———
+// Dwie połówki skały ze stalowym rozpierakiem w szczelinie wjeżdżają razem. Lont wykonuje
+// trzy próbne ruchy pompką, dopiero za trzecim rozszerza szczelinę; odpuszcza zawór i zbiera siły.
+const SPLIT_LEFT: Frame = ['.kq', '.kk', 'qkk', 'kqk']
+const SPLIT_RIGHT: Frame = ['qk.', 'kk.', 'kqk', 'qkk']
+const PUMP_AT = 9
+const PUMP_DOWN = [0, 1, 0, 1, 0, 1, 2, 2, 1, 0, 0, 0, 0, 0, 0, 0] as const
+const SPLIT_GAP = [0, 0, 0, 0, 0, 0, 1, 2, 2, 2, 2, 1, 1, 0, 0, 0] as const
+
+// Pompa po lewej, przewód przy ziemi, teleskopowa stal między połówkami głazu.
+function splitterAt(dx: number, gap = 0, down = 0): Layer[] {
+  return [
+    [SPLIT_LEFT, 14 + dx - gap, 2], [SPLIT_RIGHT, 17 + dx + gap, 2],
+    [['xxx', 'xsx'], PUMP_AT + dx, 4],
+    ...line([PUMP_AT + 1 + dx, 5], [17 + dx, 5], 'n'),
+    ...line([15 + dx - gap, 4], [18 + dx + gap, 4], 's'),
+    ...line([PUMP_AT + 1 + dx, 2 + down], [PUMP_AT + 1 + dx, 4], 's'),
+    [['hhh'], PUMP_AT + dx, 1 + down],
+  ]
+}
+
+function splitting(t: number): Frame {
+  const down = PUMP_DOWN[t]!
+  const gap = SPLIT_GAP[t]!
+  // 0–5: trzy próby pompką; 6–10: mocny nacisk rozsuwa skałę; 11–15: odpuścić zawór.
+  const valve = t >= 10 && t < 13
+  return draw(...splitterAt(0, gap, down), [stander(valve ? 'mid' : 'right'), 0, 0],
+    ...line([6, 3], valve ? [PUMP_AT - 1, 4] : [PUMP_AT - 1, 1 + down], 'g'))
+}
+
+const splitter: Act = {
+  name: 'rozpieranie skały',
+  who: ['Lont'],
+  intro: [
+    // Głaz z rozpierakiem, przewodem i pompką wjeżdża z prawej.
+    ...SLIDE.map(dx => draw(...splitterAt(dx), [STAND, 0, 0])),
+    draw(...splitterAt(0), [stander('right', 'g'), 0, 0]),
+    draw(...splitterAt(0), [stander('right'), 0, 0], ...line([6, 3], [7, 2], 'g')),
+    splitting(0),
+  ],
+  length: PUMP_DOWN.length,
+  loop: splitting,
+}
+
+export const PICK_ACTS: Act[] = [rock, shovel, auger, undermine, splitter]

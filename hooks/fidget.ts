@@ -137,14 +137,15 @@ const SCRATCH: Gesture = {
   apply: (rows, t) =>
     sketch(rows, ({ head: { top, x }, free, dot, face, eyes }) => {
       if (t === 0 || t === 12) return false
-      const left = free(x - 1, top)
-      if (!left && !free(x + 4, top)) return false
-      const hand = left ? x - 1 : x + 4
-      dot(hand, top, 'g')
+      // Najpierw dłoń z odstępem od czubka; ciemna krawędź odcina ją od skóry.
+      const hand = [x - 2, x + 5, x + 4, x - 1].find(at => free(at, top) && (at !== x - 2 || free(x - 1, top)) && (at !== x + 5 || free(x + 4, top)))
+      if (hand === undefined) return false
+      const left = hand < x
+      dot(hand, top, 'G')
       dot(left ? hand - 1 : hand + 1, top + 1, 'g')
       // Palce na zmianę na dwóch pikselach czubka od strony dłoni.
       if (within(t, 2, 10)) face(left ? x + (t % 2) : x + 3 - (t % 2), top, 'G')
-      if (within(t, 4, 9)) eyes('G')
+      if (within(t, 2, 10)) eyes('G')
       return true
     }),
 }
@@ -227,16 +228,44 @@ const COUNT: Gesture = {
   apply: (rows, t) =>
     sketch(rows, ({ head: { top, x }, free, dot, look, eyes }) => {
       if (t === 0 || t === 12) return false
-      // Dłoń przed twarzą tam, gdzie nad nią zmieszczą się palce; najlepiej z odstępem od głowy.
-      const fingers = (palm: number) => [palm - 1, palm, palm + 1].filter(at => at > x + 4 && free(at, top + 1))
-      const palm = [x + 7, x + 6, x + 8].filter(at => free(at, top + 2)).sort((a, b) => fingers(b).length - fingers(a).length)[0]
-      if (palm === undefined || fingers(palm).length === 0) return false
-      look(1)
-      dot(palm, top + 2, 'g')
-      // Palce nad dłonią: 1, 2, 3, zaciśnięta pięść i mrugnięcie, od nowa 1.
-      const shown = t < 3 ? 0 : t < 5 ? 1 : t < 7 ? 2 : t < 9 ? 3 : t < 10 ? 0 : 1
-      fingers(palm).slice(0, shown).forEach(at => dot(at, top + 1, 'g'))
-      if (t === 9) eyes('G')
+      // Wszystkie trzy palce muszą mieć tło. Rekwizyt z prawej: druga strona albo wyżej.
+      const upright = (palm: number, y: number, dx: number) => ({
+        palm: [palm, y] as const,
+        fingers: [palm - 1, palm, palm + 1].map(at => [at, y - 1] as const),
+        dx,
+      })
+      const hands = [
+        ...[x + 7, x + 6, x + 8, x + 9].map(at => upright(at, top + 2, 1)),
+        ...[x - 4, x - 3, x - 5].map(at => upright(at, top + 2, -1)),
+        ...[x + 7, x + 6, x + 8, x + 5].map(at => upright(at, top + 1, 1)),
+        ...[x - 4, x - 3, x - 5].map(at => upright(at, top + 1, -1)),
+        upright(x + 1, top - 1, 0),
+        // W ciasnym miejscu dwa palce nad dłonią, trzeci (kciuk) z boku.
+        {
+          palm: [x - 2, top + 1] as const,
+          fingers: [[x - 2, top], [x - 3, top], [x - 3, top + 1]] as const,
+          dx: -1,
+        },
+        {
+          palm: [x + 5, top + 1] as const,
+          fingers: [[x + 5, top], [x + 4, top], [x + 6, top + 1]] as const,
+          dx: 1,
+        },
+        // Przy górnej krawędzi i zajętych bokach palce rozkładają się obok czubka.
+        ...[x + 5, x + 6, x + 7].map(at => ({
+          palm: [at, top] as const,
+          fingers: [1, 2, 3].map(dx => [at + dx, top] as const),
+          dx: 1,
+        })),
+      ]
+      const hand = hands.find(({ palm, fingers }) => free(...palm) && fingers.every(([px, py]) => free(px, py)))
+      if (hand === undefined) return false
+      look(hand.dx)
+      dot(...hand.palm, 'G')
+      // Raz: 1, 2, 3. Pięść i mrugnięcie, potem pełne drugie 1, 2, 3.
+      const shown = t < 7 ? Math.floor(t / 2) : t === 7 ? 0 : Math.min(3, t - 7)
+      hand.fingers.slice(0, shown).forEach(([px, py]) => dot(px, py, 'g'))
+      if (t === 7) eyes('G')
       return true
     }),
 }

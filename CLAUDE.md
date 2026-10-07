@@ -31,7 +31,7 @@ skills/krux-horda/SKILL.md                    horda na żądanie
 types/index.d.ts                              kontrakt `$.state` (`krux-mod.*`)
 tests/{voice,gauge,mood,sprites,canary,band,forge,board,muster,shaft,git,threads,mod}.test.ts testy `claude plugin test`
 tests/scripts-regression.mjs                  testy skryptów: `node --test tests/scripts-regression.mjs`
-scripts/act-sheet.ts                          arkusz PNG i walidacja klatek: `npx tsx scripts/act-sheet.ts <scena|plik.ts:EKSPORT> <plik.png> [czynność]`
+scripts/act-sheet.ts                          arkusz PNG i walidacja klatek: `npx tsx scripts/act-sheet.ts <scena|plik.ts:EKSPORT|gesty> <plik.png> [czynność|gest]`; czynność z `who` w fartuchu pierwszego orka z `who`
 scripts/voice-bench.mjs                       pomiar głosu na modelu (A/B kotwicy)
 scripts/tui-shot.py                           zrzut prawdziwego ekranu: `claude` w pty, emulator `pyte`, kroki i tekst ekranu
 ```

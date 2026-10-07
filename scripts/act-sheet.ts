@@ -39,12 +39,18 @@ async function actsOf(source: string): Promise<readonly Act[]> {
   return acts
 }
 
+// Etykieta wskazuje pierwszego orka z `who`, tak jak fartuch na arkuszu.
+function labelOf({ name, who }: Pick<Act, 'name' | 'who'>): string {
+  return `${name}${who?.[0] === undefined ? '' : ` (${who[0]})`}`
+}
+
 // Klatki czynności: wejście i pętla, pętla w dwóch chwilach zegara, bo ogień i woda szumią.
 function framesOf(act: Act): { label: string; rows: Frame }[] {
+  const label = labelOf(act)
   return [
-    ...act.intro.map((rows, i) => ({ label: `${act.name} wejście ${i}`, rows })),
-    ...Array.from({ length: act.length }, (_, t) => ({ label: `${act.name} pętla ${t}`, rows: act.loop(t, t) })),
-    ...Array.from({ length: act.length }, (_, t) => ({ label: `${act.name} pętla ${t} (zegar ${t + 17})`, rows: act.loop(t, t + 17) })),
+    ...act.intro.map((rows, i) => ({ label: `${label} wejście ${i}`, rows })),
+    ...Array.from({ length: act.length }, (_, t) => ({ label: `${label} pętla ${t}`, rows: act.loop(t, t) })),
+    ...Array.from({ length: act.length }, (_, t) => ({ label: `${label} pętla ${t} (zegar ${t + 17})`, rows: act.loop(t, t + 17) })),
   ]
 }
 
@@ -85,7 +91,7 @@ function problemsOf(label: string, rows: Frame, wick = true): string[] {
 function actStrips(acts: readonly Act[]): string[][][] {
   const strips: string[][][] = []
   for (const act of acts) {
-    const frames = [STAND, ...act.intro, ...Array.from({ length: act.length }, (_, t) => act.loop(t, t))].map(pad)
+    const frames = [STAND, ...act.intro, ...Array.from({ length: act.length }, (_, t) => act.loop(t, t))].map(rows => dress(pad(rows), act.who?.[0] ?? 'Krux'))
     for (let i = 0; i < frames.length; i += PER_ROW) strips.push(frames.slice(i, i + PER_ROW))
     strips.push([])
   }
@@ -164,7 +170,8 @@ async function gestureSheet(out: string, only: string | undefined): Promise<stri
   if (gestures.length === 0) throw new Error(`brak gestu „${only}”: ${GESTURES.map(gesture => gesture.name).join(', ')}`)
   const shown = GESTURE_POSES.flatMap(([scene, name]) => ACTS[scene]?.filter(act => act.name === name).map(act => act.loop(0, 0)) ?? [])
   const bases = [STAND, ...shown]
-  const strips = gestures.flatMap(gesture => [...bases.map(base => Array.from({ length: gesture.length }, (_, t) => pad(gesture.apply(base, t)))), []])
+  // Fartuch dopiero na podglądzie; niżej zasady sprawdzają surową klatkę gestu.
+  const strips = gestures.flatMap(gesture => [...bases.map(base => Array.from({ length: gesture.length }, (_, t) => dress(pad(gesture.apply(base, t)), gesture.who?.[0] ?? 'Krux'))), []])
   sheet(strips, out, Math.max(...gestures.map(gesture => gesture.length)), 5)
   const problems: string[] = []
   const poses = [{ label: 'stójka', rows: STAND }, ...Object.entries(ACTS).flatMap(([scene, acts]) => acts.map(act => ({ label: `${scene}/${act.name}`, rows: act.loop(0, 0) })))]
@@ -180,14 +187,14 @@ async function gestureSheet(out: string, only: string | undefined): Promise<stri
       let changed = false
       for (let t = 0; t < gesture.length; t += 1) {
         const rows = gesture.apply(pose.rows, t)
-        const label = `${gesture.name}/${pose.label}/${t}`
+        const label = `${labelOf(gesture)}/${pose.label}/${t}`
         problems.push(...problemsOf(label, rows, wick), ...trespassOf(label, pose.rows, rows))
         if (pad(rows).join('') !== pad(pose.rows).join('')) changed = true
       }
       if (changed) moved += 1
       else if (pose.rows === STAND) problems.push(`${gesture.name}: nie widać go na stójce`)
     }
-    console.log(`${gesture.name}${gesture.who === undefined ? '' : ` (${gesture.who.join(', ')})`}: ${gesture.length} kroków, widać na ${moved}/${checked} pozach`)
+    console.log(`${labelOf(gesture)}: ${gesture.length} kroków, widać na ${moved}/${checked} pozach`)
     if (moved * 2 < checked) problems.push(`${gesture.name}: widać go na mniej niż połowie póz (${moved}/${checked})`)
   }
   return problems
@@ -218,7 +225,7 @@ async function main(): Promise<void> {
   const out = process.argv[3] ?? join(mkdtempSync(join(tmpdir(), 'act-sheet-output-')), 'sheet.png')
   sheet(actStrips(acts), out)
   console.log(out)
-  for (const act of acts) console.log(`${act.name}: wejście ${act.intro.length}, pętla ${act.length}`)
+  for (const act of acts) console.log(`${labelOf(act)}: wejście ${act.intro.length}, pętla ${act.length}`)
   report(problems)
 }
 

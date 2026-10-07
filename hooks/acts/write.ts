@@ -149,4 +149,41 @@ const calligraphyAct: Act = {
   loop: calligraphy,
 }
 
-export const WRITE_ACTS: Act[] = [quill, trimming, rolling, calligraphyAct]
+// ——— Dobór kolorów Ochry ———
+// Tablica z niebieskim polem i dwustronny próbnik wjeżdżają razem. Ochra przykłada czerwoną
+// stronę, obraca kartonik na niebieską i zrównuje brzegi, potem cofa się po kolejne porównanie.
+const COLOR_BOARD: Frame = ['xxxxxxx', 'xWWWWWx', 'xWWWWWx', 'xxxxxxx', '.x...x.', '.x...x.']
+const COLOR_BOARD_AT = 15
+const SAMPLE_AT = 8
+
+// Próbnik ma kwadrat koloru i jasny brzeg; przy obrocie widać tylko jego krawędź.
+function sampleAt(x: number, y: number, side: 'd' | 'W' | 'edge'): Layer {
+  const row = side === 'edge' ? '.j.' : `${side}${side}j`
+  return [[row, row, '.h.'], x, y]
+}
+
+function matchingColor(t: number): Frame {
+  const step = [0, 1, 2, 3, 4, 4, 4, 4, 4, 4, 4, 3, 2, 1, 0, 0][t]!
+  const side = t === 5 || t === 14 ? 'edge' : t >= 6 && t < 14 ? 'W' : 'd'
+  // Czerwony nie pasuje: obrócić próbnik, sprawdzić kolor i oba poziome brzegi tablicy.
+  return draw([COLOR_BOARD, COLOR_BOARD_AT, 0], [pusher(step, ''), step, 0],
+    ...line([step + 6, 3], [SAMPLE_AT + step, 3], 'g'), sampleAt(SAMPLE_AT + step, 1, side))
+}
+
+const colorMatch: Act = {
+  name: 'dobór kolorów',
+  who: ['Ochra'],
+  intro: [
+    // Tablica i próbnik oparty trzonkiem o ziemię wjeżdżają z prawej.
+    ...SLIDE.map(dx => draw([COLOR_BOARD, COLOR_BOARD_AT + dx, 0], sampleAt(SAMPLE_AT + dx, 3, 'd'), [STAND, 0, 0])),
+    draw([COLOR_BOARD, COLOR_BOARD_AT, 0], sampleAt(SAMPLE_AT, 3, 'd'), [stander('right', 'g'), 0, 0]),
+    // Chwycić próbnik od dołu, podnieść go na wysokość kolorowego pola.
+    draw([COLOR_BOARD, COLOR_BOARD_AT, 0], [stander('right'), 0, 0],
+      ...line([6, 3], [SAMPLE_AT, 4], 'g'), sampleAt(SAMPLE_AT, 2, 'd')),
+    matchingColor(0),
+  ],
+  length: 16,
+  loop: matchingColor,
+}
+
+export const WRITE_ACTS: Act[] = [quill, trimming, rolling, calligraphyAct, colorMatch]

@@ -1,7 +1,7 @@
 import type { ClientModule } from 'claude-code'
 
 import type { KruxCue, KruxEvent, KruxMood, KruxSpeaker } from '../types'
-import { CATCH_X, CUE_FRAMES, FRAME_MS, SPEAKER_COLOR, bandColumns, behind, bubbleLines, canvasColumns, catchStep, caughtScroll, dress, frameGrid, runsOf, slotX, stageGrid, tossFlight, tossFrames, tossGrid, tossScroll, trackDozing, trackGrid, trackOff, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withNap } from './sprites'
+import { CATCH_X, CUE_FRAMES, FRAME_MS, SPEAKER_COLOR, bandColumns, behind, bubbleLines, canvasColumns, catchStep, caughtScroll, dress, frameGrid, runsOf, slotX, stageGrid, tossFlight, tossFrames, tossGrid, tossScroll, trackDozing, trackFace, trackGrid, trackOff, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withNap } from './sprites'
 import type { Face, Placed, StageScene, Track } from './sprites'
 
 // Moduł powierzchni: rysuje Kruxa, kumpli i dymek na wątku rysującym, z własnym
@@ -146,9 +146,8 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
       changed = true
     } else {
       let next = was
-      let track = trackTo(was.track, orc.scene, orc.key, frame, frozen)
       // Kumpel, który dostał imię, gra odtąd czynności swojego fachu.
-      if (track.face !== orc.face) track = { ...track, face: orc.face }
+      const track = trackFace(trackTo(was.track, orc.scene, orc.key, frame, frozen), orc.face, orc.key, frame, frozen)
       if (track !== was.track) next = { ...next, track }
       if (orc.mood !== was.mood || orc.face !== was.face) next = { ...next, mood: orc.mood, face: orc.face }
       if (orc.workAt !== was.workAt) next = { ...next, workAt: orc.workAt, effortAt: frame }

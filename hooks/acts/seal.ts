@@ -128,4 +128,36 @@ const light: Act = {
   loop: lightLoop,
 }
 
-export const SEAL_ACTS: Act[] = [wax, press, tie, light]
+// ——— Pomiar pieczęci Piryta ———
+// Szczęka suwmiarki zaciska się na metalowej pieczęci i wraca.
+// Piryt mruży oczy nad ciemną rysą, zanim zatwierdzi odcisk.
+const SEAL_MEDAL: Frame = ['.yyy.', 'ysnsy', '.yyy.']
+const CALIPER_JAW = [21, 21, 20, 20, 19, 19, 19, 19, 19, 19, 19, 20, 20, 21, 21, 21] as const
+
+function measureSealAt(dx: number, jaw: number): Layer[] {
+  return [[BENCH, BENCH_X + dx, 4], [SEAL_MEDAL, 15 + dx, 1],
+    [['sjsjsjsjs'], 13 + dx, 0], [['S', 'S'], 14 + dx, 1], [['S', 'S'], jaw + dx, 1],
+    ...line([13 + dx, 3], [14 + dx, 2], 'h')]
+}
+
+function measureSealLoop(t: number): Frame {
+  return draw(...measureSealAt(0, CALIPER_JAW[t]!),
+    [stander(t >= 6 && t <= 9 ? 'shut' : 'right', 'gg'), 0, 0],
+    ...line([8, 3], [13, 3], 'g'), [['g'], 13, 2])
+}
+
+const measureSeal: Act = {
+  name: 'pomiar pieczęci',
+  who: ['Piryt'],
+  intro: [
+    ...SLIDE.map(dx => draw(...measureSealAt(dx, 21), [STAND, 0, 0])),
+    draw(...measureSealAt(0, 21), [stander('right', 'g'), 0, 0]),
+    draw(...measureSealAt(0, 21), [stander('right', 'gg'), 0, 0], ...line([8, 3], [10, 3], 'g')),
+    draw(...measureSealAt(0, 21), [stander('right', 'gg'), 0, 0], ...line([8, 3], [12, 3], 'g')),
+    measureSealLoop(0),
+  ],
+  length: CALIPER_JAW.length,
+  loop: measureSealLoop,
+}
+
+export const SEAL_ACTS: Act[] = [wax, press, tie, light, measureSeal]

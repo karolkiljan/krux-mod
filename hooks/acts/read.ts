@@ -1,4 +1,4 @@
-import { SLIDE, at, draw, flame, head, lerp, line, pingPong, stander, stroll, walker } from '../stage'
+import { SLIDE, at, croucher, draw, flame, head, lerp, line, pingPong, stander, stroll, walker } from '../stage'
 import type { Act, Frame, Layer, Look, Point } from '../stage'
 
 // Czytanie: zwój, księga na pulpicie, kamienna tablica z runami, książka przy świecy.
@@ -185,21 +185,23 @@ const candleAct: Act = {
 }
 
 // ——— Niuch: obwąchiwanie zwoju ———
-// Nos zbliża się do starego pergaminu; kichnięcie wygania pył za prawą krawędź.
-const SNIFF_SCROLL: Frame = ['hpppph', 'hpnpph', 'hpppph']
-const SNIFF_LEAN = [0, 1, 2, 2, 1, 0, 1, 2, 1, 0, 0, 0, 0, 0, 0, 0] as const
+// Zwój przy samym nosie: Niuch węszy po dwóch wierszach, potem odsuwa go i kicha.
+// Przy żuchwie zostają dwa piksele tła na nos dodawany przez `dress`.
+const SNIFF_SCROLL: Frame = ['hpppph', 'ppnppp', 'ppppnp', 'hpppph']
 
 function sniffScrollLoop(t: number): Frame {
-  const x = SNIFF_LEAN[t]!
-  const sneeze = t >= 8 && t <= 10
-  const dust: Layer[] = t >= 9 ? [
+  const low = t < 8 && t % 4 >= 2
+  const sneeze = t >= 7 && t <= 10
+  const x = t === 8 || t === 11 ? 8 : t === 9 || t === 10 ? 9 : 7
+  const look: Look = sneeze ? 'shut' : 'right'
+  const dust: Layer[] = t >= 9 && t < 14 ? [
     at('m', 15 + 2 * (t - 9), 1),
     ...(t >= 10 ? [at('p', 14 + 2 * (t - 9), 2), at('m', 15 + 2 * (t - 9), 3)] : []),
   ] : []
   return draw(
-    [stander(sneeze ? 'shut' : 'right'), x, 0],
-    ...line([x + 5, 3], [8, 3], 'g'),
-    [SNIFF_SCROLL, 9, 1],
+    [low ? croucher(look) : stander(look), 0, 0],
+    ...line([5, 4], [x - 1, 4], 'g'),
+    [SNIFF_SCROLL, x, 1],
     ...dust,
   )
 }
@@ -208,8 +210,8 @@ const sniffScroll: Act = {
   name: 'obwąchiwanie',
   who: ['Niuch'],
   intro: [
-    // Zwój wjeżdża do dłoni; Niuch wyciąga rękę, zanim pergamin do niej dotrze.
-    ...SLIDE.map(dx => draw([stander('right', dx <= 2 ? 'ggg' : dx <= 4 ? 'gg' : 'g'), 0, 0], [SNIFF_SCROLL, 9 + dx, 1])),
+    // Zwój wjeżdża do twarzy; dłoń chwyta dolny drążek, nie zasłaniając nosa.
+    ...SLIDE.map(dx => draw([stander('right'), 0, 0], ...(dx <= 2 ? line([5, 4], [6, 4], 'g') : []), [SNIFF_SCROLL, 7 + dx, 1])),
     sniffScrollLoop(0),
   ],
   length: 16,
@@ -254,4 +256,79 @@ const jeweler: Act = {
   loop: jewelerLoop,
 }
 
-export const READ_ACTS: Act[] = [scrollAct, book, runes, candleAct, sniffScroll, jeweler]
+// ——— Niuch: tajny atrament ———
+// Oddech przesuwa zaparowaną smugę po szkle; ukryte runy wychodzą i znowu bledną.
+const SECRET_GLASS: Frame = ['.sssss.', 'siiiiis', 'siiiiis', 'siiiiis', '.sssss.']
+const SECRET_RUNES = ['n.n.n', 'nn.nn', 'n.n.n']
+
+function secretLoop(t: number): Frame {
+  const revealed = t < 5 ? 0 : t < 10 ? t - 5 : t < 12 ? 5 : 15 - t
+  const glass = SECRET_GLASS.map((row, y) => [...row].map((cell, x) => {
+    if (cell !== 'i') return cell
+    const col = x - 1
+    if (t >= 5 && t < 10 && col === t - 5) return 'j'
+    return col < revealed && SECRET_RUNES[y - 1]![col] === 'n' ? 'n' : cell
+  }).join(''))
+  const breath = t === 3 || t === 4 ? [at('m', t + 4, 2)] : []
+  return draw(
+    [stander(t >= 3 && t <= 5 ? 'shut' : 'right'), 0, 0],
+    ...line([5, 3], [7, 4], 'g'),
+    [glass, 8, 0],
+    ...breath,
+  )
+}
+
+const secret: Act = {
+  name: 'tajny atrament',
+  who: ['Niuch'],
+  intro: [
+    // Szkło wjeżdża; Niuch chwyta dolną ramę i nabiera powietrza.
+    ...SLIDE.map(dx => draw([SECRET_GLASS, 8 + dx, 0], [stander('right'), 0, 0])),
+    draw([SECRET_GLASS, 8, 0], [stander('right', 'g'), 0, 0]),
+    secretLoop(0),
+  ],
+  length: 16,
+  loop: secretLoop,
+}
+
+// ——— Piryt: szukanie pęknięcia ———
+// Dwie dłonie zginają cienką blachę; ciemna rysa rozchodzi się przez środek.
+function crackPlate(dx: number, bend: number, split: number): Layer[] {
+  const rows = ['sss', `${'.'.repeat(bend)}sss`, `${'.'.repeat(bend)}sss`, 'sss']
+  return [
+    [rows, 8 + dx, 1],
+    ...(split >= 1 ? [at('n', 9 + dx + bend, 2)] : []),
+    ...(split >= 2 ? [at('n', 9 + dx + bend, 3)] : []),
+    ...(split >= 3 ? [at('R', 8 + dx + bend, 3)] : []),
+  ]
+}
+
+function crackPose(bend: number, split: number): Frame {
+  return draw(
+    [stander(split >= 2 ? 'shut' : 'right'), 0, 0],
+    ...line([5, 3], [7, 1], 'g'),
+    ...line([5, 4], [7, 4], 'g'),
+    ...crackPlate(0, bend, split),
+  )
+}
+
+function crackLoop(t: number): Frame {
+  const pressure = pingPong(t, 8)
+  return crackPose(pressure >= 3 ? 1 : 0, pressure < 4 ? 0 : pressure < 6 ? 1 : pressure < 8 ? 2 : 3)
+}
+
+const crack: Act = {
+  name: 'szukanie pęknięcia',
+  who: ['Piryt'],
+  intro: [
+    // Blacha wjeżdża; najpierw dolna dłoń, potem górna chwyta jej brzeg.
+    ...SLIDE.map(dx => draw(...crackPlate(dx, 0, 0), [stander('right'), 0, 0])),
+    draw(...crackPlate(0, 0, 0), [stander('right'), 0, 0], ...line([5, 4], [7, 4], 'g')),
+    draw(...crackPlate(0, 0, 0), [stander('right'), 0, 0], ...line([5, 4], [7, 4], 'g'), ...line([5, 3], [7, 2], 'g')),
+    crackLoop(0),
+  ],
+  length: 16,
+  loop: crackLoop,
+}
+
+export const READ_ACTS: Act[] = [scrollAct, book, runes, candleAct, sniffScroll, jeweler, secret, crack]

@@ -233,4 +233,44 @@ const track: Act = {
   loop: trackLoop,
 }
 
-export const TORCH_ACTS: Act[] = [torchWall, magnify, sniff, panning, track]
+// ——— Niuch: dymna sonda ———
+// Dłoń zagania dym z kadzielnicy ku skale; przeciąg wciąga smugę w szczelinę.
+const DRAFT_ROCK: Frame = ['.kkkk', 'kkknk', 'kkknk', 'kknkk', 'kknkk', 'kkkkk']
+const CENSER: Frame = ['.o.', 'S.S', '.SS']
+const SMOKE_PATH = [[11, 2], [12, 1], [13, 1], [14, 2], [15, 2], [16, 2], [17, 2], [18, 2], [19, 2], [20, 2]] as const
+
+function draftProps(dx: number): Layer[] {
+  return [[DRAFT_ROCK, 17 + dx, 0], [CENSER, 10 + dx, 3]]
+}
+
+function draftLoop(t: number): Frame {
+  const up = pingPong(t, 4)
+  const tip = up < 2 ? 3 : up < 4 ? 2 : 1
+  // Dwa kolejne piksele tworzą smugę; ostatni znika dopiero wewnątrz szczeliny.
+  const smoke: Layer[] = []
+  if (t >= 2 && t < 12) smoke.push(at('m', ...SMOKE_PATH[t - 2]!))
+  if (t >= 3 && t < 13) smoke.push(at('m', ...SMOKE_PATH[t - 3]!))
+  return draw(
+    ...draftProps(0),
+    [stander('right'), 0, 0],
+    ...line([5, 3], [7, 3], 'g'),
+    ...line([7, 3], [8, tip], 'g'),
+    ...smoke,
+  )
+}
+
+const draft: Act = {
+  name: 'dymna sonda',
+  who: ['Niuch'],
+  intro: [
+    // Skała i kadzielnica wjeżdżają; Niuch wyciąga dłoń nad żarem.
+    ...SLIDE.map(dx => draw(...draftProps(dx), [stander('right'), 0, 0])),
+    draw(...draftProps(0), [stander('right', 'g'), 0, 0]),
+    draw(...draftProps(0), [stander('right', 'gg'), 0, 0]),
+    draftLoop(0),
+  ],
+  length: 16,
+  loop: draftLoop,
+}
+
+export const TORCH_ACTS: Act[] = [torchWall, magnify, sniff, panning, track, draft]

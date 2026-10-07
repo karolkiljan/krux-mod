@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import { GESTURES } from '../hooks/fidget'
 import { MATES } from '../hooks/roster'
-import { ACTS, BUBBLE_TEXT, CATCH_X, CUE_FRAMES, FRAME_MS, HOLD_FRAMES, actsFor, routeOf, trackDozing, ORC_GAP, ORC_WIDTH, PALETTE, bandColumns, behind, bubbleLines, canvasColumns, catchStep, caughtScroll, dress, frameGrid, forgeColumns, runsOf, slotX, stageGrid, tossFrames, trackGrid, trackOff, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withNap } from '../hooks/sprites'
+import { ACTS, BUBBLE_TEXT, CATCH_X, CUE_FRAMES, FRAME_MS, HOLD_FRAMES, actsFor, routeOf, trackDozing, trackFace, ORC_GAP, ORC_WIDTH, PALETTE, bandColumns, behind, bubbleLines, canvasColumns, catchStep, caughtScroll, dress, frameGrid, forgeColumns, runsOf, slotX, stageGrid, tossFrames, trackGrid, trackOff, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withNap } from '../hooks/sprites'
 import type { StageScene } from '../hooks/sprites'
 import { H, STAND, W, actFrame, head, legAt, moodOf, pad, stander } from '../hooks/stage'
 
@@ -431,3 +431,20 @@ for (const [scene, acts] of Object.entries(ACTS)) {
     }
   })
 }
+
+test('a nap shuts only the eyes, the campfire in the same row keeps its flame', () => {
+  const rows = ['.gggg....', 'grggrg..y', '.tggt..yo', 'bbbbbb...', '.bGGb....', '.G..G....']
+  const napped = withNap(rows)
+  expect(napped[1]!.slice(0, 6)).toBe('gGggGg')
+  expect(napped[1]![8]).toBe('y')
+})
+
+test('a mate named while working settles the old act to the stand, then plays its own trade', () => {
+  const track = trackStart('hammer', 'a0', 0, 0, null)
+  const named = trackFace(track, 'Grom', 'a0', 185, false)
+  expect(named.face).toBe('Grom')
+  expect(named.leaving?.face).toBe(null)
+  expect(trackGrid(named, named.since - 1, 'band', 'calm', false)).toEqual(pad(STAND))
+  // W marszu albo w bezruchu podmiana od razu.
+  expect(trackFace(trackStart('hammer', 'a1', 0, 20, null), 'Grom', 'a1', 5, false)).toMatchObject({ face: 'Grom', leaving: null })
+})

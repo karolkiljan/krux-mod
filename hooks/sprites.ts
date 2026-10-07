@@ -138,7 +138,8 @@ export type Track = {
   // Czynność, od której ruszy następny epizod każdej sceny: epizody się różnią.
   memory: Partial<Record<StageScene, number>>
   // Przerwana scena, która jeszcze schodzi do stójki; `fast`, gdy czeka już nowa.
-  leaving: { scene: StageScene; seed: number; first: number; step: number; at: number; fast?: boolean } | null
+  // `face` z chwili przerwania: kumpel, który w trakcie zejścia dostał imię, schodzi tą samą trasą.
+  leaving: { scene: StageScene; face: Face; seed: number; first: number; step: number; at: number; fast?: boolean } | null
 }
 
 function routeOfTrack(track: Pick<Track, 'scene' | 'face' | 'seed' | 'first'>): Route {
@@ -186,6 +187,14 @@ export function trackTo(track: Track, scene: StageScene, key: string, frame: num
   return { ...track, ...settle(track, frame, true), ...episode(track, scene, key, frame), setAt: frame }
 }
 
+// Kumpel dostał imię: jego czynności się zmieniają, więc obecna schodzi do stójki,
+// a scena rusza od nowa trasą fachu. W marszu albo w bezruchu podmiana od razu.
+export function trackFace(track: Track, face: Face, key: string, frame: number, still: boolean): Track {
+  if (face === track.face) return track
+  if (still || frame < track.since) return { ...track, face }
+  return { ...track, ...settle(track, frame, true), ...episode(track, track.scene, key, frame), face, setAt: frame }
+}
+
 // Krux drzemie przy ognisku, gdy czekanie na hordę trwa długo.
 export function trackDozing(track: Track, frame: number): boolean {
   if (track.scene !== 'lounge' || frame < track.since) return false
@@ -198,15 +207,15 @@ function hurried(frames: Frame[]): Frame[] {
   return frames.filter((_, i) => i % 2 === 1 || i === frames.length - 1)
 }
 
-function settleOf(left: NonNullable<Track['leaving']>, face: Face): Frame[] {
-  const frames = settleFrames(routeOfTrack({ ...left, face }), left.step)
+function settleOf(left: NonNullable<Track['leaving']>): Frame[] {
+  const frames = settleFrames(routeOfTrack(left), left.step)
   return left.fast === true ? hurried(frames) : frames
 }
 
 // Obecna scena schodzi do stójki od klatki `frame`: `since` to klatka, w której ork stoi.
 function settle(track: Track, frame: number, fast: boolean): Pick<Track, 'since' | 'leaving'> {
-  const left = { scene: track.scene, seed: track.seed, first: track.first, step: frame - track.since, at: frame, fast }
-  const back = settleOf(left, track.face).length
+  const left = { scene: track.scene, face: track.face, seed: track.seed, first: track.first, step: frame - track.since, at: frame, fast }
+  const back = settleOf(left).length
   return { since: frame + back, leaving: back > 0 ? left : null }
 }
 
@@ -223,7 +232,7 @@ export function trackGrid(track: Track, frame: number, variant: 'band' | 'pane',
   if (still) return finish(restFrame(routeOfTrack(track)), variant, mood, false, 0)
   const left = track.leaving
   if (left !== null && frame < track.since) {
-    const rows = settleOf(left, track.face)[frame - left.at]
+    const rows = settleOf(left)[frame - left.at]
     if (rows !== undefined) return finish(rows, variant, mood, false, frame)
   }
   const step = Math.max(0, frame - track.since)
@@ -593,7 +602,10 @@ export function withEffort(rows: readonly string[], age: number): string[] {
 export function withNap(rows: readonly string[]): string[] {
   const top = rows.findIndex(row => /[gG]{4}/u.test(row))
   if (top < 0) return [...rows]
-  const x = rows[top]!.search(/[gG]{4}/u) + 7
-  const sleepy = rows.map((row, y) => y === top + 1 ? row.replaceAll('r', 'G').replaceAll('y', 'G') : row)
+  const crown = rows[top]!.search(/[gG]{4}/u)
+  const x = crown + 7
+  // Oczy gasną tylko w obrębie głowy: płomień ogniska w tym samym wierszu zostaje ogniem.
+  const shut = (row: string) => [...row].map((cell, at) => (at >= crown - 1 && at <= crown + 4 && (cell === 'r' || cell === 'y') ? 'G' : cell)).join('')
+  const sleepy = rows.map((row, y) => (y === top + 1 ? shut(row) : row))
   return pad(draw([sleepy, 0, 0], [['mmm', '..m', '.m.'], x, 0]))
 }

@@ -11,17 +11,18 @@ import { Writable } from 'node:stream'
 
 const sourceOf = file => fs.readFileSync(file, 'utf8').replace(/^import .*\n/gmu, '').replace(/\nmain\(\)\.catch[\s\S]*$/u, '')
 for (const script of ['act-sheet', 'voice-bench']) test(script === 'act-sheet'
-  ? 'act sheet uses private exclusive BMP files, cleans failures and explains unsupported platforms'
+  ? 'act sheet uses private exclusive BMP files, cleans failures, explains unsupported platforms and reports frame violations'
   : 'voice bench handles stdin EPIPE, cleans up, announces cost and keeps report paths relative', async () => {
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'krux-script-test-'))
   try {
     if (script === 'act-sheet') {
       const temps = []
       const outputs = []
+      const logs = []
       let exclusive = false
       let fail = false
       const context = vm.createContext({
-        Buffer, console: { log() {} }, process: { platform: 'linux', argv: [] },
+        Buffer, console: { log: text => logs.push(text) }, process: { platform: 'linux', argv: [], exitCode: 0 },
         mkdtempSync: prefix => { const dir = fs.mkdtempSync(prefix); temps.push(dir); return dir },
         tmpdir: () => scratch, join: path.join, resolve: path.resolve,
         writeFileSync: (file, bytes, options) => { exclusive = options?.flag === 'wx'; fs.writeFileSync(file, bytes, options) },
@@ -33,26 +34,42 @@ for (const script of ['act-sheet', 'voice-bench']) test(script === 'act-sheet'
           outputs.push(argv[5])
           fs.writeFileSync(argv[5], 'PNG fixture')
         },
-        H: 1, W: 2, STAND: ['bb'], pad: x => x, PALETTE: { b: '#ffffff' },
       })
+      for (const file of ['roster', 'stage', 'palette', 'apron']) {
+        vm.runInContext(stripTypeScriptTypes(sourceOf(`hooks/${file}.ts`).replaceAll('export ', '')), context)
+      }
       vm.runInContext(stripTypeScriptTypes(sourceOf('scripts/act-sheet.ts')), context)
-      const act = { intro: [], length: 1, loop: () => ['bb'] }
-      context.sheet([act], path.join(scratch, 'sheet.png'))
+      const stand = vm.runInContext('STAND', context)
+      const act = { name: 'a', intro: [], length: 1, loop: () => stand }
+      context.sheet(context.actStrips([act]), path.join(scratch, 'sheet.png'))
       assert.equal(exclusive, true, 'BMP must use exclusive creation')
       assert.equal(temps.length, 1, 'BMP must have a private temporary directory')
       assert.equal(fs.existsSync(temps[0]), false, 'success must remove the BMP directory')
       fail = true
-      assert.throws(() => context.sheet([act], path.join(scratch, 'sheet.png')), /conversion failed/u)
+      assert.throws(() => context.sheet(context.actStrips([act]), path.join(scratch, 'sheet.png')), /conversion failed/u)
       assert.notEqual(temps[0], temps[1], 'runs must not share a BMP path')
       assert.equal(fs.existsSync(temps[1]), false, 'failure must remove the BMP directory')
       await assert.rejects(context.main(), /macOS.*sips|sips.*macOS/u)
       fail = false
       context.process.platform = 'darwin'
-      vm.runInContext("actsOf = async () => ['a', 'b', 'c'].map(name => ({ name, intro: [], length: 1, loop: () => ['bb'] })); framesOf = () => []", context)
+      context.actsOf = async () => ['a', 'b', 'c'].map(name => ({ ...act, name }))
       await context.main()
       await context.main()
       assert.notEqual(outputs[1], outputs[2], 'default PNG outputs must not share a path')
       assert.equal(fs.existsSync(outputs[1]), true, 'the requested PNG must survive cleanup')
+      assert.equal(context.process.exitCode, 0, 'valid frames must succeed')
+      assert.equal(logs.at(-1), 'Zasady klatek: wszystkie trzymać.')
+      context.actsOf = async () => ['a', 'b', 'c'].map(name => ({
+        ...act, name, loop: () => stand.map(row => row.replaceAll('b', '.')),
+      }))
+      await context.main()
+      assert.equal(context.process.exitCode, 1, 'a broken frame rule must set the failure exit code')
+      assert.match(logs.at(-1), /Złamane zasady \(6\)/u)
+      for (const name of ['a', 'b', 'c']) {
+        assert.ok(logs.at(-1).includes(`${name} pętla 0: brak fartucha 'b'`))
+        assert.ok(logs.at(-1).includes(`${name} pętla 0 (zegar 17): brak fartucha 'b'`))
+      }
+      assert.equal(fs.existsSync(outputs.at(-1)), true, 'a frame violation must still leave the PNG for inspection')
     } else if (script === 'voice-bench') {
       let stderr = ''
       let stdout = ''

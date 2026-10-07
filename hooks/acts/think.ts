@@ -115,4 +115,35 @@ const tuningFork: Act = {
   loop: forkLoop,
 }
 
-export const THINK_ACTS: Act[] = [weighing, counting, pondering, tuningFork]
+// ——— Rysa pod lupą Piryta ———
+// Lupa sunie wzdłuż stalowej belki, a ciemna rysa przechodzi przez szkło.
+// Piryt zatrzymuje wzrok na pęknięciu: nawet tę stal trzeba podejrzewać.
+const CRACKED_BEAM: Frame = ['sssssnsssss', 'SSSSnSSSSSS', '..x.....x..', '..x.....x..']
+const CRACK_LENS: Frame = ['.jij.', 'j...j', '.jij.']
+const LENS_SCAN = [10, 10, 11, 12, 13, 14, 15, 16, 16, 16, 15, 14, 13, 12, 11, 10] as const
+
+function crackAt(dx: number, x: number): Layer[] {
+  return [[CRACKED_BEAM, 10 + dx, 2],
+    ...line([x + dx - 1, 4], [x + dx + 1, 3], 'h'), [CRACK_LENS, x + dx, 1]]
+}
+
+function crackLoop(t: number): Frame {
+  const x = LENS_SCAN[t]!
+  return draw(...crackAt(0, x), [stander(t >= 4 && t <= 6 ? 'shut' : 'right', 'gg'), 0, 0],
+    ...line([8, 3], [x - 2, 4], 'g'))
+}
+
+const crack: Act = {
+  name: 'rysa pod lupą',
+  who: ['Piryt'],
+  intro: [
+    ...SLIDE.map(dx => draw(...crackAt(dx, 10), [STAND, 0, 0])),
+    draw(...crackAt(0, 10), [stander('right', 'g'), 0, 0]),
+    draw(...crackAt(0, 10), [stander('right', 'gg'), 0, 0]),
+    crackLoop(0),
+  ],
+  length: LENS_SCAN.length,
+  loop: crackLoop,
+}
+
+export const THINK_ACTS: Act[] = [weighing, counting, pondering, tuningFork, crack]

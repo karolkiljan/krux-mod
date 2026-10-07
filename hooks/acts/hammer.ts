@@ -229,5 +229,72 @@ const filing: Act = {
   loop: fileWork,
 }
 
+// ——— Prasa śrubowa ———
+const PRESS: Frame = ['SSSSSSSSS', 'S.......S', 'S.......S', 'S.......S', 'S.......S', 'xxxxxxxxx']
+const PRESS_TURN = [2, 2, 1, 1, 2, 3, 3, 2, 2, 1, 1, 2, 3, 3, 2, 2] as const
+const PRESS_DIE = [2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 2, 2, 2, 2] as const
+
+function screwPress(dx: number, turn: number, die: number): Layer[] {
+  return [[PRESS, 12 + dx, 0], [['RRRRR'], 14 + dx, 4],
+    ...line([8 + dx, turn], [19 + dx, 4 - turn], 'h'),
+    ...line([16 + dx, 1], [16 + dx, die], 'q'), [['sss'], 15 + dx, die]]
+}
+
+function pressWork(t: number): Frame {
+  const turn = PRESS_TURN[t]!
+  return draw(...screwPress(0, turn, PRESS_DIE[t]!), [stander('right'), 0, 0],
+    ...line([5, 3], [7, turn], 'g'),
+    // Matryca dociska świeżą stal; iskra rodzi się przy zejściu śruby.
+    ...(t === 4 ? [at('y', 18, 3)] : t === 5 ? [at('o', 19, 2)] : []))
+}
+
+// Prasa śrubowa: Grom zamiast łatać odlew tłoczy nową sztabę, kręcąc poprzeczką prasy.
+const pressingSteel: Act = {
+  name: 'prasa śrubowa',
+  who: ['Grom'],
+  intro: [
+    ...SLIDE.map(dx => draw(...screwPress(dx, 2, 2), [STAND, 0, 0])),
+    draw(...screwPress(0, 2, 2), [REACH, 0, 0]),
+    pressWork(0),
+  ],
+  length: PRESS_TURN.length,
+  loop: pressWork,
+}
+
+// ——— Złocenie ———
+const GILT_PANEL: Frame = ['yyyyy', 'yWWWy', 'yWiWy', 'yyyyy']
+const GILT_PATH = [[12, 2], [12, 2], [12, 3], [12, 4], [13, 4], [14, 4], [15, 4], [16, 4],
+  [16, 3], [16, 2], [16, 2], [15, 2], [14, 2], [13, 2], [12, 2], [12, 2]] as const
+
+function gildingProps(dx: number): Layer[] {
+  return [[GILT_PANEL, 12 + dx, 1], [['.x.x.'], 12 + dx, 5], [['.yy.', 'kyyk'], 18 + dx, 4]]
+}
+
+// Drewniany trzonek, biała skuwka i złota farba na czubku pędzla.
+function giltBrush(tip: number, y: number): Layer[] {
+  return [[['hhhj'], tip - 4, y], at('y', tip, y)]
+}
+
+function gildingWork(t: number): Frame {
+  const [tip, y] = GILT_PATH[t]!
+  const x = tip - 12
+  const orc: Frame = [...stander('right').slice(0, 5), pusher(x)[5]!]
+  return draw(...gildingProps(0), [orc, x, 0],
+    ...line([x + 5, 3], [tip - 5, y], 'g'), ...giltBrush(tip, y))
+}
+
+// Złocenie: Ochra prowadzi pędzel po obu brzegach panelu, pilnując jednakowego koloru i szerokości.
+const gilding: Act = {
+  name: 'złocenie',
+  who: ['Ochra'],
+  intro: [
+    ...SLIDE.map(dx => draw(...gildingProps(dx), ...giltBrush(11 + dx, 3), [STAND, 0, 0])),
+    draw(...gildingProps(0), ...giltBrush(11, 3), [stander('right', 'g'), 0, 0]),
+    gildingWork(0),
+  ],
+  length: GILT_PATH.length,
+  loop: gildingWork,
+}
+
 // Miech dmucha w palenisko, więc gra w scenie budowania (`build.ts`), nie przy kowadle.
-export const HAMMER_ACTS: Act[] = [anvil, plane, grind, rivets, level, filing]
+export const HAMMER_ACTS: Act[] = [anvil, plane, grind, rivets, level, filing, pressingSteel, gilding]

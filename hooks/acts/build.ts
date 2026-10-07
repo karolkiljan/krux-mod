@@ -286,4 +286,83 @@ const hardness: Act = {
   loop: hardnessWork,
 }
 
-export const BUILD_ACTS: Act[] = [stoke, quench, blow, billet, hardness]
+// ——— Odlewanie ———
+const CAST_MOLD: Frame = ['qnnnnq', 'qqqqqq']
+const CRUCIBLE: Frame = ['kRRk', 'kRRk', '.kk.']
+const LADLE_PATH = [18, 18, 18, 17, 16, 15, 14, 13, 12, 12, 13, 14, 15, 16, 17, 18] as const
+
+function castingProps(dx: number): Layer[] {
+  return [[CAST_MOLD, 11 + dx, 3], [CRUCIBLE, 18 + dx, 2], [['xxxxxxxxxxx'], 11 + dx, 5]]
+}
+
+// Łyżka z długim uchwytem: zagarnia żar z tygla, przechyla dzióbek nad formą.
+function castingLadle(tip: number, y: number, full: boolean, tilted = false, dx = 0): Layer[] {
+  const bowl: Frame = tilted ? ['SS.', full ? 'SRR' : 'SSR'] : [full ? 'SRS' : 'S.S', 'SSS']
+  return [...line([tip - 5 + dx, y + 1], [tip - 1 + dx, tilted ? y : y + 1], 'h'), [bowl, tip + dx, y]]
+}
+
+function castingWork(t: number): Frame {
+  const tip = LADLE_PATH[t]!
+  const y = t < 2 ? 2 : 1
+  const x = Math.max(0, tip - 13)
+  const tilted = t === 8 || t === 9
+  const out: Layer[] = [...castingProps(0), [pusher(x), x, 0],
+    ...line([x + 5, 3], [tip - 6, y + 1], 'g'), ...castingLadle(tip, y, t < 9, tilted)]
+  if (tilted) out.push(...line([14, 2], [15, 3], 'o'), [[t === 8 ? 'RR' : 'RRRR'], t === 8 ? 14 : 12, 3])
+  // Forma otwiera dno; gotowa sztabka opada na rolki i wyjeżdża pod tyglem.
+  if (t === 10) out.push([['RRRR'], 12, 4])
+  if (t >= 11) out.push([['RRRR'], [12, 14, 17, 20, 23][t - 11]!, 5])
+  return draw(...out)
+}
+
+// Odlewanie: Grom topi stare żelazo, wypełnia formę i wypuszcza nową sztabkę na rolki.
+const casting: Act = {
+  name: 'odlewanie',
+  who: ['Grom'],
+  intro: [
+    ...SLIDE.map(dx => draw(...castingProps(dx), ...castingLadle(18, 2, true, false, dx), [STAND, 0, 0])),
+    ...stroll(5, [...castingProps(0), ...castingLadle(18, 2, true)]),
+    castingWork(0),
+  ],
+  length: LADLE_PATH.length,
+  loop: castingWork,
+}
+
+// ——— Podwójne ważenie ———
+const SCALE_TILT = [0, 0, 1, 1, -1, 0, 0, 0, 0, 0, 1, 1, -1, 0, 0, 0] as const
+
+function balance(dx: number, tilt: number): Layer[] {
+  const left = 3 + tilt
+  const right = 3 - tilt
+  return [...line([15 + dx, 1], [15 + dx, 4], 's'), [['xxxxx'], 13 + dx, 5],
+    ...line([10 + dx, left - 2], [20 + dx, right - 2], 'h'),
+    ...line([10 + dx, left - 1], [10 + dx, left], 's'),
+    ...line([20 + dx, right - 1], [20 + dx, right], 's'),
+    [['ssss'], 9 + dx, left], [['ssss'], 18 + dx, right],
+    [['SS'], 10 + dx, left - 1], [['y.y'], 18 + dx, right - 1]]
+}
+
+function weighingWork(t: number): Frame {
+  const k = t % 8
+  const tilt = SCALE_TILT[t]!
+  const touching = k === 2
+  const hand = k === 1 || k === 3 ? 8 : touching ? 9 : 7
+  return draw(...balance(0, tilt), [stander(k === 6 ? 'mid' : 'right'), 0, 0],
+    // Młot dwa razy naciska tę samą szalkę; po zwolnieniu patrzy, czy belka wraca do poziomu.
+    ...line([5, 3], [hand, touching ? 3 + tilt : 3], 'g'))
+}
+
+// Podwójne ważenie: Młot porównuje stal z dwoma odważnikami i dwukrotnie sprawdza równowagę.
+const weighing: Act = {
+  name: 'podwójne ważenie',
+  who: ['Młot'],
+  intro: [
+    ...SLIDE.map(dx => draw(...balance(dx, 0), [STAND, 0, 0])),
+    draw(...balance(0, 0), [stander('right', 'g'), 0, 0]),
+    weighingWork(0),
+  ],
+  length: SCALE_TILT.length,
+  loop: weighingWork,
+}
+
+export const BUILD_ACTS: Act[] = [stoke, quench, blow, billet, hardness, casting, weighing]
