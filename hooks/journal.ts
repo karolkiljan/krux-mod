@@ -203,17 +203,20 @@ export function toolLine({ Box, Text }: JournalElements, data: ToolLineData | re
   const single = calls.length === 1 ? calls[0]! : null
   const n = calls.length
   const noun = n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? 'narzędzia' : 'narzędzi'
-  const label = single === null ? `⚒ ${n} ${noun} ·` : `⚒ ${oneLine(single.tool)}${single.target ? ` ${oneLine(single.target)}` : ''}`
+  const label = single === null ? `⚒ ${n} ${noun}` : `⚒ ${oneLine(single.tool)}${single.target ? ` ${oneLine(single.target)}` : ''}`
   const room = columns(width)
-  const style = ok === false ? { color: ERROR_COLOR } : { dimColor: true }
-  const mark = Text({ ...style, children: [markOf(ok)] })
+  // Czerwień niesie tylko znak: cały czerwony wiersz krzyczał jak awaria,
+  // a ✗ to często zwykły niezerowy kod wyjścia (grep bez trafień).
+  const style = { dimColor: true }
+  const mark = Text(ok === false ? { color: ERROR_COLOR, children: [markOf(ok)] } : { ...style, children: [markOf(ok)] })
   return Box({
     width: room,
     height: 1,
     flexDirection: 'row',
     columnGap: 1,
     children: room <= 2 ? [mark] : [
-      Box({ flexGrow: 1, flexShrink: 1, minWidth: 0, children: [Text({ ...style, wrap: 'truncate-end', children: [label] })] }),
+      // Znak wyniku stoi tuż za opisem, nie przy dalekiej krawędzi.
+      Box({ flexShrink: 1, minWidth: 0, children: [Text({ ...style, wrap: 'truncate-end', children: [label] })] }),
       Box({ flexShrink: 0, children: [mark] }),
     ],
   })

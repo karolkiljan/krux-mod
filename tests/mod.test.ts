@@ -1985,39 +1985,52 @@ test('chat mode restored from its own store key wraps messages even with persona
   engine(on, new Map<string, unknown>([['modes', { czat: false }], ['mode.czat', true], ['mode.persona', false]]))
   await start($)
   const reply = await $.ui.mount({ ...REPLY, surface: 'terminal', viewport: { columns: 100, rows: 40 }, props: { text: 'Build pad.', isFirstOfReply: false } })
-  expect((await reply.find({ key: 'chat-header' }))?.text).toMatch(/^Krux · \d{2}:\d{2}$/u)
-  // Silnik odrzuca treść pod Boxem z `width`: Krux bierze wiersz bez odsunięcia.
+  expect((await reply.find({ key: 'chat-header' }))?.text?.trim()).toMatch(/^Krux · \d{2}:\d{2}$/u)
+  // Silnik odrzuca treść pod Boxem z `width`: każdy mówca bierze wiersz bez odsunięcia.
   expect((await reply.find({ key: 'chat' }))?.props.width).toBeUndefined()
-  expect((await reply.find({ key: 'chat' }))?.props.paddingLeft).toBe(0)
+  expect((await reply.find({ key: 'chat' }))?.props.paddingLeft).toBeUndefined()
   expect(await reply.find({ key: 'nameplate' })).toBeUndefined()
-  expect((await reply.findAll({ type: 'Box' })).filter(box => box.props.borderStyle === 'quote').length).toBe(1)
+  expect((await reply.findAll({ type: 'Box' })).filter(box => box.props.borderStyle === 'round').length).toBe(1)
+  // Wiersz narzędzia w czacie stoi pod tekstem dymków, bez ramki, z natywną treścią.
+  const tool = await $.ui.mount({ ...TOOL_USE, requestId: 'chat-tool-row' })
+  expect((await tool.find({ key: 'chat-tool' }))?.props.paddingLeft).toBe(9)
+  expect((await tool.find({ key: 'chat-tool' }))?.props.borderStyle).toBeUndefined()
+  expect(await tool.find({ type: 'Text', text: 'engine' })).toBeDefined()
+  const result = await $.ui.mount({ ...TOOL_USE, component: 'ToolResult', requestId: 'chat-tool-row', props: { tool_use_id: 'chat-tool-row', tool: 'Read', output: 'ok', isErrored: false } })
+  expect((await result.find({ key: 'chat-tool' }))?.props.paddingLeft).toBe(9)
+  // Grupa niesie jedno wcięcie; jej wiersze nie dostają drugiego.
+  const group = await $.ui.mount({ ...TOOL_USE, component: 'ToolGroup', requestId: 'chat-group', props: { calls: [{ ...READ_ROW, tool_use_id: 'in-group' }], isActive: false, isExpanded: true } })
+  expect((await group.find({ key: 'chat-tool' }))?.props.paddingLeft).toBe(9)
+  const row = await $.ui.mount({ ...TOOL_USE, requestId: 'in-group', props: { ...READ_ROW, tool_use_id: 'in-group' } })
+  expect(await row.find({ key: 'chat-tool' })).toBeUndefined()
+  expect(await row.find({ type: 'Text', text: 'engine' })).toBeDefined()
   expect(await reply.find({ type: 'Text', text: 'engine' })).toBeDefined()
   const own = await $.ui.mount(CHAT_USER)
-  expect((await own.find({ key: 'chat-header' }))?.text).toMatch(/^Morra · \d{2}:\d{2}$/u)
-  expect((await own.find({ key: 'chat' }))?.props.justifyContent).toBe('flex-end')
+  expect((await own.find({ key: 'chat-header' }))?.text?.trim()).toMatch(/^Morra · \d{2}:\d{2}$/u)
+  expect((await own.find({ key: 'chat' }))?.props.justifyContent).toBeUndefined()
   expect((await own.find({ key: 'chat-message' }))?.props.width).toBeUndefined()
-  expect((await own.find({ key: 'chat' }))?.props.paddingLeft).toBe(23)
+  expect((await own.find({ key: 'chat' }))?.props.paddingLeft).toBeUndefined()
 })
 
 test('chat timestamps remain stable through redraw, resize and toggling off then on', async ($, on) => {
   const clock = engine(on, new Map([['mode.czat', true]]))
   await start($)
   const first = await $.ui.mount(CHAT_USER)
-  const header = (await first.find({ key: 'chat-header' }))?.text
+  const header = (await first.find({ key: 'chat-header' }))?.text?.trim()
   expect(header).toMatch(/^Morra · \d{2}:\d{2}$/u)
   await clock.advance(65_000)
   await first.redraw({ ...CHAT_USER.props, text: 'dalej' })
-  expect((await first.find({ key: 'chat-header' }))?.text).toBe(header)
+  expect((await first.find({ key: 'chat-header' }))?.text?.trim()).toBe(header)
   await kruxCommand($, 'czat off')
   expect(await first.find({ key: 'chat' })).toBeUndefined()
   await kruxCommand($, 'czat on')
-  expect((await first.find({ key: 'chat-header' }))?.text).toBe(header)
+  expect((await first.find({ key: 'chat-header' }))?.text?.trim()).toBe(header)
   await first.unmount()
   const narrow = await $.ui.mount({ ...CHAT_USER, viewport: { columns: 80, rows: 40 } })
-  expect((await narrow.find({ key: 'chat' }))?.props.paddingLeft).toBe(17)
-  expect((await narrow.find({ key: 'chat-header' }))?.text).toBe(header)
+  expect((await narrow.find({ key: 'chat' }))?.props.paddingLeft).toBeUndefined()
+  expect((await narrow.find({ key: 'chat-header' }))?.text?.trim()).toBe(header)
   const second = await $.ui.mount({ ...CHAT_USER, requestId: 'later-user' })
-  expect((await second.find({ key: 'chat-header' }))?.text).not.toBe(header)
+  expect((await second.find({ key: 'chat-header' }))?.text?.trim()).not.toBe(header)
 })
 
 test('chat uses a timestamp supplied by props and passes through messages with no measured width', async ($, on) => {
@@ -2025,7 +2038,7 @@ test('chat uses a timestamp supplied by props and passes through messages with n
   await start($)
   const timestamp = new Date(2026, 9, 7, 12, 34, 56).getTime()
   const own = await $.ui.mount({ ...CHAT_USER, props: { ...CHAT_USER.props, timestamp } } as unknown as Parameters<Engine['ui']['mount']>[0])
-  expect((await own.find({ key: 'chat-header' }))?.text).toBe('Morra · 12:34')
+  expect((await own.find({ key: 'chat-header' }))?.text?.trim()).toBe('Morra · 12:34')
   const unknownWidth = await $.ui.mount({ ...REPLY, surface: 'terminal', props: { text: 'Treść', isFirstOfReply: true } })
   expect(await unknownWidth.find({ key: 'chat' })).toBeUndefined()
   expect(await unknownWidth.find({ key: 'nameplate' })).toBeUndefined()
@@ -2037,8 +2050,8 @@ test('chat reports keep a mate name from muster after the agent leaves the engin
   await start($)
   await $.agent.spawn(spawnOf({ description: 'Niuch węszyć', prompt: 'Sprawdź pliki' }))
   const report = await $.ui.mount({ ...CHAT_USER, requestId: 'niuch-report', props: { text: 'Gotowe.', origin: { kind: 'task-notification' }, isExpanded: false, task: { id: 'a1' }, from: { name: 'general-purpose' } } })
-  expect((await report.find({ key: 'chat-header' }))?.text).toMatch(/^Niuch · /u)
-  expect((await report.find({ key: 'chat' }))?.props.justifyContent).toBe('flex-start')
+  expect((await report.find({ key: 'chat-header' }))?.text?.trim()).toMatch(/^Niuch · /u)
+  expect((await report.find({ key: 'chat' }))?.props.paddingLeft).toBeUndefined()
   expect(await report.find({ type: 'Text', text: 'engine' })).toBeDefined()
 })
 
@@ -2047,7 +2060,7 @@ test('chat resolves unrecorded agents from descriptions, keeps nameless orks and
   await start($)
   for (const [id, name] of [['nested', 'Ochra'], ['plain', 'ork']] as const) {
     const report = await $.ui.mount({ ...CHAT_USER, requestId: id, props: { text: 'done', origin: { kind: 'task-notification' }, task: { id }, isExpanded: true } })
-    expect((await report.find({ key: 'chat-header' }))?.text).toMatch(new RegExp(`^${name} · `, 'u'))
+    expect((await report.find({ key: 'chat-header' }))?.text?.trim()).toMatch(new RegExp(`^${name} · `, 'u'))
     await report.unmount()
   }
   for (const props of [
@@ -2304,7 +2317,7 @@ test('unmatched tool rows and partly matched groups stay native; matched groups 
   await readForJournal($, 'unknown')
   for (const isExpanded of [false, true]) {
     await group.redraw({ calls: [READ_ROW, { ...READ_ROW, tool_use_id: 'unknown' }], isActive: false, isExpanded })
-    expect(await group.find({ type: 'Text', text: '⚒ 2 narzędzia ·' })).toBeDefined()
+    expect(await group.find({ type: 'Text', text: '⚒ 2 narzędzia' })).toBeDefined()
     expect(await group.find({ type: 'Text', text: '✗' })).toBeDefined()
   }
   await group.redraw({ calls: [{ ...READ_ROW, tool_use_id: undefined }], isActive: false, isExpanded: true })

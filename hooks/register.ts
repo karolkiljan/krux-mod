@@ -17,7 +17,7 @@ import { EMPTY_THREADS, THREAD_SPEC, THREAD_TOOL_NAME, replayThreads, saveThread
 import { dayReport } from './report'
 import { EMPTY_MUSTER, anyRunning, musterDone, musterRows, musterSpawn, musterTool } from './muster'
 import { KRUX_COLOR, ORC_COLOR, shaftDigest, shaftTabs, shaftTree } from './shaft'
-import { chatTree } from './chat'
+import { TOOL_INDENT, chatTree, toolIndent } from './chat'
 import type { AvatarSpeaker } from './avatar'
 import { EMPTY_JOURNAL, journalAfter, journalTree, toolLine } from './journal'
 import { forgeColumns } from './sprites'
@@ -93,6 +93,9 @@ const shaftTab = atom({ plugin: 'krux-mod', key: 'shaftTab' } as const, 'stan')
 // Godzina pierwszego rysunku po id wiadomości, bez niedozwolonego zapisu $.state
 // w ui.render. Nie ma zegara historii: redraw i resize zachowują tę samą godzinę.
 const messageTimes = new Map<string, number>()
+// Id narzędzi z grup w czacie: wcięcie daje grupa, jej wiersze `ToolUse` (także
+// zwinięty wiersz, który silnik rysuje przez `ToolUse`) stoją w niej bez drugiego.
+const groupedTools = new Set<string>()
 let journalWatch: { cancel: () => void } | null = null
 let journalWatchVersion = 0
 let journalWatchRequests = 0
@@ -169,6 +172,7 @@ async function readText($: EngineInterface, name: string): Promise<string> {
 // Tryby i ruch od nowa: na starcie i po komendach, które zerują `$.state`.
 async function loadSession($: EngineInterface): Promise<void> {
   messageTimes.clear()
+  groupedTools.clear()
   journalWatch?.cancel()
   journalWatch = null
   journalWatchVersion += 1
@@ -418,7 +422,7 @@ async function drawChat($: EngineInterface, e: MessageInput, speaker: AvatarSpea
   if (!messageTimes.has(key)) messageTimes.set(key, at)
   const date = new Date(at)
   const time = [date.getHours(), date.getMinutes()].map(value => String(value).padStart(2, '0')).join(':')
-  return chatTree($.ui.resolve(e), { speaker, time, columns, content })
+  return chatTree($.ui.resolve(e), { speaker, time, content })
 }
 
 async function journalShown($: EngineInterface, surface: string): Promise<boolean> {
@@ -880,6 +884,28 @@ export const register: Register = on => {
 
   // Złączenie po tool_use_id, nigdy po nazwie narzędzia ani requestId grupy.
   // Bez wpisu (np. narzędzie w toku albo stara historia) pełny wiersz silnika.
+  // W czacie wiersze narzędzi stoją pod treścią dymków, nie pod awatarami.
+  on('ui.render', { component: ['ToolUse', 'ToolResult', 'ToolGroup'] }, async ($, e, next) => {
+    if (e.surface !== GRID_SURFACE || !(await read($, modes)).czat) return next(e)
+    const table = $.ui.resolve(e)
+    if (e.component === 'ToolGroup') {
+      // Id zapisane przed `next`: wiersze grupy rysują się w jego trakcie.
+      // Wiersz narysowany samodzielnie, zanim dołączył do grupy, rysuje się
+      // od nowa (`invalidate`), żeby nie dostał wcięcia drugi raz.
+      let joined = false
+      for (const call of e.props.calls) {
+        if (call.tool_use_id === undefined || groupedTools.has(call.tool_use_id)) continue
+        groupedTools.add(call.tool_use_id)
+        joined = true
+      }
+      const content = await next(e)
+      if (joined) $.ui.invalidate('ui.render')
+      return toolIndent(table, content)
+    }
+    if (groupedTools.has(e.props.tool_use_id)) return next(e)
+    return toolIndent(table, await next(e))
+  })
+
   on('ui.render', { component: ['ToolUse', 'ToolResult', 'ToolGroup'] }, async ($, e, next) => {
     if (!await journalShown($, e.surface)) return next(e)
     const entries = (await read($, journal)).entries
@@ -892,7 +918,7 @@ export const register: Register = on => {
     const table = $.ui.resolve(e)
     // Wiersz narzędzia już niesie linię dziennika; osobny wynik dałby ją drugi raz.
     if (e.component === 'ToolResult') return table.Box({ key: 'journal-result', height: 0 })
-    return toolLine(table, matched as NonNullable<typeof matched[number]>[], columns)
+    return toolLine(table, matched as NonNullable<typeof matched[number]>[], columns - TOOL_INDENT)
   })
 
   // Pas nad promptem: podpis z lewej, za nim Krux i wysłani kumple, dymek nad

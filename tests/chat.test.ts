@@ -3,7 +3,7 @@ import type { RenderElement } from 'claude-code'
 
 import { avatarRows, speakerColor } from '../hooks/avatar'
 import type { AvatarSpeaker } from '../hooks/avatar'
-import { chatTree } from '../hooks/chat'
+import { chatTree, toolIndent } from '../hooks/chat'
 import type { ChatData, ChatElements } from '../hooks/chat'
 import { PALETTE } from '../hooks/palette'
 
@@ -16,7 +16,7 @@ const ELEMENTS = {
 
 // Wynik `next(e)` może być nieprzezroczysty; nie wolno go wkładać do `Text`.
 const CONTENT: RenderElement = Object.freeze({ type: 'engine', ref: 17 })
-const DATA: ChatData = { speaker: 'Krux', time: '09:07', columns: 120, content: CONTENT }
+const DATA: ChatData = { speaker: 'Krux', time: '09:07', content: CONTENT }
 
 function draw(data: Partial<ChatData> = {}): Node {
   return chatTree(ELEMENTS, { ...DATA, ...data }) as unknown as Node
@@ -80,15 +80,14 @@ for (const { speaker, color, grid } of ORCS) {
     const message = part(root, 'chat-message')
     const header = part(root, 'chat-header')
     const body = part(root, 'chat-body')
-    expect(root.props.justifyContent).toBe('flex-start')
     expect(children(root)).toEqual([avatar, message])
-    expect(root.props.paddingLeft).toBe(0)
+    expect(root.props.paddingLeft).toBeUndefined()
     expect(message.props.flexGrow).toBe(1)
-    expect(text(header)).toBe(`${speaker ?? 'ork'} · 09:07`)
+    expect(text(header)).toBe(` ${speaker ?? 'ork'} · 09:07 `)
     const label = children(header)[0] as Node
     expect(label.props.bold).toBe(true)
     expect(label.props.color).toBe(color)
-    expect(body.props.borderStyle).toBe('quote')
+    expect(body.props.borderStyle).toBe('round')
     expect(body.props.borderColor).toBe(color)
     expect(children(avatar)).toHaveLength(2)
     expect(children(avatar).map(row => text(row as Node).length)).toEqual([6, 6])
@@ -104,17 +103,18 @@ test('Morra has a simple human head in blue, without tusks or an orc apron', () 
   expect(speakerColor('Morra')).toBe('#5b9bd5')
 })
 
-test('Morra stands right, with the avatar at the edge and a bubble no wider than 70 percent', () => {
+// Morra z prawej stała przy krawędzi z awatarem, a tekst wisiał w środku (zrzut z 2026-10-08).
+test('Morra stands left like the orcs, with the avatar next to the header', () => {
   const root = draw({ speaker: 'Morra' })
   const avatar = part(root, 'chat-avatar')
   const message = part(root, 'chat-message')
   const header = part(root, 'chat-header')
-  expect(root.props.justifyContent).toBe('flex-end')
-  expect(children(root)).toEqual([message, avatar])
-  // 120 kolumn: awatar 6 i odstęp 1 zostawiają 113, dymek do 84, reszta to odsunięcie.
-  expect(root.props.paddingLeft).toBe(29)
+  expect(children(root)).toEqual([avatar, message])
+  expect(root.props.justifyContent).toBeUndefined()
+  expect(root.props.paddingLeft).toBeUndefined()
+  expect(message.props.flexGrow).toBe(1)
   expect(root.props.columnGap).toBe(1)
-  expect(text(header)).toBe('Morra · 09:07')
+  expect(text(header)).toBe(' Morra · 09:07 ')
   const label = children(header)[0] as Node
   expect(label.props.bold).toBe(true)
   expect(label.props.color).toBe('#5b9bd5')
@@ -145,9 +145,9 @@ test('a structured content tree retains its own styles and children', () => {
   expect(styled).toEqual({ type: 'Text', props: { color: '#abcdef', bold: false, children: ['kod i markdown silnika'] } })
 })
 
-test('at 60 columns every speaker keeps a fixed avatar and a single complete header', () => {
+test('every speaker keeps a fixed avatar and a single complete header', () => {
   for (const speaker of [...ORCS.map(orc => orc.speaker), 'Morra' as const]) {
-    const root = draw({ speaker, columns: 60 })
+    const root = draw({ speaker })
     const avatar = part(root, 'chat-avatar')
     const message = part(root, 'chat-message')
     const header = part(root, 'chat-header')
@@ -158,37 +158,21 @@ test('at 60 columns every speaker keeps a fixed avatar and a single complete hea
     expect(avatar.props.minWidth).toBe(6)
     expect(avatar.props.height).toBe(2)
     expect(avatar.props.flexShrink).toBe(0)
-    expect(root.props.paddingLeft).toBe(speaker === 'Morra' ? 11 : 0)
     expect(message.props.flexGrow).toBe(1)
     expect(header.props.height).toBe(1)
     expect(header.props.position).toBe('absolute')
     expect(header.props.top).toBe(0)
     const label = children(header)[0] as Node
     expect(label.props.wrap).toBe('truncate-end')
-    expect(text(label)).toBe(`${speaker ?? 'ork'} · 09:07`)
-    const bubble = 60 - (root.props.paddingLeft as number) - (avatar.props.width as number) - (root.props.columnGap as number)
-    expect(bubble >= text(label).length).toBe(true)
+    expect(text(label)).toBe(` ${speaker ?? 'ork'} · 09:07 `)
   }
-})
-
-test('fractional widths round down and keep the bubble within the available columns', () => {
-  const root = draw({ speaker: 'Morra', columns: 61.9 })
-  // 61 kolumn: 54 na dymek, Morra do 42, więc 12 odsunięcia.
-  expect(root.props.paddingLeft).toBe(12)
-})
-
-test('very narrow rows reserve the avatar and gap before granting the bubble width', () => {
-  const root = draw({ speaker: 'Morra', columns: 12 })
-  expect(root.props.paddingLeft).toBe(0)
-  expect(part(root, 'chat-avatar').props.width).toBe(6)
-  expect(part(root, 'chat-message').props.flexGrow).toBe(1)
 })
 
 // Silnik odrzuca całe drzewo (i rysuje swoje), gdy treść `engine` leży pod Boxem z `width`.
 test('no ancestor of the engine content carries a width', () => {
   for (const speaker of ['Krux', 'Morra', null] as const) {
-    for (const columns of [12, 60, 120]) {
-      const root = draw({ speaker, columns })
+    {
+      const root = draw({ speaker })
       const path = (node: Node): Node[] | undefined => {
         if (children(node).includes(CONTENT)) return [node]
         for (const child of children(node)) {
@@ -203,4 +187,14 @@ test('no ancestor of the engine content carries a width', () => {
       expect(ancestors.filter(node => node.props.width !== undefined)).toEqual([])
     }
   }
+})
+
+// Ramka wokół treści silnika zostawała pustym prostokątem, gdy silnik wciągnął
+// grupę do wiersza poprzedniego narzędzia (zrzut z 2026-10-08).
+test('tool rows are indented under the bubble text, without a frame', () => {
+  const row = toolIndent(ELEMENTS, CONTENT) as unknown as Node
+  expect(row.props.paddingLeft).toBe(9)
+  expect(row.props.borderStyle).toBeUndefined()
+  expect(row.props.width).toBeUndefined()
+  expect(children(row)).toEqual([CONTENT])
 })

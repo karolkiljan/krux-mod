@@ -269,21 +269,25 @@ test('a collapsed tool is one dim line with a visible outcome', () => {
 
 test('a collapsed group fails if any call failed and stays pending if any is unknown', () => {
   const green = { tool: 'Read', target: 'a.ts', ok: true }
-  expect(lineText(line([green, green, green, green]))).toBe('⚒ 4 narzędzia · ✓')
-  expect(lineText(line([green, { ...green, ok: null }]))).toBe('⚒ 2 narzędzia · ·')
+  expect(lineText(line([green, green, green, green]))).toBe('⚒ 4 narzędzia ✓')
+  expect(lineText(line([green, { ...green, ok: null }]))).toBe('⚒ 2 narzędzia ·')
   const failed = line([green, { ...green, ok: null }, { ...green, ok: false }])
-  expect(lineText(failed)).toBe('⚒ 3 narzędzia · ✗')
-  expect(texts(failed).every(row => row.props.color === '#e0322b' && row.props.dimColor !== true)).toBe(true)
-  expect(lineText(line([]))).toBe('⚒ 0 narzędzi · ·')
+  expect(lineText(failed)).toBe('⚒ 3 narzędzia ✗')
+  // Na czerwono tylko znak; opis zostaje przygaszony jak przy sukcesie.
+  expect(texts(failed).at(-1)?.props.color).toBe('#e0322b')
+  expect(texts(failed)[0]?.props.dimColor).toBe(true)
+  expect(texts(failed)[0]?.props.color).toBeUndefined()
+  expect(lineText(line([]))).toBe('⚒ 0 narzędzi ·')
   expect(lineText(line([green]))).toBe('⚒ Read a.ts ✓')
-  expect(lineText(line(Array.from({ length: 12 }, () => green)))).toBe('⚒ 12 narzędzi · ✓')
-  expect(lineText(line(Array.from({ length: 22 }, () => green)))).toBe('⚒ 22 narzędzia · ✓')
+  expect(lineText(line(Array.from({ length: 12 }, () => green)))).toBe('⚒ 12 narzędzi ✓')
+  expect(lineText(line(Array.from({ length: 22 }, () => green)))).toBe('⚒ 22 narzędzia ✓')
 })
 
-test('single errors are red and empty or multiline targets keep a single line', () => {
+test('single errors have a red mark and empty or multiline targets keep a single line', () => {
   const failed = line({ tool: 'Bash', target: 'npm test', ok: false })
   expect(lineText(failed)).toBe('⚒ Bash npm test ✗')
-  expect(texts(failed)[0]?.props.color).toBe('#e0322b')
+  expect(texts(failed).at(-1)?.props.color).toBe('#e0322b')
+  expect(texts(failed)[0]?.props.dimColor).toBe(true)
   expect(lineText(line({ tool: 'TodoWrite', target: '', ok: true }))).toBe('⚒ TodoWrite ✓')
   expect(lineText(line({ tool: 'Bash', target: 'echo\n  ok', ok: null }))).toBe('⚒ Bash echo ok ·')
 })
