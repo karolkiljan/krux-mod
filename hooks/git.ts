@@ -1,11 +1,14 @@
 // Stan repo dla Sztolni: gałąź, upstream, commity do wypchnięcia i ściągnięcia,
 // pliki zmienione, nowe i w konflikcie. Komendę puszcza `register.ts`, tu tylko
-// odczyt jej wyjścia i podpisy.
+// odczyt jej wyjścia i podpisy. Niewypchnięte commity daje `rev-list`.
 
 import type { KruxGit } from '../types'
 
 export const GIT_STATUS = ['git', '--no-optional-locks', '-c', 'core.quotePath=false', 'status', '--porcelain=v2', '--branch'] as const
-export const GIT_LOG = ['git', '--no-optional-locks', '-c', 'core.quotePath=false', 'log', '--format=%h%x09%s', '-n', '10'] as const
+export const GIT_LOG = ['git', '--no-optional-locks', '-c', 'core.quotePath=false', 'log', '--format=%H%x09%h%x09%s', '-n', '10'] as const
+
+// Osiągalność zamiast pozycji w logu: merge przeplata commity lokalne i upstream.
+export const GIT_UNPUSHED = ['git', '--no-optional-locks', '-c', 'core.quotePath=false', 'rev-list', '@{upstream}..HEAD'] as const
 
 // Plików w panelu najwyżej tyle; reszta to liczba w wierszu „zmienione”.
 const FILES_LIMIT = 20
@@ -26,8 +29,8 @@ function fileOf(line: string): { code: string; path: string } | null {
   return { code, path: fields.slice(skip).join(' ').split('\t')[0]! }
 }
 
-// `status`: wyjście `GIT_STATUS`; `log`: wyjście `GIT_LOG` (puste w repo bez commitów).
-export function gitOf(output: string, log = ''): KruxGit {
+// Wyjścia `GIT_STATUS`, `GIT_LOG` i `GIT_UNPUSHED`; brak odczytu ostatniego to null.
+export function gitOf(output: string, log = '', unpushed: string | null = null): KruxGit {
   const git: KruxGit = { branch: '', upstream: null, ahead: 0, behind: 0, changed: 0, untracked: 0, conflicted: 0, files: [], commits: [] }
   for (const line of output.split(/\r?\n/u)) {
     if (line.startsWith('# branch.head ')) git.branch = line.slice('# branch.head '.length)
@@ -44,13 +47,14 @@ export function gitOf(output: string, log = ''): KruxGit {
     const file = fileOf(line)
     if (file !== null && git.files.length < FILES_LIMIT) git.files.push(file)
   }
-  // Na prostej gałęzi `ahead` najnowszych commitów to te jeszcze niewypchnięte.
+  // Pełne hashe porównujemy, krótkie pokazujemy. Brak odczytu nie potwierdza wypchnięcia.
+  const local = new Set((unpushed ?? '').split(/\r?\n/u).filter(Boolean))
   git.commits = log
     .split(/\r?\n/u)
     .filter(line => line.includes('\t'))
-    .map((line, index) => {
-      const [hash = '', ...subject] = line.split('\t')
-      return { hash, subject: subject.join('\t'), pushed: git.upstream !== null && index >= git.ahead }
+    .map(line => {
+      const [oid = '', hash = '', ...subject] = line.split('\t')
+      return { hash, subject: subject.join('\t'), pushed: git.upstream !== null && unpushed !== null && !local.has(oid) }
     })
   return git
 }

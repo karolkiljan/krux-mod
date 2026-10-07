@@ -4,6 +4,7 @@ import type { AgentStatus, SessionUsage, TurnStepChunk } from 'claude-code'
 
 import { ACTS, PALETTE, SPEAKER_COLOR } from '../hooks/sprites'
 import type { StageScene } from '../hooks/sprites'
+import { replay } from '../hooks/lore'
 import { COMPACT_NOTE, FORMAT_HINT, LENGTH_HINT, RISK_HINT, VOICE_ANCHOR, VOICE_SHORT } from '../hooks/voice'
 
 type On = Parameters<TestBody>[1]
@@ -36,11 +37,11 @@ const ORIGIN = { kind: 'composer' as const }
 // Wszystko, co Claude Code odpowiedziałby modowi, z magazynem w Mapie.
 type History = { role: 'user' | 'assistant'; text: string; toolUses: { tool_use_id: string; tool: string; input: Record<string, unknown>; isError?: true; text?: string }[] }[]
 
-type Extras = { toasts?: string[]; settings?: Record<string, unknown>; plugins?: string[]; toolError?: string; agentGate?: Promise<void>; history?: History; agents?: { id: string; status: AgentStatus }[]; opened?: string[]; closed?: string[]; usage?: SessionUsage; beforeAgentList?: () => Promise<void>; beforeStoreSet?: () => Promise<void>; paneWaits?: boolean; git?: { stdout: string }; tools?: string[] }
+type Extras = { beforeStoreGet?: () => void; logs?: string[]; onPrompt?: () => void; toasts?: string[]; settings?: Record<string, unknown>; plugins?: string[]; toolError?: string; agentGate?: Promise<void>; history?: History; agents?: { id: string; status: AgentStatus }[]; opened?: string[]; closed?: string[]; usage?: SessionUsage; beforeAgentList?: () => Promise<void>; beforeStoreSet?: () => Promise<void>; paneWaits?: boolean; git?: { stdout: string }; tools?: string[] }
 
 function engine(on: On, saved: Map<string, unknown>, extras: Extras = {}) {
   const toasts = extras.toasts ?? []
-  on('store.get', ($, e) => ({ value: saved.get(e.key) }))
+  on('store.get', ($, e) => { extras.beforeStoreGet?.(); return { value: saved.get(e.key) } })
   on('store.set', async ($, e) => {
     await extras.beforeStoreSet?.()
     saved.set(e.key, e.value)
@@ -55,7 +56,7 @@ function engine(on: On, saved: Map<string, unknown>, extras: Extras = {}) {
     value: (extras.plugins ?? []).map(plugin => ({ name: `${plugin}:${plugin}`, description: '', source: 'plugin' as const, plugin })),
   }))
   on('command.register', () => ({ value: { command: 'krux' } }))
-  on('ui.log', () => ({ value: undefined }))
+  on('ui.log', ($, e) => { extras.logs?.push(String(e.text)); return { value: undefined } })
   on('ui.toast', ($, e) => {
     toasts.push(String(e.text))
     return { value: undefined }
@@ -95,7 +96,7 @@ function engine(on: On, saved: Map<string, unknown>, extras: Extras = {}) {
     return { value: (extras.agents ?? []).map(agent => ({ ...agent, description: '', type: 'general-purpose' })) }
   })
   on('prompt.compose', () => ({ sections: BASE }))
-  on('prompt.submit', ($, e) => ({ text: e.text, context: e.context }))
+  on('prompt.submit', ($, e) => { extras.onPrompt?.(); return { text: e.text, context: e.context } })
   on('turn.start', ($, e) => ({ turnId: e.turnId }))
   on('turn.complete', ($, e) => ({ text: e.answer }))
   on('tool.call', async ($, e) => {
@@ -1382,4 +1383,139 @@ test('resume from a capped history preserves thread ids for later live closes an
   expect(closed.text).toBe('Open threads:\n#99 [risk] stary')
   const opened = await $.tool.call({ tool: 'mcp__krux-mod__watki', open: [{ text: 'kolejny' }] } as never)
   expect(opened.text).toContain('#101 [todo] kolejny')
+})
+
+
+test('gating hook failures pass the original session, prompt and compaction events onward', async ($, on) => {
+  let failStore = false
+  let failCompact = false
+  let notices = 0
+  let prompts = 0
+  let compactions = 0
+  const logs: string[] = []
+  engine(on, new Map(), { logs, onPrompt: () => { prompts += 1 }, beforeStoreGet: () => {
+    if (failStore) throw new Error('store unavailable')
+  } })
+  on('state.get', ($, e, next) => {
+    if (failCompact && e.key === 'modes') return { value: null }
+    return next(e)
+  })
+  on('classic.SessionStart', () => { notices += 1; return {} })
+  on('session.compact', ($, e) => {
+    expect(e.instructions).toBe('original instructions')
+    compactions += 1
+    return { messages: [{ role: 'user' as const, text: 'kept summary', toolUses: [] }] }
+  })
+  await start($)
+  failStore = true
+  for (const source of ['clear', 'resume', 'fork'] as const) await $.classic.SessionStart({ source })
+  const entered = await $.prompt.submit({ text: 'włącz flow', context: ['prior'], wait: false, origin: ORIGIN })
+  expect(entered).toMatchObject({ text: 'włącz flow', context: ['prior'] })
+  failStore = false
+  failCompact = true
+  const result = await $.session.compact({ trigger: 'manual', instructions: 'original instructions', messages: [{ role: 'user', text: 'before summary', toolUses: [] }] })
+  expect(result.messages?.[0]?.text).toBe('kept summary')
+  expect([notices, prompts, compactions]).toEqual([3, 1, 1])
+  expect(logs.filter(line => /classic.SessionStart|prompt.submit|session.compact/u.test(line)).length).toBe(5)
+})
+
+test('replay and live counting agree through toggles, disabled persona, empty text and subagent reports', async ($, on) => {
+  engine(on, new Map())
+  let liveCount = 0
+  on('state.set', ($, e, next) => {
+    if (e.plugin === 'krux-mod' && e.key === 'turns') liveCount = Number(e.value)
+    return next(e)
+  })
+  await start($)
+  const history: History = []
+  const sequence = [
+    ['pierwszy', ORIGIN, 1], ['włącz flow', ORIGIN, 1], ['wyłącz krux', ORIGIN, 1],
+    ['bez persony', ORIGIN, 2], ['raport', { kind: 'task-notification' as const }, 3],
+    ['włącz krux', ORIGIN, 0], [' ', ORIGIN, 0], ['raz', ORIGIN, 1],
+    ['dwa', ORIGIN, 2], ['trzy', ORIGIN, 3], ['cztery', ORIGIN, 4],
+    ['pięć', ORIGIN, 5], ['sześć', ORIGIN, 6],
+  ] as const
+  for (const [text, origin, count] of sequence) {
+    await $.prompt.submit({ text, origin, wait: false })
+    history.push({ role: 'user', text, toolUses: [] })
+    expect(liveCount).toBe(count)
+    expect(replay(history).turns).toBe(count)
+  }
+  const live = await $.prompt.submit({ text: 'siedem', origin: ORIGIN, wait: false })
+  expect(live.context).toContain(VOICE_ANCHOR)
+})
+
+test('the nameplate retains recent request ids and forgets older turns', async ($, on) => {
+  engine(on, new Map())
+  await start($)
+  const plate = async (requestId: string) => {
+    const ui = await $.ui.mount({ ...REPLY, requestId, surface: 'terminal', props: { text: 'Krux kuć.', isFirstOfReply: true } })
+    const found = (await ui.find({ type: 'Text', text: '⚒ Krux' })) !== undefined
+    await ui.unmount()
+    return found
+  }
+  for (let turn = 0; turn < 40; turn += 1) {
+    await $.turn.start({ text: 'kuj', turnId: `bounded-${turn}` })
+    expect(await plate(`bounded-${turn}`)).toBe(true)
+  }
+  expect(await plate('bounded-39')).toBe(true)
+  expect(await plate('bounded-38')).toBe(true)
+  expect(await plate('bounded-0')).toBe(false)
+  expect(await plate('new-block')).toBe(false)
+})
+
+test('panel notes keep only the newest 16 and expire after five minutes', async ($, on) => {
+  const clock = engine(on, new Map())
+  await start($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+  for (let toggle = 0; toggle < 20; toggle += 1) await ui.press({ key: 'toggle-flow' })
+  const entered = await $.prompt.submit({ text: 'dalej', origin: ORIGIN, wait: false })
+  expect((entered.context ?? []).filter(note => note.startsWith('Flow ')).length).toBe(16)
+  expect(entered.context?.[0]).toContain('Flow włączony')
+  const once = await $.prompt.submit({ text: 'dalej', origin: ORIGIN, wait: false })
+  expect((once.context ?? []).filter(note => note.startsWith('Flow '))).toEqual([])
+  await ui.press({ key: 'toggle-flow' })
+  await clock.advance(300_001)
+  await ui.press({ key: 'toggle-konkret' })
+  const fresh = await $.prompt.submit({ text: 'dalej', origin: ORIGIN, wait: false })
+  expect((fresh.context ?? []).filter(note => note.startsWith('Flow '))).toEqual([])
+  expect((fresh.context ?? []).some(note => note.startsWith('Konkret włączony'))).toBe(true)
+  await ui.press({ key: 'toggle-flow' })
+  await clock.advance(300_000)
+  const edge = await $.prompt.submit({ text: 'dalej', origin: ORIGIN, wait: false })
+  expect((edge.context ?? []).some(note => note.startsWith('Flow '))).toBe(true)
+  await ui.press({ key: 'toggle-flow' })
+  await clock.advance(300_001)
+  const stale = await $.prompt.submit({ text: 'dalej', origin: ORIGIN, wait: false })
+  expect((stale.context ?? []).filter(note => note.startsWith('Flow '))).toEqual([])
+})
+
+
+test('a resumed toggle history keeps the live six-turn anchor rhythm', async ($, on) => {
+  const history: History = ['pierwszy', 'włącz flow', 'wyłącz krux', 'bez persony', 'włącz krux', 'raz', 'dwa', 'trzy', 'cztery', 'pięć', 'raport']
+    .map(text => ({ role: 'user', text, toolUses: [] }))
+  engine(on, new Map(), { history })
+  await start($)
+  const resumed = await $.prompt.submit({ text: 'siedem', origin: ORIGIN, wait: false })
+  expect(resumed.context).toContain(VOICE_ANCHOR)
+  const next = await $.prompt.submit({ text: 'osiem', origin: ORIGIN, wait: false })
+  expect(next.context).toContain(VOICE_SHORT)
+})
+
+test('history ending with persona enable restores lore even when its turn count is zero', async ($, on) => {
+  const history: History = [
+    { role: 'user', text: 'testy', toolUses: [] },
+    { role: 'assistant', text: 'Krux sprawdzić.', toolUses: [{ tool_use_id: 'test', tool: 'Bash', input: { command: 'npm test' }, isError: true }] },
+    { role: 'user', text: 'włącz krux', toolUses: [] },
+  ]
+  let runs = 0
+  engine(on, new Map(), { history })
+  on('state.set', ($, e, next) => {
+    if (e.plugin === 'krux-mod' && e.key === 'lore') runs = (e.value as { testRuns: number }).testRuns
+    return next(e)
+  })
+  await start($)
+  const entered = await $.prompt.submit({ text: 'dalej', origin: ORIGIN, wait: false })
+  expect(entered.context).toContain(VOICE_ANCHOR)
+  expect(runs).toBe(1)
 })

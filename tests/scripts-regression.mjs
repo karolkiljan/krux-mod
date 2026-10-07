@@ -105,3 +105,210 @@ for (const script of ['act-sheet', 'voice-bench']) test(script === 'act-sheet'
     fs.rmSync(scratch, { recursive: true, force: true })
   }
 })
+
+
+// Te próby uruchamiają prawdziwe funkcje moda. Zastępują tylko granicę silnika,
+// gdzie testy pluginu nie pozwalają bezpośrednio odczytać ani popsuć stanu.
+function registerContext(overrides = {}) {
+  const context = vm.createContext({
+    THREAD_TOOL_NAME: 'mcp__krux-mod__watki', DEFAULT_MODES: {}, EMPTY_LORE: {}, CALM: {}, EMPTY_CREW: {}, EMPTY_BOARD: {}, EMPTY_MUSTER: {}, EMPTY_THREADS: {},
+    atom: (key, fallback) => ({ ...key, fallback }),
+    ...overrides,
+  })
+  const source = fs.readFileSync('hooks/register.ts', 'utf8')
+    .replace(/^import [\s\S]*?from ['"][^'"]+['"]\n/gmu, '')
+    .replace('export const register', 'const register')
+  vm.runInContext(stripTypeScriptTypes(source), context)
+  return context
+}
+
+test('a failed counter reset preserves completed compaction without running next twice', async () => {
+  let executions = 0
+  const logs = []
+  const context = registerContext({
+    read: async () => ({ persona: true }),
+    update: async () => { throw new Error('counter unavailable') },
+    COMPACT_NOTE: 'compact note',
+  })
+  const hooks = new Map()
+  context.on = (event, ...args) => {
+    const hook = { run: args.at(-1) }
+    hooks.set(event, hook)
+    return { catch(handler) { hook.catch = handler } }
+  }
+  vm.runInContext('register(on)', context)
+  const hook = hooks.get('session.compact')
+  const event = { trigger: 'manual', instructions: 'keep plan', messages: [{ text: 'input' }] }
+  const result = { messages: [{ text: 'completed summary' }] }
+  const next = async e => {
+    executions += 1
+    assert.equal(e.instructions, 'keep plan\n\ncompact note')
+    return result
+  }
+  const api = { ui: { log: text => logs.push(text) } }
+  await assert.rejects(hook.run(api, event, next), /counter unavailable/u)
+  // Kontrakt silnika: next w .catch zwraca zapamiętany wynik, jeśli już wykonany.
+  const caught = Object.assign(async () => result, { called: true, error: { kind: 'throw', message: 'counter unavailable' } })
+  assert.equal(await hook.catch(api, event, caught), result)
+  assert.equal(executions, 1)
+  assert.match(logs[0], /session.compact.*counter unavailable/u)
+  // Awaria logowania też nie odbiera gotowego wyniku.
+  assert.equal(await hook.catch({ ui: { log() { throw new Error('log unavailable') } } }, event, caught), result)
+})
+
+test('git refresh runs status and log concurrently and coalesces overlapping reads with one trailing refresh', async () => {
+  const gitSource = fs.readFileSync('hooks/git.ts', 'utf8').replace(/^import .*\n/gmu, '').replaceAll('export ', '')
+  const gitContext = vm.createContext({})
+  vm.runInContext(stripTypeScriptTypes(gitSource), gitContext)
+  const commands = vm.runInContext('({ GIT_STATUS, GIT_LOG, GIT_UNPUSHED, gitOf })', gitContext)
+  let state = null
+  let failStatus = false
+  let blocked = false
+  let release
+  let gate
+  const calls = []
+  const context = registerContext({ ...commands, read: async () => state, update: async (_api, _atom, change) => { state = change(state) } })
+  const api = { process: { run: async (argv, options) => {
+    assert.equal(options.timeoutMs, 5000)
+    assert.deepEqual(Array.from(argv).slice(0, 4), ['git', '--no-optional-locks', '-c', 'core.quotePath=false'])
+    const command = argv[4]
+    calls.push(command)
+    if (command === 'status' && failStatus) throw new Error('git unavailable')
+    if (blocked && command === 'log') await gate
+    return { exitCode: 0, stdout: command === 'status' ? '# branch.head main' : 'oid\tabc\tlocal' }
+  } } }
+  context.api = api
+  const refresh = () => vm.runInContext('refreshGit(api)', context)
+  blocked = true
+  gate = new Promise(resolve => { release = resolve })
+  const first = refresh()
+  const second = refresh()
+  const third = refresh()
+  assert.equal(first, second)
+  assert.equal(second, third)
+  assert.deepEqual(calls, ['status', 'log'])
+  blocked = false
+  release()
+  await Promise.all([first, second, third])
+  assert.deepEqual(calls, ['status', 'log', 'status', 'log'])
+  assert.equal(state.commits[0].pushed, false)
+  // Odrzucony status nie zwalnia blokady przed końcem równoległego logu.
+  calls.length = 0
+  failStatus = true
+  blocked = true
+  gate = new Promise(resolve => { release = resolve })
+  const failing = refresh()
+  await Promise.resolve()
+  const overlapping = refresh()
+  assert.equal(failing, overlapping)
+  assert.deepEqual(calls, ['status', 'log'])
+  blocked = false
+  failStatus = false
+  release()
+  await failing
+  assert.deepEqual(calls, ['status', 'log', 'status', 'log'])
+  calls.length = 0
+  await refresh()
+  assert.deepEqual(calls, ['status', 'log'])
+})
+
+test('git refresh reads upstream reachability with full hashes and safe global options', async () => {
+  const gitContext = vm.createContext({})
+  vm.runInContext(stripTypeScriptTypes(fs.readFileSync('hooks/git.ts', 'utf8').replace(/^import .*\n/gmu, '').replaceAll('export ', '')), gitContext)
+  const commands = vm.runInContext('({ GIT_STATUS, GIT_LOG, GIT_UNPUSHED, gitOf })', gitContext)
+  let state = null
+  let reachability = 'ok'
+  const calls = []
+  const context = registerContext({ ...commands, read: async () => state, update: async (_api, _atom, change) => { state = change(state) } })
+  context.api = { process: { run: async (argv, options) => {
+    calls.push(Array.from(argv))
+    assert.equal(options.timeoutMs, 5000)
+    if (argv[4] === 'status') return { exitCode: 0, stdout: '# branch.head main\n# branch.upstream origin/main\n# branch.ab +2 -0' }
+    if (argv[4] === 'log') return { exitCode: 0, stdout: 'mergeoid\tmerge\tmerge\nremoteoid\tremote\tupstream\nlocaloid\tlocal\tlocal\nbaseoid\tbase\tbase' }
+    assert.deepEqual(Array.from(argv), ['git', '--no-optional-locks', '-c', 'core.quotePath=false', 'rev-list', '@{upstream}..HEAD'])
+    return { exitCode: reachability === 'failed' ? 128 : 0, stdout: reachability === 'truncated' ? 'mergeoid\n' : 'mergeoid\nlocaloid\n', isStdoutTruncated: reachability === 'truncated' }
+  } } }
+  await vm.runInContext('refreshGit(api)', context)
+  assert.deepEqual(Array.from(state.commits, commit => commit.pushed), [false, true, false, true])
+  assert.equal(calls.length, 3)
+  reachability = 'failed'
+  await vm.runInContext('refreshGit(api)', context)
+  assert.deepEqual(Array.from(state.commits, commit => commit.pushed), [false, false, false, false])
+  reachability = 'truncated'
+  await vm.runInContext('refreshGit(api)', context)
+  assert.deepEqual(Array.from(state.commits, commit => commit.pushed), [false, false, false, false])
+})
+
+
+test('gating observers recover failures without repeating downstream actions', async () => {
+  const logs = []
+  const context = registerContext({
+    mateIn: () => null,
+    applyToggle: () => ({}),
+    read: async () => ({ persona: true, sztolnia: true }),
+    update: async () => { throw new Error('state unavailable') },
+  })
+  const hooks = []
+  context.on = (event, ...args) => {
+    const hook = { event, matcher: args.length > 1 ? args[0] : null, run: args.at(-1) }
+    hooks.push(hook)
+    return { catch(handler) { hook.catch = handler } }
+  }
+  vm.runInContext('register(on)', context)
+  const api = {
+    clock: { now: async () => { throw new Error('clock unavailable') } },
+    store: { get: async () => { throw new Error('store unavailable') } },
+    ui: { log: text => logs.push(text) },
+  }
+  for (const [name, matcher, event, result] of [
+    ['agent.spawn', null, { prompt: 'work', description: 'Niuch' }, { agentId: 'a1' }],
+    ['tool.call', null, { tool: 'Write', file_path: 'a.ts', content: '' }, { result: 'written' }],
+    ['tool.call', 'mcp__krux-mod__watki', { tool: 'mcp__krux-mod__watki' }, { result: 'fallback' }],
+    ['ui.close', null, { id: 'sztolnia', origin: { kind: 'person' } }, {}],
+  ]) {
+    const hook = hooks.find(hook => hook.event === name && (hook.matcher?.tool ?? null) === matcher)
+    let executions = 0
+    const next = async () => { executions += 1; return result }
+    await assert.rejects(hook.run(api, event, next), /unavailable/u)
+    const caught = Object.assign(async () => executions > 0 ? result : next(), { called: executions > 0, error: { kind: 'throw', message: 'unavailable' } })
+    assert.equal(await hook.catch(api, event, caught), result)
+    assert.equal(executions, 1)
+  }
+  assert.equal(logs.length, 4)
+})
+
+
+test('a refresh at completion reads again instead of joining a finished snapshot', async () => {
+  for (let depth = 0; depth < 8; depth += 1) {
+    const gitContext = vm.createContext({})
+    vm.runInContext(stripTypeScriptTypes(fs.readFileSync('hooks/git.ts', 'utf8').replace(/^import .*\n/gmu, '').replaceAll('export ', '')), gitContext)
+    const commands = vm.runInContext('({ GIT_STATUS, GIT_LOG, GIT_UNPUSHED, gitOf })', gitContext)
+    let state = commands.gitOf('# branch.head main', 'oid\tabc\tlocal')
+    let schedule = true
+    let later
+    let queued
+    const lateCall = new Promise(resolve => { queued = resolve })
+    const calls = []
+    const defer = (depth, action) => queueMicrotask(() => depth === 0 ? action() : defer(depth - 1, action))
+    const context = registerContext({ ...commands,
+      read: async () => {
+        if (schedule) {
+          schedule = false
+          // Granica ostatniego await: repo zmienia się po odczycie tego samego stanu.
+          defer(depth, () => { later = vm.runInContext('refreshGit(api)', context); queued() })
+        }
+        return Promise.resolve(state)
+      },
+      update: async (_api, _atom, change) => { state = change(state) },
+    })
+    context.api = { process: { run: async argv => {
+      calls.push(argv[4])
+      return { exitCode: 0, stdout: argv[4] === 'status' ? '# branch.head main' : 'oid\tabc\tlocal' }
+    } } }
+    const first = vm.runInContext('refreshGit(api)', context)
+    await first
+    await lateCall
+    await later
+    assert.deepEqual(calls, ['status', 'log', 'status', 'log'], `microtask depth ${depth}`)
+  }
+})

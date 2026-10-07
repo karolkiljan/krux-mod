@@ -1,5 +1,7 @@
 # Triage Labels
 
+> Szablon z [mattpocock/skills](https://github.com/mattpocock/skills) (MIT, © 2026 Matt Pocock), wygenerowany do pracy z tym repo.
+
 The skills speak in terms of five canonical triage roles. This file maps those roles to the actual label strings used in this repo's issue tracker.
 
 | Label in mattpocock/skills | Label in our tracker | Meaning                                  |

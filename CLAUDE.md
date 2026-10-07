@@ -131,6 +131,8 @@ Typy (`tsc`) — po pierwszym załadowaniu z `--plugin-dir` silnik kładzie dekl
 
 ## Agent skills
 
+Konfiguracja pluginu [mattpocock/skills](https://github.com/mattpocock/skills) (MIT, © 2026 Matt Pocock), z którego maintainer korzysta przy rozwoju moda. Pliki w `docs/agents/` to szablony wygenerowane przez ten plugin; mod ich nie czyta i do działania ich nie potrzebuje.
+
 ### Issue tracker
 
 Issues i specy jako pliki markdown w `.scratch/<feature>/` w repo. See `docs/agents/issue-tracker.md`.

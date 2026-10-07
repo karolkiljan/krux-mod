@@ -6,7 +6,7 @@ import type { KruxDrift, KruxEvent, KruxLore, KruxMate } from '../types'
 import { testPassed } from './board'
 import { gauge, matesNamed } from './gauge'
 import { MATES, ROSTER } from './roster'
-import { pick, workOf } from './voice'
+import { parsePhrase, pick, workOf } from './voice'
 
 export const EMPTY_LORE: KruxLore = {
   testRuns: 0,
@@ -136,6 +136,16 @@ export type HistoryMessage = {
   toolResults?: unknown[]
 }
 
+// Historia nie zachowuje źródła promptu ani trybu persony. Rytm opiera się na
+// treści: tekst (także raport) liczy turę niezależnie od persony; frazy nie.
+// Włączenie Kruxa zaczyna rytm od nowa, puste teksty i wyniki narzędzi milczą.
+export function turnsAfter(count: number, text: string, toolResults: readonly unknown[] = []): number {
+  if (toolResults.length > 0 || !text.trim()) return count
+  const phrase = parsePhrase(text)
+  if (phrase) return phrase.mode === 'persona' && phrase.on === true ? 0 : count
+  return count + 1
+}
+
 export type Replayed = { turns: number; lore: KruxLore; drift: KruxDrift | null }
 
 // `/resume`, restart i `claude -p --resume` zaczynają z pustym `$.state`.
@@ -154,7 +164,7 @@ export function replay(messages: readonly HistoryMessage[]): Replayed {
     if (message.role === 'user') {
       if ((message.toolResults?.length ?? 0) > 0 || !message.text.trim()) continue
       closeTurn()
-      turns += 1
+      turns = turnsAfter(turns, message.text, message.toolResults)
       continue
     }
     for (const use of message.toolUses) lore = recordTool(lore, use.tool, use.input, use.isError === true, use.text ?? '')

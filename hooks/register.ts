@@ -7,12 +7,12 @@ import type { BandInput } from './band'
 import { EMPTY_CREW, crewAfter } from './crew'
 import type { CrewEvent } from './crew'
 import { gauge, matesNamed } from './gauge'
-import { EMPTY_LORE, lifeNote, recordAnswer, recordTool, replay } from './lore'
+import { EMPTY_LORE, lifeNote, recordAnswer, recordTool, replay, turnsAfter } from './lore'
 import { CALM, EVENT_HOLD_MS, eventOf, mateIn, mateMoodAfter, moodsAfter, moodsTick } from './mood'
 import { MATES, ROSTER } from './roster'
 import type { BoardCall } from './board'
 import { EMPTY_BOARD, boardAfter, replayBoard, usageOf } from './board'
-import { GIT_LOG, GIT_STATUS, GIT_TOOLS, gitOf } from './git'
+import { GIT_LOG, GIT_STATUS, GIT_UNPUSHED, GIT_TOOLS, gitOf } from './git'
 import { EMPTY_THREADS, THREAD_SPEC, THREAD_TOOL_NAME, replayThreads, threadsAfter, threadsReport } from './threads'
 import { EMPTY_MUSTER, anyRunning, musterDone, musterRows, musterSpawn, musterTool } from './muster'
 import { KRUX_COLOR, ORC_COLOR, shaftDigest, shaftTree } from './shaft'
@@ -85,7 +85,18 @@ const threads = atom({ plugin: 'krux-mod', key: 'threads' } as const, EMPTY_THRE
 let texts: Texts = { persona: '', konkret: '', flow: '' }
 
 // Notki dla modelu po przełączeniu z panelu: dojadą z następnym promptem.
-let pendingNotes: string[] = []
+const NOTES_LIMIT = 16
+const NOTES_TTL_MS = 5 * 60 * 1000
+let pendingNotes: { text: string; at: number }[] = []
+
+function freshNotes(now: number): typeof pendingNotes {
+  return pendingNotes.filter(note => now - note.at <= NOTES_TTL_MS).slice(-NOTES_LIMIT)
+}
+
+// Błąd dodatku nie blokuje sesji; nawet logowanie może zawieść.
+function hookFailure($: EngineInterface, event: string, error: { kind: string; message: string }): void {
+  try { $.ui.log(`krux-mod: ${event}: ${error.kind}: ${error.message}`) } catch { /* Log nie zastępuje zdarzenia. */ }
+}
 
 // Jeden zegar apelu naraz; reload modułu zaczyna bez zegara.
 let ticking = false
@@ -184,7 +195,7 @@ async function restore($: EngineInterface): Promise<void> {
     await update($, board, () => replayBoard(messages))
     await update($, threads, () => replayThreads(messages))
     const found = replay(messages)
-    if (found.turns === 0) return
+    if (messages.length === 0) return
     await update($, turns, () => found.turns)
     await update($, lore, () => found.lore)
     const last = found.lore.last
@@ -281,31 +292,55 @@ async function syncShaftPane($: EngineInterface, on: boolean): Promise<void> {
 // bloku po grupie narzędzi, a stanu w trakcie rysowania zapisać nie wolno:
 // `turn.start` zaznacza turę, pierwszy blok z kropką zabiera tabliczkę po
 // `requestId` (przerysowanie go nie gubi). Historia sprzed pierwszej żywej tury
-// po wczytaniu modułu dostaje tabliczkę na każdej kropce, jak dawniej.
+// po wczytaniu modułu dostaje tabliczkę na każdej kropce, bez zapamiętywania.
+// Żywe bloki zachowują tabliczkę przy przerysowaniu przez ostatnie 32 tury.
+const PLATES_LIMIT = 32
 const plates = { live: false, pending: false, ids: new Set<string>() }
 
 function claimPlate(id: string): boolean {
+  if (!plates.live) return true
   if (plates.ids.has(id)) return true
-  if (plates.live && !plates.pending) return false
+  if (!plates.pending) return false
   plates.pending = false
   plates.ids.add(id)
+  if (plates.ids.size > PLATES_LIMIT) plates.ids.delete(plates.ids.values().next().value!)
   return true
 }
 
 // Stan repo po narzędziu, które mogło go zmienić; poza repo albo bez gita `null`.
 // Bez zmiany bez zapisu: zapis przerysowuje Sztolnię i pas.
-async function refreshGit($: EngineInterface): Promise<void> {
-  let found = null
-  try {
-    const run = await $.process.run(GIT_STATUS, { timeoutMs: 5000 })
-    if (run.exitCode === 0) {
-      const log = await $.process.run(GIT_LOG, { timeoutMs: 5000 })
-      found = gitOf(run.stdout, log.exitCode === 0 ? log.stdout : '')
-    }
-  } catch {
-    found = null
+let gitRefresh: Promise<void> | null = null
+let gitAgain = false
+
+function refreshGit($: EngineInterface): Promise<void> {
+  if (gitRefresh !== null) {
+    // Narzędzia mogły zmienić repo podczas odczytu: jeden wspólny odczyt po nim.
+    gitAgain = true
+    return gitRefresh
   }
-  if (JSON.stringify(await read($, git)) !== JSON.stringify(found)) await update($, git, () => found)
+  gitRefresh = (async () => {
+    try {
+      do {
+        gitAgain = false
+        let found = null
+        // Czekamy na oba także po błędzie jednego, żeby kolejny odczyt nie nakładał się na stary.
+        const [run, log] = await Promise.all([
+          $.process.run(GIT_STATUS, { timeoutMs: 5000 }).catch(() => null),
+          $.process.run(GIT_LOG, { timeoutMs: 5000 }).catch(() => null),
+        ])
+        if (run?.exitCode === 0) {
+          const status = gitOf(run.stdout)
+          const local = status.upstream === null ? null : await $.process.run(GIT_UNPUSHED, { timeoutMs: 5000 }).catch(() => null)
+          found = gitOf(run.stdout, log?.exitCode === 0 ? log.stdout : '', local?.exitCode === 0 && !local.isStdoutTruncated ? local.stdout : null)
+        }
+        if (JSON.stringify(await read($, git)) !== JSON.stringify(found)) await update($, git, () => found)
+      } while (gitAgain)
+    } finally {
+      // Blokada znika razem z pętlą, zanim następne mikrozadanie poprosi o odczyt.
+      gitRefresh = null
+    }
+  })()
+  return gitRefresh
 }
 
 async function shaftShown($: EngineInterface, on: boolean): Promise<boolean> {
@@ -394,7 +429,7 @@ export const register: Register = on => {
     await loadSession($)
     await refreshGit($)
     return next(e)
-  })
+  }).catch(($, e, next) => { hookFailure($, 'classic.SessionStart', next.error); return next(e) })
 
   on('prompt.compose', async ($, e, next) => {
     const composed = await next(e)
@@ -404,7 +439,7 @@ export const register: Register = on => {
   })
 
   on('prompt.submit', async ($, e, next) => {
-    const extra: string[] = pendingNotes
+    const extra = freshNotes(await $.clock.now()).map(note => note.text)
     pendingNotes = []
     await restore($)
     const phrase = fromPerson(e.origin) ? parsePhrase(e.text) : null
@@ -424,11 +459,11 @@ export const register: Register = on => {
         if (hint) extra.push(hint)
         if (risk) extra.push(risk)
       }
-      await update($, turns, count => count + 1)
     }
+    await update($, turns, count => turnsAfter(count, e.text))
     if (extra.length === 0) return next(e)
     return next({ ...e, context: [...(e.context ?? []), ...extra] })
-  })
+  }).catch(($, e, next) => { hookFailure($, 'prompt.submit', next.error); return next(e) })
 
   // Kompakcja: streszczenie bez klimatu, a następna tura dostaje pełną kotwicę,
   // bo po streszczeniu w historii nie ma już przykładów głosu.
@@ -438,7 +473,7 @@ export const register: Register = on => {
     const result = await next({ ...e, instructions })
     if (result.messages !== undefined && e.trigger !== 'precompute') await update($, turns, () => 0)
     return result
-  })
+  }).catch(($, e, next) => { hookFailure($, 'session.compact', next.error); return next(e) })
 
   on('command.run', { command: 'krux' }, async ($, e) => {
     const command = parseCommand(e.args)
@@ -466,7 +501,7 @@ export const register: Register = on => {
     await update($, muster, current => musterSpawn(current, agentId, mate, e.description, now))
     tickMuster($)
     return result
-  })
+  }).catch(($, e, next) => { hookFailure($, 'agent.spawn', next.error); return next(e) })
 
   on('turn.start', async ($, e, next) => {
     plates.live = true
@@ -553,7 +588,7 @@ export const register: Register = on => {
       if (GIT_TOOLS.has(tool)) await refreshGit($)
     }
     return result
-  })
+  }).catch(($, e, next) => { hookFailure($, 'tool.call', next.error); return next(e) })
 
   // Narzędzie wątków: model otwiera i zamyka wątki Sztolni, w odpowiedzi widzi otwarte z id.
   on('tool.call', { tool: THREAD_TOOL_NAME }, async ($, e) => {
@@ -562,7 +597,7 @@ export const register: Register = on => {
     // Wynik narzędzia moda to tekst: rekord obiektem silnik odrzuca.
     const report = threadsReport(now)
     return { result: report, text: report }
-  })
+  }).catch(($, e, next) => { hookFailure($, 'tool.call', next.error); return next(e) })
 
   // Po turze miernik ocenia głos, a kronika notuje, kto z hordy się odezwał.
   on('turn.complete', async ($, e, next) => {
@@ -727,7 +762,7 @@ export const register: Register = on => {
       $.ui.toast('Sztolnia zamknięta. Wraca przez /krux sztolnia.')
     }
     return next(e)
-  })
+  }).catch(($, e, next) => { hookFailure($, 'ui.close', next.error); return next(e) })
 
   // Sztolnia: stan roboty. Plan, ostatni przebieg testów, horda w biegu,
   // kontekst i limity; drzewo buduje `shaft.ts`. Diff i drzewo zmian rysuje silnik (`/diff`).
@@ -758,7 +793,10 @@ export const register: Register = on => {
         onPress: async () => {
           const { on: isOn, note } = await setModes($, { mode, on: 'flip' })
           if (mode === 'sztolnia') await syncShaftPane($, isOn)
-          if (note) pendingNotes = [...pendingNotes, note]
+          if (note) {
+            const at = await $.clock.now()
+            pendingNotes = [...freshNotes(at), { text: note, at }].slice(-NOTES_LIMIT)
+          }
           $.ui.toast(userLine(mode, isOn))
         },
       })

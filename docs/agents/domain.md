@@ -1,5 +1,7 @@
 # Domain Docs
 
+> Szablon z [mattpocock/skills](https://github.com/mattpocock/skills) (MIT, © 2026 Matt Pocock), wygenerowany do pracy z tym repo.
+
 How the engineering skills should consume this repo's domain documentation when exploring the codebase.
 
 ## Before exploring, read these

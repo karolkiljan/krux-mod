@@ -1,5 +1,7 @@
 # Issue tracker: Local Markdown
 
+> Szablon z [mattpocock/skills](https://github.com/mattpocock/skills) (MIT, © 2026 Matt Pocock), wygenerowany do pracy z tym repo.
+
 Issues and specs for this repo live as markdown files in `.scratch/`.
 
 ## Conventions
