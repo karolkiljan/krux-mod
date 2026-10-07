@@ -96,10 +96,13 @@ export function testPassed(output: string, isError: boolean): boolean {
 // Tablica po jednym wywołaniu narzędzia. Plan zmienia lista zadań z wątku głównego
 // (`result` to rekord narzędzia, z niego id `TaskCreate`); testy zmienia komenda
 // testów, gdy znamy jej wynik (`call`). `now` to czas zdarzenia w ms od epoki;
-// historia bez czasu go pomija. Edycja zapisuje czas także przy błędzie, bez `deny`.
+// historia bez czasu go pomija. Edycja poza dokumentacją zapisuje czas także
+// przy błędzie, bez `deny`; nieznana ścieżka nie potwierdza dokumentacji.
 export function boardAfter(board: KruxBoard, tool: string, input: Record<string, unknown>, result?: unknown, call?: BoardCall, now?: number): KruxBoard {
   if ((result as { deny?: unknown } | undefined)?.deny !== undefined) return board
   if (['Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(tool)) {
+    const path = text(input.file_path) || text(input.notebook_path)
+    if (/\.(?:md|mdx|txt|rst|adoc)$/iu.test(path)) return board
     return now === undefined ? board : { ...board, editedAt: now }
   }
   if (call && workOf(tool, input) === 'test') {
@@ -260,7 +263,7 @@ export function tokens(value: number): string {
   return String(value)
 }
 
-const LIMIT_NAMES: Readonly<Record<string, string>> = { five_hour: '5 h', seven_day: '7 dni', spend_limit: 'budżet' }
+const LIMIT_NAMES: Readonly<Record<string, string>> = { five_hour: '5h', seven_day: '7 dni', spend_limit: 'budżet' }
 
 export function limitName(kind: string): string {
   return LIMIT_NAMES[kind] ?? kind

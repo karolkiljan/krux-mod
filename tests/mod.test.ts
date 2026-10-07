@@ -281,7 +281,7 @@ test('while Claude works, the smith hammers above the prompt and names the tool'
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(await ui.find({ type: 'Text', text: 'Krux czytać runy' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: 'app.ts' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: 'uderzeń młota: 1' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /uderzeń/ })).toBeUndefined()
   expect(await ui.find({ key: 'forge' })).toBeDefined()
 })
 
@@ -335,8 +335,8 @@ test('the digest never lifts the band: no more lines than canvas rows, the most 
   await $.tool.call({ tool: 'Bash', command: 'npm test' })
   const low = await $.ui.mount({ ...BAND, surface: 'terminal', props: { ...BAND.props, bodyColumns: 160, maxRows: 4 } })
   const shown = []
-  for (const key of ['threads', 'git', 'plan', 'tests']) if ((await low.find({ key })) !== undefined) shown.push(key)
-  expect(shown).toEqual(['threads', 'git', 'plan'])
+  for (const key of ['threads', 'git', 'readiness', 'plan', 'tests']) if ((await low.find({ key })) !== undefined) shown.push(key)
+  expect(shown).toEqual(['threads', 'git', 'readiness'])
 })
 
 test('on a narrow terminal the digest takes an empty mate slot instead of falling off', async ($, on) => {
@@ -727,7 +727,7 @@ test('a band three rows high drops the rule; two rows leave one line of text', a
   await four.unmount()
   const tiny = await $.ui.mount({ ...BAND, surface: 'terminal', props: { ...BAND.props, maxRows: 2 } })
   expect(await tiny.find({ key: 'forge' })).toBeUndefined()
-  const line = await tiny.find({ type: 'Text', text: /^⚒ Krux czytać runy .*app\.ts.* · uderzeń młota: 1$/ })
+  const line = await tiny.find({ type: 'Text', text: /^⚒ Krux czytać runy .*app\.ts$/ })
   expect(line?.props.wrap).toBe('truncate-end')
   expect(await tiny.find(rule)).toBeDefined()
 })
@@ -820,7 +820,12 @@ test('the band stays empty with the animations off, working or idle', async ($, 
   }
 })
 
-test('idle, the smith stands still and sums up the last turn and the session', async ($, on) => {
+test('idle, the smith stands still with only the rest title, keeping strike counts in state', async ($, on) => {
+  const counts = { strikes: 0, sessionStrikes: 0 }
+  on('state.set', ($, e, next) => {
+    if (e.plugin === 'krux-mod' && (e.key === 'strikes' || e.key === 'sessionStrikes')) counts[e.key] = Number(e.value)
+    return next(e)
+  })
   engine(on, new Map())
   await start($)
   for (const turnId of ['t1', 't2']) {
@@ -830,8 +835,8 @@ test('idle, the smith stands still and sums up the last turn and the session', a
   }
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal', props: { ...BAND.props, isWorking: false } })
   expect(await ui.find({ type: 'Text', text: 'Krux odpoczywać przy kowadle' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: 'ostatnia tura — uderzeń: 2' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: 'sesja — uderzeń: 3' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /uderzeń/ })).toBeUndefined()
+  expect(counts).toEqual({ strikes: 2, sessionStrikes: 3 })
   expect(await ui.find({ key: 'forge' })).toBeDefined()
   await ui.advance(2100)
   const before = (await ui.findAll({ type: 'Text', in: 'forge' })).map(element => JSON.stringify(element.children)).join('')
@@ -1303,7 +1308,7 @@ test('the context fill, the limit windows and the cost come from the session usa
   const ui = await $.ui.mount({ ...SHAFT_PANE, surface: 'terminal', props: SHAFT_PROPS })
   expect((await ui.find({ key: 'context' }))?.text).toContain('68% · 136k / 200k')
   const limit = (await ui.find({ key: 'limit-0' }))?.text ?? ''
-  expect(limit).toContain('5 h')
+  expect(limit).toContain('5h')
   expect(limit).toContain('24%')
   expect(limit).toContain('reset za 2 h 10 min')
   expect((await ui.find({ key: 'cost' }))?.text).toContain('$1.23')
@@ -1523,7 +1528,7 @@ test('history ending with persona enable restores lore even when its turn count 
   expect(runs).toBe(1)
 })
 
-test('every main or mate edit makes a completed test run stale, and a new run clears it', async ($, on) => {
+test('every main or mate code edit makes a completed test run stale, and a new run clears it', async ($, on) => {
   on('tool.call', { tool: 'Bash' }, () => ({ result: 'ok', text: '3 pass\n0 fail' }))
   const clock = engine(on, new Map())
   await start($)
@@ -1539,6 +1544,32 @@ test('every main or mate edit makes a completed test run stale, and a new run cl
   }
   await $.tool.call(inLoop('a1', { tool: 'Bash', command: 'npm test' }))
   expect((await ui.find({ key: 'tests' }))?.text).not.toContain('◌ nieświeże')
+})
+
+test('main and mate documentation edits keep a completed test run fresh without rewriting the board', async ($, on) => {
+  on('tool.call', { tool: 'Bash' }, () => ({ result: 'ok', text: '3 pass\n0 fail' }))
+  let writes = 0
+  on('state.set', ($, e, next) => {
+    if (e.plugin === 'krux-mod' && e.key === 'board') writes += 1
+    return next(e)
+  })
+  const clock = engine(on, new Map())
+  await start($)
+  await $.tool.call({ tool: 'Edit', file_path: '/work/a.ts' } as never)
+  await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  const before = writes
+  const ui = await $.ui.mount({ ...SHAFT_PANE, surface: 'terminal', props: SHAFT_PROPS })
+  await clock.advance(1)
+  for (const agentId of [undefined, 'a1']) {
+    for (const tool of ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']) {
+      for (const extension of ['MD', 'mdx', 'txt', 'rst', 'adoc']) {
+        const input = { [tool === 'NotebookEdit' ? 'notebook_path' : 'file_path']: `/work/docs/readme.${extension}` }
+        await $.tool.call({ tool, ...input, agentId } as never)
+        expect((await ui.find({ key: 'tests' }))?.text).not.toContain('◌ nieświeże')
+      }
+    }
+  }
+  expect(writes).toBe(before)
 })
 
 test('denied edits and tests leave the board intact, and mate tasks cannot replace the main plan', async ($, on) => {
@@ -1662,6 +1693,20 @@ test('a live plan gains the stuck mark at fifteen minutes without resetting its 
   expect((await ui.find({ key: 'task-1' }))?.text).toContain('⧗ 16 min')
 })
 
+test('a hidden shaft pane keeps the band digest stuck mark ticking without another tool', async ($, on) => {
+  const clock = engine(on, new Map([['mode.sztolnia', false]]))
+  await start($)
+  await $.tool.call(TODOS as never)
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal', props: { ...BAND.props, bodyColumns: 160 } })
+  expect(await ui.find({ key: 'digest' })).toBeDefined()
+  await clock.advance(899_999)
+  expect((await ui.find({ key: 'plan' }))?.text).not.toContain('⧗')
+  await clock.advance(1)
+  expect((await ui.find({ key: 'plan' }))?.text).toContain('⧗ 15 min')
+  await clock.advance(60_000)
+  expect((await ui.find({ key: 'plan' }))?.text).toContain('⧗ 16 min')
+})
+
 test('main and mate failure bubbles name only the current first failing test', async ($, on) => {
   const extras: Extras = { toolError: '(fail) cache > drugi request [3ms]\n(fail) auth > login [2ms]\n1 pass\n2 fail', agents: [{ id: 'a1', status: 'running' }] }
   engine(on, new Map(), extras)
@@ -1716,6 +1761,31 @@ test('automatic konkret preserves a manually enabled mode through the limit rese
   expect(await sectionIds($)).toEqual(['intro', 'krux-mod:konkret'])
   expect(saved.get('mode.konkret')).toBe(true)
   expect(saved.size).toBe(2)
+})
+
+test('/krux status reports auto, manual and off konkret without saving the automatic flag', async ($, on) => {
+  const saved = new Map<string, unknown>([['mode.konkret', false]])
+  const usage: SessionUsage = { startedAt: 0, context: { window: 200_000 }, rateLimits: [{ kind: 'five_hour', percentUsed: 80 }] }
+  engine(on, saved, { usage, paneWaits: true })
+  await start($)
+  const command = { command: 'krux', origin: ORIGIN, presentation: { isFullscreen: false, columns: 120 } }
+  const automatic = await $.command.run({ ...command, args: 'status' })
+  expect(automatic.text).toBe('persona: on · konkret: auto · flow: off · animacje: on · kowal: on · sztolnia: on')
+  expect(automatic.context).toBeUndefined()
+  expect(saved.get('mode.konkret')).toBe(false)
+  expect(saved.size).toBe(1)
+  const fallback = await $.command.run({ ...command, args: '' })
+  expect(fallback.text).toContain('konkret: auto')
+  const manual = await $.command.run({ ...command, args: 'konkret on' })
+  expect(manual.text).toContain('konkret: on')
+  expect((await $.command.run({ ...command, args: 'status' })).text).toContain('konkret: on')
+  const disabled = await $.command.run({ ...command, args: 'konkret off' })
+  expect(disabled.text).toContain('konkret: auto')
+  usage.rateLimits = []
+  await $.tool.call({ tool: 'Read', file_path: '/work/a.ts' })
+  expect((await $.command.run({ ...command, args: 'status' })).text).toContain('konkret: off')
+  expect(saved.get('mode.konkret')).toBe(false)
+  expect(saved.size).toBe(1)
 })
 
 test('overlapping usage reads cannot leave automatic konkret on after the limit reset', async ($, on) => {
@@ -1782,25 +1852,25 @@ test('a quick note before the first prompt survives restoration and continues re
   expect(report.text).toBe('Open threads:\n#99 [todo] stary\n#100 [todo] nowy')
 })
 
-test('long-turn toasts use the main clock, floor minutes and reset after completion', async ($, on) => {
+test('long-turn toasts start at five minutes, use the main clock and reset after completion', async ($, on) => {
   const toasts: string[] = []
   const clock = engine(on, new Map(), { toasts })
   await start($)
   await $.turn.start({ text: '', turnId: 't1' })
-  await clock.advance(119_999)
+  await clock.advance(299_999)
   await $.turn.complete({ answer: '', durationMs: 999_999, isAborted: false, turnId: 't1', reason: 'answer' })
   expect(toasts).toEqual([])
   await $.turn.start({ text: '', turnId: 't2' })
-  await clock.advance(120_000)
+  await clock.advance(300_000)
   await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't2', reason: 'answer' })
-  expect(toasts).toEqual(['Krux skończyć po 2 min.'])
-  await clock.advance(120_000)
+  expect(toasts).toEqual(['Krux skończyć po 5 min.'])
+  await clock.advance(300_000)
   await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't2', reason: 'answer' })
   expect(toasts).toHaveLength(1)
   await $.turn.start({ text: '', turnId: 't3' })
-  await clock.advance(179_999)
+  await clock.advance(359_999)
   await $.turn.complete({ answer: '', durationMs: 1, isAborted: true, turnId: 't3', reason: 'answer' })
-  expect(toasts[1]).toBe('Krux skończyć po 2 min.')
+  expect(toasts[1]).toBe('Krux skończyć po 5 min.')
 })
 
 test('mate turn events cannot replace or clear the main turn timer', async ($, on) => {
@@ -1810,11 +1880,11 @@ test('mate turn events cannot replace or clear the main turn timer', async ($, o
   await $.turn.start({ text: '', turnId: 'main' })
   await clock.advance(60_000)
   await $.turn.start({ text: '', turnId: 'mate', agentId: 'a1' } as never)
-  await clock.advance(60_000)
+  await clock.advance(240_000)
   await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 'mate', reason: 'answer', agentId: 'a1' } as never)
   expect(toasts).toEqual([])
   await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 'main', reason: 'answer' })
-  expect(toasts).toEqual(['Krux skończyć po 2 min.'])
+  expect(toasts).toEqual(['Krux skończyć po 5 min.'])
 })
 
 test('a person returning after thirty minutes gets board state only in a toast', async ($, on) => {

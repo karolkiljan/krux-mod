@@ -147,6 +147,7 @@ test('the digest puts the newest thread and a busy repo first, a clean repo says
   expect(shaftDigest(board, null, { git: GIT, threads }).map(line => [line.mark, line.text])).toEqual([
     ['?', '2 · Wyłączyć Sztolnię?'],
     ['⎇', 'main → origin/main ↑6 ●2'],
+    ['·', 'do commita: brak testów'],
     ['▸', '0/1 poprawka'],
   ])
   expect(shaftDigest(board, null, { git: { ...GIT, ahead: 0, changed: 0 }, threads: EMPTY_THREADS }).map(line => line.key)).toEqual(['plan'])
@@ -180,16 +181,123 @@ test('a long commit subject gives way, the hash never wraps', () => {
   expect((children(row) as Node[]).slice(0, 2).map(cell => cell.props.flexShrink)).toEqual([0, 0])
 })
 
-test('the digest lines say more: the test command with counts, context with the limit windows', () => {
+test('the digest shows test counts and context alone even with a high plan limit', () => {
   const board = { tasks: [], test: { command: 'claude plugin test .', ok: true, passed: 209, failed: 0, failures: [], who: 'Krux' as const } }
   const usage = { percent: 27, tokens: 54_000, window: 200_000, limits: [{ kind: 'five_hour', percentUsed: 40.4, resetsAt: null }, { kind: 'seven_day', percentUsed: 82, resetsAt: null }], usd: null }
   const lines = shaftDigest(board, usage)
-  expect(lines.map(line => line.text)).toEqual(['claude plugin test . · 209 przeszło', 'kontekst 27% · 5 h 40% · 7 dni 82%'])
-  // Okno limitu blisko końca barwi linię, choć kontekst daleko.
-  expect(lines[1]!.color).toBe(texts(draw({ board: { tasks: [], test: { ...board.test, ok: false } } }))[2]!.color)
+  expect(lines.map(line => line.text)).toEqual(['claude plugin test . · 209 przeszło', 'kontekst 27%'])
+  expect(lines[1]!.mark).toBe('◔')
+  expect(lines[1]!.color).toBeUndefined()
+})
+
+test('the digest context turns red at 80 percent regardless of plan limits', () => {
+  for (const limits of [[], [{ kind: 'seven_day', percentUsed: 100, resetsAt: null }]]) {
+    for (const percent of [79, 80, 100]) {
+      const usage = { percent, tokens: null, window: 200_000, limits, usd: null }
+      const line = shaftDigest(EMPTY_BOARD, usage)[0]!
+      expect([line.mark, line.text]).toEqual(['◔', `kontekst ${percent}%`])
+      expect(line.color).toBe(percent >= 80 ? '#e0322b' : undefined)
+    }
+  }
+})
+
+test('the digest omits unknown context even when plan limits are known', () => {
+  const usage = { percent: null, tokens: null, window: 200_000, limits: [{ kind: 'seven_day', percentUsed: 82, resetsAt: null }], usd: null }
+  expect(shaftDigest(EMPTY_BOARD, usage)).toEqual([])
+  expect(shaftDigest(EMPTY_BOARD, null)).toEqual([])
+})
+
+test('the pane keeps plan limits and their alarms outside the digest', () => {
+  const usage = { percent: 27, tokens: 54_000, window: 200_000, limits: [{ kind: 'seven_day', percentUsed: 82, resetsAt: null }], usd: null }
+  const lines = texts(section(draw({ usage }), 'usage')!)
+  expect(lines.map(line => line.text)).toContain('7 dni 82%')
+  expect(lines.find(line => line.text === '27% · 54k / 200k')?.color).toBeUndefined()
+  const limit = (children(section(draw({ usage }), 'usage')!) as Node[]).find(node => node.props.key === 'limit-0')!
+  expect(texts(limit)[0]?.color).toBe('#e0322b')
 })
 
 const FRESH_RUN = { command: 'npm test', ok: true, passed: 3, failed: 0, failures: [], who: 'Krux' as const, at: 100 }
+
+test('the digest marks commit readiness for modified and new files with fresh green tests', () => {
+  for (const whitespace of [true, null, undefined]) {
+    for (const changes of [{ changed: 1, untracked: 0 }, { changed: 0, untracked: 1 }]) {
+      const lines = shaftDigest({ tasks: [], test: FRESH_RUN, editedAt: 100 }, null, { git: { ...GIT, ...changes, whitespace }, threads: EMPTY_THREADS })
+      expect(lines.find(line => line.key === 'readiness')).toEqual({ key: 'readiness', mark: '✓', text: 'do commita', color: '#3fb950' })
+    }
+  }
+})
+
+test('the digest lists each commit blocker behind a visible pending sign', () => {
+  const fresh = { tasks: [], test: FRESH_RUN, editedAt: 100 }
+  const cases = [
+    { board: EMPTY_BOARD, git: GIT, missing: 'brak testów' },
+    { board: { ...fresh, test: { ...FRESH_RUN, ok: false } }, git: GIT, missing: 'testy padłe' },
+    { board: { ...fresh, editedAt: 101 }, git: GIT, missing: 'testy nieświeże' },
+    { board: fresh, git: { ...GIT, whitespace: false }, missing: 'białe znaki' },
+    { board: fresh, git: { ...GIT, conflicted: 2 }, missing: 'konflikty: 2' },
+    { board: { ...fresh, test: { ...FRESH_RUN, ok: false }, editedAt: 101 }, git: { ...GIT, whitespace: false, conflicted: 2 }, missing: 'testy padłe, testy nieświeże, białe znaki, konflikty: 2' },
+  ]
+  for (const { board, git, missing } of cases) {
+    const line = shaftDigest(board, null, { git, threads: EMPTY_THREADS }).find(line => line.key === 'readiness')
+    expect(line).toEqual({ key: 'readiness', mark: '·', text: `do commita: ${missing}` })
+  }
+})
+
+test('the digest hides commit readiness outside a repo and without modified or new files', () => {
+  for (const git of [null, { ...GIT, changed: 0 }, { ...GIT, changed: 0, ahead: 0, behind: 2 }, { ...GIT, changed: 0, conflicted: 1 }, { ...GIT, changed: 0, ahead: 0 }]) {
+    for (const test of [null, FRESH_RUN]) {
+      const lines = shaftDigest({ tasks: [], test }, null, { git, threads: EMPTY_THREADS })
+      expect(lines.some(line => line.text.includes('do commita'))).toBe(false)
+    }
+  }
+})
+
+test('digest priority keeps commit readiness beside the repo when lower rows are clipped', () => {
+  const board = { tasks: [task('poprawka', 'in_progress')], test: FRESH_RUN }
+  const usage = { percent: 27, tokens: 54_000, window: 200_000, limits: [], usd: null }
+  const threads = { next: 2, items: [{ id: 1, kind: 'risk' as const, text: 'push czeka' }] }
+  const lines = shaftDigest(board, usage, { git: GIT, threads })
+  expect(lines.map(line => line.key)).toEqual(['threads', 'git', 'readiness', 'plan', 'tests', 'usage'])
+  expect(lines.map(line => line.mark)).toEqual(['⚠', '⎇', '✓', '▸', '✓', '◔'])
+  // Pas bierze od góry najwyżej tyle linii, ile wierszy płótna.
+  expect(lines.slice(0, 3).map(line => line.key)).toEqual(['threads', 'git', 'readiness'])
+  expect(lines.slice(0, 6)).toHaveLength(6)
+})
+
+test('a running digest task gains full minutes at the 15-minute threshold', () => {
+  const board = { tasks: [task('gotowe', 'completed'), { ...task('poprawka', 'in_progress'), startedAt: 30_000 }, task('potem', 'pending')], test: null }
+  const extra = { git: null, threads: EMPTY_THREADS }
+  const cases = [
+    { now: 30_000 + 15 * 60_000 - 1, text: '1/3 poprawka' },
+    { now: 30_000 + 15 * 60_000, text: '1/3 ⧗ 15 min poprawka' },
+    { now: 30_000 + 16 * 60_000 - 1, text: '1/3 ⧗ 15 min poprawka' },
+    { now: 30_000 + 16 * 60_000, text: '1/3 ⧗ 16 min poprawka' },
+  ]
+  for (const { now, text } of cases) {
+    expect(shaftDigest(board, null, { ...extra, now })).toEqual([{ key: 'plan', mark: '▸', text, color: KRUX_COLOR }])
+  }
+})
+
+test('the digest keeps stuck-task age before a long subject can be truncated', () => {
+  const subject = 'A very long task subject that exceeds the narrow band digest'
+  const board = { tasks: [{ ...task(subject, 'in_progress'), startedAt: 0 }], test: null }
+  expect(shaftDigest(board, null, { git: null, threads: EMPTY_THREADS, now: 15 * 60_000 })[0]?.text).toBe(`0/1 ⧗ 15 min ${subject}`)
+})
+
+test('the digest never claims stuck time without a running task and both timestamps', () => {
+  const extra = { git: null, threads: EMPTY_THREADS, now: 60 * 60_000 }
+  const cases = [
+    { tasks: [{ ...task('czeka', 'pending'), startedAt: 0 }], text: '0/1 czeka', mark: '·' },
+    { tasks: [{ ...task('gotowe', 'completed'), startedAt: 0 }], text: 'plan 1/1', mark: '✓' },
+    { tasks: [task('historia', 'in_progress')], text: '0/1 historia', mark: '▸' },
+    { tasks: [{ ...task('przyszłość', 'in_progress'), startedAt: extra.now + 1 }], text: '0/1 przyszłość', mark: '▸' },
+  ]
+  for (const { tasks, text, mark } of cases) {
+    expect(shaftDigest({ tasks, test: null }, null, extra).map(line => [line.mark, line.text])).toEqual([[mark, text]])
+  }
+  const board = { tasks: [{ ...task('bez zegara', 'in_progress'), startedAt: 0 }], test: null }
+  expect(shaftDigest(board, null, { git: null, threads: EMPTY_THREADS })[0]?.text).toBe('0/1 bez zegara')
+})
 
 test('the tests section marks stale green and failed runs with a dim sign and word', () => {
   for (const ok of [true, false]) {

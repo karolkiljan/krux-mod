@@ -22,6 +22,7 @@ import {
   riskHint,
   shellKind,
   spinnerWord,
+  statusLine,
   stripFrontmatter,
   workOf,
 } from '../hooks/voice'
@@ -84,6 +85,14 @@ test('a flip toggles one mode and leaves the others', async () => {
   const next = applyToggle(DEFAULT_MODES, { mode: 'konkret', on: 'flip' })
   expect(next).toEqual({ ...DEFAULT_MODES, konkret: true })
   expect(applyToggle(next, { mode: 'konkret', on: 'flip' })).toEqual(DEFAULT_MODES)
+})
+
+test('status distinguishes automatic konkret from a manual mode and keeps the other modes', () => {
+  expect(statusLine(DEFAULT_MODES)).toBe('persona: on · konkret: off · flow: off · animacje: on · kowal: on · sztolnia: on')
+  expect(statusLine(DEFAULT_MODES, true)).toBe('persona: on · konkret: auto · flow: off · animacje: on · kowal: on · sztolnia: on')
+  for (const automatic of [false, true]) {
+    expect(statusLine({ ...DEFAULT_MODES, konkret: true }, automatic)).toBe('persona: on · konkret: on · flow: off · animacje: on · kowal: on · sztolnia: on')
+  }
 })
 
 test('sections follow the plugin order: persona, konkret, flow', async () => {

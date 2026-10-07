@@ -249,8 +249,8 @@ export function userLine(mode: KruxMode, on: boolean): string {
   }
 }
 
-export function statusLine(modes: KruxModes): string {
-  return MODES.map(mode => `${mode}: ${modes[mode] ? 'on' : 'off'}`).join(' · ')
+export function statusLine(modes: KruxModes, autoKonkret = false): string {
+  return MODES.map(mode => `${mode}: ${modes[mode] ? 'on' : mode === 'konkret' && autoKonkret ? 'auto' : 'off'}`).join(' · ')
 }
 
 export const HELP = [

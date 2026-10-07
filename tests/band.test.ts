@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { KruxCrew, KruxHordeMember } from '../types'
-import { bandPlan } from '../hooks/band'
+import { CAPTION_COLUMNS, bandPlan } from '../hooks/band'
 import type { BandInput } from '../hooks/band'
 import { EMPTY_CREW, crewAfter } from '../hooks/crew'
 import { EMPTY_LORE, recordTool } from '../hooks/lore'
@@ -41,11 +41,25 @@ test('the caption names the work, the bubble sits over its speaker', async () =>
   const plan = bandPlan(AT_WORK)
   expect(plan.verb).toBe('Krux czytać runy')
   expect(plan.target).toBe('app.ts')
-  expect(plan.tally).toBe('uderzeń młota: 1')
+  expect(plan.tally).toBe('')
   expect(plan.stage!.props.bubble).toMatchObject({ key: 'krux', speaker: 'Krux' })
   const low = bandPlan({ ...AT_WORK, rows: 3 })
   expect(low.stage!.props.bubble).toBe(null)
   expect(low.target).toContain('app.ts')
+  expect(low.tally).toBe('')
+})
+
+test('the resting caption keeps only the title, selected by the work done', async () => {
+  for (const [strikes, total, verb] of [
+    [0, 0, 'Krux tylko gadać'],
+    [7, 64, 'Krux ocierać pot'],
+    [21, 65, 'Krux pić z wiadra'],
+  ] as const) {
+    const plan = bandPlan({ ...AT_WORK, working: false, activity: null, strikes, total })
+    expect([plan.verb, plan.target, plan.tally]).toEqual([verb, '', ''])
+    expect(plan.stage).toMatchObject({ height: 6 })
+  }
+  expect(CAPTION_COLUMNS).toBe(28)
 })
 
 test('without a canvas the band budgets one text row and keeps the bubble in text', async () => {
@@ -53,6 +67,7 @@ test('without a canvas the band budgets one text row and keeps the bubble in tex
     const plan = bandPlan({ ...AT_WORK, rows, hasClient: false })
     expect(plan).toMatchObject({ rule: true, stage: null })
     expect(plan.target).toContain('app.ts')
+    expect(plan.tally).toBe('')
   }
   expect(bandPlan({ ...AT_WORK, rows: 1, hasClient: false })).toMatchObject({ rule: false, stage: null })
 })
@@ -62,10 +77,25 @@ test('mates beyond the slots are counted, and Krux waits on the sofa while they 
   // 140 kolumn: podpis 28 + przerwa 2, za nimi cztery prostokąty po 22 z odstępem 2.
   const plan = bandPlan({ ...AT_WORK, columns: 140, members: crowd, waiting: true })
   expect(plan.stage!.props.orcs.map(orc => orc.key)).toEqual(['krux', 'a1', 'a2', 'a3'])
-  expect(plan.tally).toBe('+1 z hordy · uderzeń młota: 1')
+  expect(plan.tally).toBe('+1 z hordy')
   expect(plan.verb).toBe('Krux czekać na hordę')
   expect(plan.stage!.props.orcs[0]!.scene).toBe('lounge')
+  const rest = bandPlan({ ...AT_WORK, working: false, activity: null, columns: 140, members: crowd })
+  expect([rest.verb, rest.target, rest.tally]).toEqual(['Krux czekać na hordę', '', '+1 z hordy'])
   expect(bandPlan({ ...AT_WORK, members: [NIUCH] }).verb).toBe('Krux czytać runy')
+})
+
+test('low and text-only captions keep mate speech and only count hidden mates', async () => {
+  const held = { kind: 'step' as const, key: 'a1', speaker: 'Niuch' as const, text: 'węszyć lore' }
+  for (const working of [true, false]) {
+    const input = { ...AT_WORK, working, activity: working ? AT_WORK.activity : null, members: [NIUCH, MLOT], held, columns: 60 }
+    const low = bandPlan({ ...input, rows: 3 })
+    expect([low.target, low.tally]).toEqual(['Niuch: węszyć lore', '+2 z hordy'])
+    expect(low.stage).toMatchObject({ height: 3 })
+    const tiny = bandPlan({ ...input, rows: 2 })
+    expect([tiny.target, tiny.tally]).toEqual(['Niuch: węszyć lore', '+2 z hordy'])
+    expect(tiny.stage).toBe(null)
+  }
 })
 
 test('a step bubble of a mate gone from the list hangs over nobody', async () => {

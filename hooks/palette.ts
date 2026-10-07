@@ -19,7 +19,7 @@ export const PALETTE: Record<string, string> = {
   P: '#c9a227', // fartuch Piryta
   O: '#cc7722', // fartuch Ochry
   L: '#6b7580', // fartuch Młota
-  T: '#2b2b2b', // fartuch Lonta
+  T: '#887088', // fartuch Lonta: grafit z fioletowym odcieniem
   u: '#555555', // fartuch orka bez imienia
   v: '#7b2d5a', // aksamit szezlongu
   p: '#e8d9a8', // pergamin

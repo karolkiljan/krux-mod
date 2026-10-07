@@ -22,7 +22,7 @@ const LOW_ROWS = 3
 export type BandInput = {
   working: boolean
   activity: KruxActivity | null
-  // Uderzenia tej tury i całej sesji.
+  // Uderzenia tury wybierają podpis spoczynku; suma sesji jest seedem dymka.
   strikes: number
   total: number
   moods: KruxMoods
@@ -46,6 +46,7 @@ export type BandPlan = {
   rule: boolean
   verb: string
   target: string
+  // Wyłącznie ukryci kumple: „+N z hordy”, bez licznika uderzeń.
   tally: string
   // `null`: za wąsko albo za nisko na płótno — pas to jedna linia tekstu.
   stage: { props: ForgeProps; width: number; height: number } | null
@@ -78,10 +79,8 @@ export function bandPlan(input: BandInput): BandPlan {
   const inCanvas = tall && said !== null && speaker !== undefined
   const verb = lounging ? 'Krux czekać na hordę' : working ? (input.activity?.verb ?? 'Krux rozpalać palenisko') : restVerb(input.strikes, input.total)
   const spoken = said === null ? '' : said.speaker === 'Krux' ? said.text : `${said.speaker === 'ork' ? 'Ork' : said.speaker}: ${said.text}`
-  const target = !inCanvas && spoken ? spoken : working ? (input.activity?.target ?? '') : `ostatnia tura — uderzeń: ${input.strikes}`
-  // Licznik ukrytych kumpli na początku: przy 28 kolumnach ucina się koniec linii.
-  const crowd = hidden > 0 ? `+${hidden} z hordy · ` : ''
-  const tally = `${crowd}${working ? `uderzeń młota: ${input.strikes}` : `sesja — uderzeń: ${input.total}`}`
+  const target = !inCanvas && spoken ? spoken : working ? (input.activity?.target ?? '') : ''
+  const tally = hidden > 0 ? `+${hidden} z hordy` : ''
   // Kreska zabiera wiersz, więc staje tylko nad pasem, który mieści się cały.
   const rule = input.rows >= Math.max(1, height) + 1
   if (height === 0) return { rule, verb, target, tally, stage: null }

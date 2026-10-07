@@ -366,8 +366,8 @@ async function shaftShown($: EngineInterface, on: boolean): Promise<boolean> {
   return (await $.ui.panes()).some(pane => pane.id === SHAFT_PANE && pane.isPlaced && pane.isShown)
 }
 
-// Panel odświeża utknięcie przy 15 min, potem na każdej pełnej minucie zadania.
-// Nowy plan unieważnia poprzedni timer; zegar apelu pozostaje wspólną zależnością panelu.
+// Panel i skrót pasa odświeżają utknięcie przy 15 min, potem na pełnych minutach.
+// Nowy plan unieważnia poprzedni timer; zegar apelu pozostaje wspólną zależnością.
 let boardClock = 0
 
 function tickBoard($: EngineInterface, plan: KruxBoard, now: number): void {
@@ -422,7 +422,7 @@ async function refreshUsage($: EngineInterface): Promise<void> {
   }
 }
 
-// Zegar apelu: co sekundę zapis `musterNow`, który przerysowuje tylko Sztolnię,
+// Zegar apelu: co sekundę zapis `musterNow`, który przerysowuje Sztolnię i skrót pasa,
 // póki jakiś ork z apelu biega według zdarzeń i według listy silnika.
 function tickMuster($: EngineInterface): void {
   if (ticking) return
@@ -541,7 +541,7 @@ export const register: Register = on => {
 
   on('command.run', { command: 'krux' }, async ($, e) => {
     const command = parseCommand(e.args)
-    if (command.kind === 'status') return { text: statusLine(await read($, modes)) }
+    if (command.kind === 'status') return { text: statusLine(await read($, modes), await read($, autoKonkret)) }
     if (command.kind === 'help') return { text: `Krux nie znać „${command.unknown}”.\n${HELP}` }
     if (command.kind === 'save') {
       await restore($)
@@ -561,12 +561,12 @@ export const register: Register = on => {
     if (command.kind === 'toggle') {
       const { next: now, on: isOn, note } = await setModes($, command.toggle)
       if (command.toggle.mode === 'sztolnia') await syncShaftPane($, isOn)
-      const text = `${userLine(command.toggle.mode, isOn)}\n${statusLine(now)}`
+      const text = `${userLine(command.toggle.mode, isOn)}\n${statusLine(now, await read($, autoKonkret))}`
       return note ? { text, context: [note] } : { text }
     }
     const opened = await $.ui.open({ id: PANE, title: 'Kuźnia Kruxa', focus: true, closeOnEscape: true })
     if (opened.isPlaced) return {}
-    return { text: `${statusLine(await read($, modes))}\n${HELP}` }
+    return { text: `${statusLine(await read($, modes), await read($, autoKonkret))}\n${HELP}` }
   })
 
   // Subagent z głównej pętli wbiega na scenę; imię bierze z opisu zadania.
@@ -696,7 +696,7 @@ export const register: Register = on => {
     const now = await $.clock.now()
     let elapsed = 0
     await update($, turnAt, started => { elapsed = started === null ? 0 : now - started; return null })
-    if (elapsed >= 120_000) $.ui.toast(`Krux skończyć po ${Math.floor(elapsed / 60_000)} min.`)
+    if (elapsed >= 300_000) $.ui.toast(`Krux skończyć po ${Math.floor(elapsed / 60_000)} min.`)
     await update($, activity, () => null)
     await refreshUsage($)
     await refreshGit($)
@@ -781,7 +781,10 @@ export const register: Register = on => {
     // szerszy terminal (bez pytania silnik stawia go od 144 kolumn) albo stoi
     // za inną kartą. Zabiera pusty slot kumpla, ale nie spycha kumpla ze sceny
     // i nie zmienia wysokości pasa.
-    const lines = (await shaftShown($, now.sztolnia)) ? [] : shaftDigest(await read($, board), await read($, usage), { git: await read($, git), threads: await read($, threads) })
+    const digestShown = !(await shaftShown($, now.sztolnia))
+    if (digestShown) await read($, musterNow)
+    const digestExtra = digestShown ? { git: await read($, git), threads: await read($, threads), now: input.now } : null
+    const lines = digestExtra === null ? [] : shaftDigest(await read($, board), await read($, usage), digestExtra)
     let plan = bandPlan(input)
     if (lines.length > 0 && plan.stage !== null) {
       const narrow = bandPlan({ ...input, columns: input.columns - DIGEST_COLUMNS - CAPTION_GAP })
@@ -792,7 +795,8 @@ export const register: Register = on => {
     // Kreska nad pasem oddziela go od odpowiedzi i zabiera jeden wiersz.
     const rule = plan.rule ? [Text({ dimColor: true, wrap: 'truncate-end', children: ['─'.repeat(Math.max(1, e.props.bodyColumns))] })] : []
     if (plan.stage === null || !('Client' in table)) {
-      const line = Text({ dimColor: true, wrap: 'truncate-end', children: [`⚒ ${[plan.verb, plan.target].filter(Boolean).join(' ')} · ${plan.tally}`] })
+      const caption = [[plan.verb, plan.target].filter(Boolean).join(' '), plan.tally].filter(Boolean).join(' · ')
+      const line = Text({ dimColor: true, wrap: 'truncate-end', children: [`⚒ ${caption}`] })
       return Box({ flexDirection: 'column', children: [...rule, line, theirs] })
     }
     const caption = Box({
@@ -800,8 +804,8 @@ export const register: Register = on => {
       width: CAPTION_COLUMNS,
       children: [
         Text({ bold: true, color: KRUX_COLOR, wrap: 'truncate-end', children: [plan.verb] }),
-        Text({ dimColor: true, wrap: 'truncate-middle', children: [plan.target || ' '] }),
-        Text({ dimColor: true, wrap: 'truncate-end', children: [plan.tally] }),
+        ...(plan.target ? [Text({ dimColor: true, wrap: 'truncate-middle', children: [plan.target] })] : []),
+        ...(plan.tally ? [Text({ dimColor: true, wrap: 'truncate-end', children: [plan.tally] })] : []),
       ],
     })
     const forge = table.Client({ key: 'forge', module: './forge.ts', props: plan.stage.props, width: plan.stage.width, height: plan.stage.height })

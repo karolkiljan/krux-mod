@@ -94,7 +94,7 @@ test('the board reads usage in short Polish words', () => {
   expect(tokens(136_000)).toBe('136k')
   expect(tokens(1_000_000)).toBe('1M')
   expect(tokens(950)).toBe('950')
-  expect(limitName('five_hour')).toBe('5 h')
+  expect(limitName('five_hour')).toBe('5h')
   expect(limitName('seven_day')).toBe('7 dni')
   expect(limitName('spend_limit')).toBe('budżet')
   expect(limitName('other_window')).toBe('other_window')
@@ -278,7 +278,7 @@ test('printing a quoted test command cannot record green tests', () => {
   expect(run("printf 'x; npm test'", ' 3 pass\n 0 fail')).toBe(null)
 })
 
-test('every file edit records the supplied time, including a mate or an error without deny', () => {
+test('code or unknown-path edits record the time, including a mate or an error without deny', () => {
   for (const tool of ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']) {
     const before = { ...EMPTY_BOARD, editedAt: 100 }
     const after = boardAfter(before, tool, {}, undefined, { text: '', isError: false, who: 'Młot' }, 200)
@@ -290,6 +290,32 @@ test('every file edit records the supplied time, including a mate or an error wi
   }
   expect(boardAfter(EMPTY_BOARD, 'Edit', {}, undefined, undefined, 0).editedAt).toBe(0)
   expect(boardAfter(EMPTY_BOARD, 'Read', {}, undefined, undefined, 200)).toBe(EMPTY_BOARD)
+})
+
+test('documentation edits preserve test freshness and the last edit time regardless of extension case', () => {
+  const before = { ...EMPTY_BOARD, test: { command: 'npm test', ok: true, passed: 3, failed: 0, failures: [], who: 'Krux' as const, at: 100 }, editedAt: 100 }
+  for (const tool of ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']) {
+    for (const extension of ['md', 'mdx', 'txt', 'rst', 'adoc', 'MD', 'MdX', 'TXT', 'RsT', 'ADOC']) {
+      const input = { [tool === 'NotebookEdit' ? 'notebook_path' : 'file_path']: `/work/docs/read me.${extension}` }
+      for (const who of ['Krux', 'Młot'] as const) {
+        for (const isError of [false, true]) {
+          const after = boardAfter(before, tool, input, undefined, { text: '', isError, who }, 200)
+          expect(after).toBe(before)
+          expect(testsStale(after)).toBe(false)
+          expect(boardAfter(EMPTY_BOARD, tool, input, undefined, undefined, 200)).toBe(EMPTY_BOARD)
+        }
+      }
+    }
+  }
+})
+
+test('documentation filtering uses the file suffix, while code, notebooks and unknown paths stay conservative', () => {
+  for (const file_path of ['/work/docs/app.ts', '/work/readme.md.ts', '/work/.md/app.ts', '/work/notes.ipynb', '/work/README', '', null, 42]) {
+    expect(boardAfter(EMPTY_BOARD, 'Edit', { file_path }, undefined, undefined, 200).editedAt).toBe(200)
+  }
+  expect(boardAfter(EMPTY_BOARD, 'NotebookEdit', { notebook_path: '/work/notes.ipynb' }, undefined, undefined, 200).editedAt).toBe(200)
+  const stale = { ...EMPTY_BOARD, editedAt: 200 }
+  expect(boardAfter(stale, 'Write', { file_path: '/work/README.md' }, undefined, undefined, 300)).toBe(stale)
 })
 
 test('test runs record their completion time and preserve the last edit', () => {

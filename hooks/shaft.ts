@@ -291,12 +291,19 @@ function gitRows(git: KruxGit): { key: string; text: string; color?: string }[] 
 }
 
 // Skrót tablicy na pas nad promptem, gdy panelu Sztolni nie widać: po linii na
-// wątki, repo, plan, ostatni przebieg testów i kontekst, w tej kolejności, bo pas
-// ucina od dołu; czego nie ma (albo repo czyste i równe), tej linii nie ma.
+// wątki, repo, gotowość do commita, plan, testy i kontekst. Wątki zachowują
+// pierwszeństwo, gotowość stoi przy repo; pas bierze linie od góry do wysokości
+// płótna, więc testy i kontekst ustępują im miejsca. Brak danych (albo czyste
+// i równe repo) oznacza brak linii; gotowość wymaga zmienionych lub nowych plików.
 // Horda stoi na płótnie obok, więc skrót jej nie powtarza.
 export type DigestLine = { key: string; mark: string; text: string; color?: string }
 
-export type DigestExtra = { git: KruxGit | null; threads: KruxThreads }
+export type DigestExtra = {
+  git: KruxGit | null
+  threads: KruxThreads
+  // Zegar sesji w ms od epoki; bez odczytu nie potwierdzamy utknięcia.
+  now?: number
+}
 
 export function shaftDigest(board: KruxBoard, usage: KruxUsage | null, extra: DigestExtra = { git: null, threads: EMPTY_THREADS }): DigestLine[] {
   const lines: DigestLine[] = []
@@ -311,13 +318,20 @@ export function shaftDigest(board: KruxBoard, usage: KruxUsage | null, extra: Di
     const marks = gitShort(git).slice(git.branch.length)
     lines.push({ key: 'git', mark: '⎇', text: `${git.branch}${git.upstream === null ? '' : ` → ${git.upstream}`}${marks}`, ...(git.conflicted > 0 ? { color: ALARM_COLOR } : git.ahead > 0 || git.behind > 0 ? { color: KRUX_COLOR } : {}) })
   }
+  if (git !== null && git.changed + git.untracked > 0) {
+    const commit = readiness(board, git)
+    lines.push({ key: 'readiness', mark: commit.ready ? '✓' : '·', text: commit.ready ? 'do commita' : `do commita: ${commit.missing.join(', ')}`, ...(commit.ready ? { color: OK_COLOR } : {}) })
+  }
   const { tasks, test: run } = board
   if (tasks.length > 0) {
     const current = tasks.find(task => task.status === 'in_progress') ?? tasks.find(task => task.status === 'pending')
+    const minutes = current === undefined || extra.now === undefined ? null : stuckMinutes(current, extra.now)
+    // Wiek przed tematem, żeby nie zginął przy ucinaniu długiego zadania.
+    const age = minutes === null ? '' : `⧗ ${minutes} min `
     lines.push(
       current === undefined
         ? { key: 'plan', mark: '✓', text: `plan ${planCount(tasks)}`, color: OK_COLOR }
-        : { key: 'plan', mark: current.status === 'in_progress' ? '▸' : '·', text: `${planCount(tasks)} ${current.subject}`, color: KRUX_COLOR },
+        : { key: 'plan', mark: current.status === 'in_progress' ? '▸' : '·', text: `${planCount(tasks)} ${age}${current.subject}`, color: KRUX_COLOR },
     )
   }
   if (run !== null) {
@@ -327,10 +341,8 @@ export function shaftDigest(board: KruxBoard, usage: KruxUsage | null, extra: Di
     lines.push({ key: 'tests', mark: run.ok ? '✓' : '✗', text, color: run.ok ? OK_COLOR : ALARM_COLOR })
   }
   if (usage !== null && usage.percent !== null) {
-    // Kontekst i okna limitów w jednej linii; czerwień, gdy którekolwiek blisko końca.
-    const limits = usage.limits.map(limit => `${limitName(limit.kind)} ${Math.round(limit.percentUsed)}%`)
-    const alarm = usage.percent >= 80 || usage.limits.some(limit => limit.percentUsed >= 80)
-    lines.push({ key: 'usage', mark: '◔', text: [`kontekst ${usage.percent}%`, ...limits].join(' · '), ...(alarm ? { color: ALARM_COLOR } : {}) })
+    // Tylko zapełnienie kontekstu; okna limitów pozostają w panelu Sztolni.
+    lines.push({ key: 'usage', mark: '◔', text: `kontekst ${usage.percent}%`, ...(usage.percent >= 80 ? { color: ALARM_COLOR } : {}) })
   }
   return lines
 }
