@@ -37,18 +37,14 @@ export function chatTree({ Box, Text }: ChatElements, data: ChatData): RenderEle
       children: row.map(({ text, ...colors }) => Text({ ...colors, children: [text] })),
     })),
   })
+  // Silnik odrzuca drzewo, gdy jego treść (`engine`) leży pod Boxem z `width`.
+  // Dymek bierze więc resztę wiersza (`flexGrow`), a Morrę odsuwa `paddingLeft`.
   const message = Box({
     key: 'chat-message',
     flexDirection: 'column',
-    flexShrink: 0,
-    width,
+    flexGrow: 1,
+    flexShrink: 1,
     children: [
-      Box({
-        key: 'chat-header',
-        height: 1,
-        flexShrink: 0,
-        children: [Text({ bold: true, color, wrap: 'truncate-end', children: [`${data.speaker ?? 'ork'} · ${data.time}`] })],
-      }),
       // `quote` daje pusty wiersz nad i pod treścią. Jak w tabliczkach,
       // wyrównujemy te odstępy, żeby kreska zaczynała się pod nagłówkiem.
       Box({
@@ -57,6 +53,17 @@ export function chatTree({ Box, Text }: ChatElements, data: ChatData): RenderEle
         borderColor: color,
         marginBottom: -1,
         children: [Box({ key: 'chat-content', flexDirection: 'column', marginTop: -1, children: [data.content] })],
+      }),
+      // Silnik stawia pusty wiersz nad wiadomością; nagłówek leży na nim
+      // jak tabliczka, więc nie dokłada wiersza między sobą a treścią.
+      Box({
+        key: 'chat-header',
+        position: 'absolute',
+        top: 0,
+        left: 0,
+        right: 0,
+        height: 1,
+        children: [Text({ bold: true, color, wrap: 'truncate-end', children: [`${data.speaker ?? 'ork'} · ${data.time}`] })],
       }),
     ],
   })
@@ -67,7 +74,7 @@ export function chatTree({ Box, Text }: ChatElements, data: ChatData): RenderEle
     alignItems: 'flex-start',
     justifyContent: right ? 'flex-end' : 'flex-start',
     columnGap: 1,
-    width: columns,
+    paddingLeft: room - width,
     children: right ? [message, avatar] : [avatar, message],
   })
 }

@@ -889,7 +889,10 @@ export const register: Register = on => {
     if (matched.length === 0 || matched.some(entry => entry === undefined)) return next(e)
     const columns = e.viewport?.columns
     if (columns === undefined || !Number.isFinite(columns) || columns <= 0) return next(e)
-    return toolLine($.ui.resolve(e), matched as NonNullable<typeof matched[number]>[], columns)
+    const table = $.ui.resolve(e)
+    // Wiersz narzędzia już niesie linię dziennika; osobny wynik dałby ją drugi raz.
+    if (e.component === 'ToolResult') return table.Box({ key: 'journal-result', height: 0 })
+    return toolLine(table, matched as NonNullable<typeof matched[number]>[], columns)
   })
 
   // Pas nad promptem: podpis z lewej, za nim Krux i wysłani kumple, dymek nad

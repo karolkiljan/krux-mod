@@ -82,8 +82,8 @@ for (const { speaker, color, grid } of ORCS) {
     const body = part(root, 'chat-body')
     expect(root.props.justifyContent).toBe('flex-start')
     expect(children(root)).toEqual([avatar, message])
-    expect(root.props.width).toBe(120)
-    expect(message.props.width).toBe(113)
+    expect(root.props.paddingLeft).toBe(0)
+    expect(message.props.flexGrow).toBe(1)
     expect(text(header)).toBe(`${speaker ?? 'ork'} · 09:07`)
     const label = children(header)[0] as Node
     expect(label.props.bold).toBe(true)
@@ -111,7 +111,8 @@ test('Morra stands right, with the avatar at the edge and a bubble no wider than
   const header = part(root, 'chat-header')
   expect(root.props.justifyContent).toBe('flex-end')
   expect(children(root)).toEqual([message, avatar])
-  expect(message.props.width).toBe(84)
+  // 120 kolumn: awatar 6 i odstęp 1 zostawiają 113, dymek do 84, reszta to odsunięcie.
+  expect(root.props.paddingLeft).toBe(29)
   expect(root.props.columnGap).toBe(1)
   expect(text(header)).toBe('Morra · 09:07')
   const label = children(header)[0] as Node
@@ -157,27 +158,49 @@ test('at 60 columns every speaker keeps a fixed avatar and a single complete hea
     expect(avatar.props.minWidth).toBe(6)
     expect(avatar.props.height).toBe(2)
     expect(avatar.props.flexShrink).toBe(0)
-    expect(message.props.width).toBe(speaker === 'Morra' ? 42 : 53)
-    expect(message.props.flexShrink).toBe(0)
+    expect(root.props.paddingLeft).toBe(speaker === 'Morra' ? 11 : 0)
+    expect(message.props.flexGrow).toBe(1)
     expect(header.props.height).toBe(1)
-    expect(header.props.flexShrink).toBe(0)
+    expect(header.props.position).toBe('absolute')
+    expect(header.props.top).toBe(0)
     const label = children(header)[0] as Node
     expect(label.props.wrap).toBe('truncate-end')
     expect(text(label)).toBe(`${speaker ?? 'ork'} · 09:07`)
-    expect((message.props.width as number) >= text(label).length).toBe(true)
-    expect((avatar.props.width as number) + (root.props.columnGap as number) + (message.props.width as number) <= 60).toBe(true)
+    const bubble = 60 - (root.props.paddingLeft as number) - (avatar.props.width as number) - (root.props.columnGap as number)
+    expect(bubble >= text(label).length).toBe(true)
   }
 })
 
 test('fractional widths round down and keep the bubble within the available columns', () => {
   const root = draw({ speaker: 'Morra', columns: 61.9 })
-  expect(root.props.width).toBe(61)
-  expect(part(root, 'chat-message').props.width).toBe(42)
+  // 61 kolumn: 54 na dymek, Morra do 42, więc 12 odsunięcia.
+  expect(root.props.paddingLeft).toBe(12)
 })
 
 test('very narrow rows reserve the avatar and gap before granting the bubble width', () => {
   const root = draw({ speaker: 'Morra', columns: 12 })
-  expect(root.props.width).toBe(12)
+  expect(root.props.paddingLeft).toBe(0)
   expect(part(root, 'chat-avatar').props.width).toBe(6)
-  expect(part(root, 'chat-message').props.width).toBe(5)
+  expect(part(root, 'chat-message').props.flexGrow).toBe(1)
+})
+
+// Silnik odrzuca całe drzewo (i rysuje swoje), gdy treść `engine` leży pod Boxem z `width`.
+test('no ancestor of the engine content carries a width', () => {
+  for (const speaker of ['Krux', 'Morra', null] as const) {
+    for (const columns of [12, 60, 120]) {
+      const root = draw({ speaker, columns })
+      const path = (node: Node): Node[] | undefined => {
+        if (children(node).includes(CONTENT)) return [node]
+        for (const child of children(node)) {
+          if (typeof child !== 'object' || child === null) continue
+          const found = path(child as Node)
+          if (found !== undefined) return [node, ...found]
+        }
+        return undefined
+      }
+      const ancestors = path(root)!
+      expect(ancestors.map(node => node.props.key)).toEqual(['chat', 'chat-message', 'chat-body', 'chat-content'])
+      expect(ancestors.filter(node => node.props.width !== undefined)).toEqual([])
+    }
+  }
 })
