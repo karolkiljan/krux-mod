@@ -57,6 +57,12 @@ export function threadsAfter(threads: KruxThreads, input: Record<string, unknown
   return { next, items: items.slice(-THREADS_LIMIT) }
 }
 
+// Notatka Morry korzysta z numeracji, deduplikacji i limitów narzędzia `watki`.
+export function saveThread(threads: KruxThreads, text: string): KruxThreads {
+  if (text.trim() === '') return threads
+  return threadsAfter(threads, { open: [{ kind: 'todo', text }] })
+}
+
 // Odpowiedź narzędzia: model widzi, co zostało otwarte, i ma id do zamknięcia.
 export function threadsReport(threads: KruxThreads): string {
   if (threads.items.length === 0) return 'No open threads.'

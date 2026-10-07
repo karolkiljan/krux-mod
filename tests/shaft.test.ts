@@ -133,7 +133,7 @@ test('open threads show their mark, risks in red, below the repo', () => {
 })
 
 test('git shows the branch, commits to push and files outside a commit; a clean even repo is one ✓', () => {
-  expect(texts(section(draw({ git: GIT }), 'git')!).map(line => line.text)).toEqual(['Git', '', '⎇ main → origin/main', '↑ do wypchnięcia: 6', '● zmienione: 2'])
+  expect(texts(section(draw({ git: GIT }), 'git')!).map(line => line.text)).toEqual(['Git', '', '⎇ main → origin/main', '↑ do wypchnięcia: 6', '● zmienione: 2', '· do commita: brak testów'])
   const clean = { ...GIT, ahead: 0, changed: 0 }
   expect(texts(section(draw({ git: clean }), 'git')!).map(line => line.text)).toEqual(['Git', '', '⎇ main → origin/main', '✓ czysto, równo z upstreamem'])
   expect(texts(section(draw({ git: { ...clean, upstream: null } }), 'git')!).map(line => line.text).slice(2)).toEqual(['⎇ main · bez upstreamu', '✓ czysto'])
@@ -157,7 +157,7 @@ test('the repo lists its files and newest commits, unpushed ones marked ↑, and
   const commits = Array.from({ length: 10 }, (_, index) => ({ hash: `c${index}`, subject: `commit ${index}`, pushed: index >= 2 }))
   const git = { ...GIT, changed: 10, ahead: 2, files, commits }
   const short = draw({ git, rows: 20 })
-  expect(texts(section(short, 'git')!).map(line => line.text).slice(5)).toEqual(['  M', 'hooks/file0.ts', '  M', 'hooks/file1.ts', '  M', 'hooks/file2.ts', '  M', 'hooks/file3.ts', '  +6 dalej'])
+  expect(texts(section(short, 'git')!).map(line => line.text).slice(6)).toEqual(['  M', 'hooks/file0.ts', '  M', 'hooks/file1.ts', '  M', 'hooks/file2.ts', '  M', 'hooks/file3.ts', '  +6 dalej'])
   const log = texts(section(short, 'commits')!)
   expect(log.map(line => line.text)).toEqual(['Commity', '↑2 niewypchnięte', '↑', 'c0', 'commit 0', '↑', 'c1', 'commit 1', '·', 'c2', 'commit 2'])
   expect(log[2]!.color).toBe(KRUX_COLOR)
@@ -187,4 +187,85 @@ test('the digest lines say more: the test command with counts, context with the 
   expect(lines.map(line => line.text)).toEqual(['claude plugin test . · 209 przeszło', 'kontekst 27% · 5 h 40% · 7 dni 82%'])
   // Okno limitu blisko końca barwi linię, choć kontekst daleko.
   expect(lines[1]!.color).toBe(texts(draw({ board: { tasks: [], test: { ...board.test, ok: false } } }))[2]!.color)
+})
+
+const FRESH_RUN = { command: 'npm test', ok: true, passed: 3, failed: 0, failures: [], who: 'Krux' as const, at: 100 }
+
+test('the tests section marks stale green and failed runs with a dim sign and word', () => {
+  for (const ok of [true, false]) {
+    const tests = section(draw({ board: { tasks: [], test: { ...FRESH_RUN, ok }, editedAt: 101 } }), 'tests')!
+    const lines = texts(tests).map(line => line.text)
+    expect(lines).toContain('  ◌ nieświeże')
+    expect(lines).toContain(ok ? '✓' : '✗')
+    expect(lines).toContain('npm test')
+    expect(lines).toContain('Krux')
+    const stale = (children(tests) as Node[]).find(node => node.type === 'Text' && children(node).join('') === '  ◌ nieświeże')!
+    expect(stale.props.dimColor).toBe(true)
+  }
+})
+
+test('the tests section omits the stale sign for fresh runs and legacy timestamps', () => {
+  for (const board of [
+    { tasks: [], test: FRESH_RUN, editedAt: 100 },
+    { tasks: [], test: FRESH_RUN, editedAt: 99 },
+    { tasks: [], test: FRESH_RUN },
+    { tasks: [], test: { ...FRESH_RUN, at: undefined }, editedAt: 101 },
+  ]) expect(texts(section(draw({ board }), 'tests')!).map(line => line.text)).not.toContain('  ◌ nieświeże')
+  expect(section(draw({ board: { tasks: [], test: null, editedAt: 101 } }), 'tests')).toBeUndefined()
+})
+
+test('the digest marks stale tests while preserving the command, counts and outcome sign', () => {
+  const green = shaftDigest({ tasks: [], test: FRESH_RUN, editedAt: 101 }, null)
+  expect(green.map(line => [line.mark, line.text])).toEqual([['✓', '◌ nieświeże · npm test · 3 przeszły']])
+  const failed = shaftDigest({ tasks: [], test: { ...FRESH_RUN, ok: false, failed: 1 }, editedAt: 101 }, null)
+  expect(failed.map(line => [line.mark, line.text])).toEqual([['✗', '◌ nieświeże · npm test · 1 padł · 3 przeszły']])
+  expect(shaftDigest({ tasks: [], test: { ...FRESH_RUN, passed: null, failed: null }, editedAt: 101 }, null)[0]?.text).toBe('◌ nieświeże · npm test')
+  expect(shaftDigest({ tasks: [], test: FRESH_RUN, editedAt: 100 }, null)[0]?.text).toBe('npm test · 3 przeszły')
+  expect(shaftDigest({ tasks: [], test: { ...FRESH_RUN, at: undefined }, editedAt: 101 }, null)[0]?.text).toBe('npm test · 3 przeszły')
+})
+
+test('git shows signed commit readiness for fresh green tests and modified or new files', () => {
+  for (const whitespace of [true, null, undefined]) {
+    for (const changes of [{ changed: 1, untracked: 0 }, { changed: 0, untracked: 1 }]) {
+      const lines = texts(section(draw({ board: { tasks: [], test: FRESH_RUN, editedAt: 100 }, git: { ...GIT, ...changes, whitespace } }), 'git')!)
+      expect(lines.map(line => line.text)).toContain('✓ do commita')
+      expect(lines.find(line => line.text === '✓ do commita')?.color).toBe(texts(section(draw({ board: { tasks: [], test: FRESH_RUN } }), 'tests')!)[2]?.color)
+    }
+  }
+})
+
+test('git lists every commit blocker behind a visible pending sign', () => {
+  const root = draw({ board: { tasks: [], test: { ...FRESH_RUN, ok: false }, editedAt: 101 }, git: { ...GIT, whitespace: false, conflicted: 2 } })
+  expect(texts(section(root, 'git')!).map(line => line.text)).toContain('· do commita: testy padłe, testy nieświeże, białe znaki, konflikty: 2')
+  expect(texts(section(draw({ git: GIT }), 'git')!).map(line => line.text)).toContain('· do commita: brak testów')
+})
+
+test('commit readiness stays hidden without modified or new files and outside a repo', () => {
+  for (const git of [null, { ...GIT, changed: 0 }, { ...GIT, changed: 0, ahead: 0, behind: 2 }, { ...GIT, changed: 0, conflicted: 1 }]) {
+    expect(texts(draw({ git })).some(line => line.text.includes('do commita'))).toBe(false)
+  }
+})
+
+test('a running plan task gains a signed age at 15 minutes using the supplied clock', () => {
+  const tasks = [{ ...task('Poprawka', 'in_progress'), startedAt: 0 }]
+  expect(texts(section(draw({ board: { tasks, test: null }, now: 15 * 60_000 - 1 }), 'plan')!).map(line => line.text)).toContain('▸ Poprawka')
+  const aged = texts(section(draw({ board: { tasks, test: null }, now: 16 * 60_000 - 1 }), 'plan')!)
+  expect(aged).toContainEqual({ text: '▸ Poprawka', color: KRUX_COLOR })
+  expect(aged).toContainEqual({ text: '⧗ 15 min', color: KRUX_COLOR })
+  expect(texts(section(draw({ board: { tasks, test: null }, now: 16 * 60_000 }), 'plan')!).map(line => line.text)).toContain('⧗ 16 min')
+})
+
+test('a long task subject gives way while the stuck-task suffix keeps its space', () => {
+  const tasks = [{ ...task('A very long task subject that exceeds the narrow pane', 'in_progress'), startedAt: 0 }]
+  const plan = section(draw({ board: { tasks, test: null }, now: 15 * 60_000, columns: 18 }), 'plan')!
+  const row = children(plan)[1] as Node
+  const [subject, suffix] = children(row) as Node[]
+  expect(subject!.props.flexShrink).toBe(1)
+  expect(suffix!.props.flexShrink).toBe(0)
+  expect(texts(suffix!).map(line => line.text)).toEqual(['⧗ 15 min'])
+})
+
+test('pending, completed and undated tasks never get a stuck-task suffix', () => {
+  const tasks = [{ ...task('Czeka', 'pending'), startedAt: 0 }, { ...task('Gotowe', 'completed'), startedAt: 0 }, task('Historia', 'in_progress')]
+  expect(texts(section(draw({ board: { tasks, test: null }, now: 60 * 60_000 }), 'plan')!).map(line => line.text)).toEqual(['Plan', '1/3', '· Czeka', '✓ Gotowe', '▸ Historia'])
 })

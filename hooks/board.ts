@@ -1,10 +1,11 @@
 // Tablica Sztolni: stan roboty zamiast statystyki. Plan z narzędzi listy zadań
-// (`TodoWrite`, `TaskCreate`, `TaskUpdate`) i ostatni przebieg testów. Diff
+// (`TodoWrite`, `TaskCreate`, `TaskUpdate`), czasy edycji i przebiegów testów. Diff
 // i drzewo zmian rysuje silnik (`/diff`), więc tablica ich nie dubluje. Czyste funkcje.
 
 import type { SessionUsage } from 'claude-code'
 
-import type { KruxBoard, KruxTask, KruxTestRun, KruxUsage } from '../types'
+import type { KruxBoard, KruxGit, KruxTask, KruxTestRun, KruxThreads, KruxUsage } from '../types'
+import { gitBusy, gitShort } from './git'
 import type { HistoryMessage } from './lore'
 import { workOf } from './voice'
 
@@ -20,6 +21,13 @@ function statusOf(value: unknown): TaskStatus | null {
 
 function text(value: unknown): string {
   return typeof value === 'string' ? value.trim() : ''
+}
+
+// Czas startu należy do jednego statusu: powtórzenie go nie resetuje zegara.
+function taskStatus(task: KruxTask, status: TaskStatus, now?: number): KruxTask {
+  if (task.status === status) return task
+  const { startedAt: _startedAt, ...rest } = task
+  return { ...rest, status, ...(status === 'in_progress' && now !== undefined ? { startedAt: now } : {}) }
 }
 
 // Co czytamy z wyniku wywołania: tekst, który dostał model, błąd i kto wołał.
@@ -87,24 +95,56 @@ export function testPassed(output: string, isError: boolean): boolean {
 
 // Tablica po jednym wywołaniu narzędzia. Plan zmienia lista zadań z wątku głównego
 // (`result` to rekord narzędzia, z niego id `TaskCreate`); testy zmienia komenda
-// testów, gdy znamy jej wynik (`call`). Inne narzędzia zwracają tę samą tablicę.
-export function boardAfter(board: KruxBoard, tool: string, input: Record<string, unknown>, result?: unknown, call?: BoardCall): KruxBoard {
+// testów, gdy znamy jej wynik (`call`). `now` to czas zdarzenia w ms od epoki;
+// historia bez czasu go pomija. Edycja zapisuje czas także przy błędzie, bez `deny`.
+export function boardAfter(board: KruxBoard, tool: string, input: Record<string, unknown>, result?: unknown, call?: BoardCall, now?: number): KruxBoard {
+  if ((result as { deny?: unknown } | undefined)?.deny !== undefined) return board
+  if (['Edit', 'Write', 'MultiEdit', 'NotebookEdit'].includes(tool)) {
+    return now === undefined ? board : { ...board, editedAt: now }
+  }
   if (call && workOf(tool, input) === 'test') {
     // Test w tle odpowiada od razu, bez wyniku: ostatni prawdziwy przebieg zostaje.
     if (input.run_in_background === true) return board
-    return { ...board, test: testRunOf(text(input.command), call) }
+    return { ...board, test: { ...testRunOf(text(input.command), call), ...(now === undefined ? {} : { at: now }) } }
   }
   // Nieudane wywołanie listy zadań nie zmienia planu.
   if (call?.isError) return board
   switch (tool) {
     case 'TodoWrite': {
       const todos = Array.isArray(input.todos) ? (input.todos as Record<string, unknown>[]) : []
-      const tasks = todos.flatMap(todo => {
+      const previous = board.tasks.filter(task => task.id === null)
+      const tasks: KruxTask[] = todos.flatMap(todo => {
         const status = statusOf(todo.status)
         const subject = text(todo.content)
         return status && subject ? [{ id: null, subject, status }] : []
       })
-      return { ...board, tasks }
+      const unused: (KruxTask | undefined)[] = [...previous]
+      const matches: (KruxTask | undefined)[] = tasks.map(() => undefined)
+      // TodoWrite nie ma id: najpierw rezerwujemy niezmienione tematy i statusy,
+      // żeby wcześniejszy duplikat ze zmianą statusu nie zabrał ich zegara.
+      for (const sameStatus of [true, false]) {
+        tasks.forEach((task, index) => {
+          if (matches[index] !== undefined) return
+          const found = unused.findIndex(old => old?.subject === task.subject && (!sameStatus || old.status === task.status))
+          if (found < 0) return
+          matches[index] = unused[found]
+          unused[found] = undefined
+        })
+      }
+      return {
+        ...board,
+        tasks: tasks.map((task, index) => {
+          let old = matches[index]
+          const atPosition = unused[index]
+          // Przemianowanie w tej samej pozycji: stary temat zniknął, nowy nie
+          // należał do poprzedniej listy. Każdy poprzednik trafia tylko raz.
+          if (old === undefined && atPosition !== undefined && !tasks.some(next => next.subject === atPosition.subject) && !previous.some(before => before.subject === task.subject)) {
+            old = atPosition
+            unused[index] = undefined
+          }
+          return { ...taskStatus(old ?? { ...task, status: 'pending' }, task.status, now), subject: task.subject }
+        }),
+      }
     }
     case 'TaskCreate': {
       const subject = text(input.subject)
@@ -122,12 +162,53 @@ export function boardAfter(board: KruxBoard, tool: string, input: Record<string,
       const subject = text(input.subject)
       return {
         ...board,
-        tasks: board.tasks.map(task => (task.id === id ? { ...task, ...(status ? { status } : {}), ...(subject ? { subject } : {}) } : task)),
+        tasks: board.tasks.map(task => (task.id === id ? { ...(status ? taskStatus(task, status, now) : task), ...(subject ? { subject } : {}) } : task)),
       }
     }
     default:
       return board
   }
+}
+
+// Starsze sesje nie mają czasów: bez obu nie potwierdzamy nieświeżości.
+export function testsStale(board: KruxBoard): boolean {
+  return board.test !== null && board.test.at !== undefined && board.editedAt != null && board.editedAt > board.test.at
+}
+
+// Pełne minuty pracy, od progu 15 min; bez startu albo poza pracą — nic.
+export function stuckMinutes(task: KruxTask, now: number): number | null {
+  if (task.status !== 'in_progress' || task.startedAt === undefined) return null
+  const minutes = Math.floor((now - task.startedAt) / 60_000)
+  return minutes >= 15 ? minutes : null
+}
+
+// Warunki commita, niezależnie od tego, czy panel ma zmiany do pokazania.
+// Nieznany odczyt białych znaków nie blokuje, zgodnie z kontraktem.
+export function readiness(board: KruxBoard, git: KruxGit | null): { ready: boolean; missing: string[] } {
+  if (git === null) return { ready: false, missing: ['brak repo'] }
+  const missing: string[] = []
+  if (board.test === null) missing.push('brak testów')
+  else {
+    if (!board.test.ok) missing.push('testy padłe')
+    if (testsStale(board)) missing.push('testy nieświeże')
+  }
+  if (git.whitespace === false) missing.push('białe znaki')
+  if (git.conflicted > 0) missing.push(`konflikty: ${git.conflicted}`)
+  return { ready: missing.length === 0, missing }
+}
+
+// Jedna linia toastu po przerwie: tylko części obecne na tablicy.
+export function returnNote(board: KruxBoard, threads: KruxThreads, git: KruxGit | null): string {
+  const parts: string[] = []
+  if (board.tasks.length > 0) parts.push(`Plan ${planCount(board.tasks)}`)
+  const run = board.test
+  if (run !== null) {
+    const counts = run.ok ? (run.passed === null ? '' : String(run.passed)) : testLine(run)
+    parts.push(`testy ${run.ok ? '✓' : '✗'}${counts ? ` ${counts}` : ''}${testsStale(board) ? ' ◌ nieświeże' : ''}`)
+  }
+  if (threads.items.length > 0) parts.push(`wątki ${threads.items.length}`)
+  if (git !== null) parts.push(`git ${gitBusy(git) ? '' : '✓ '}${gitShort(git)}`)
+  return parts.join(' · ').replace(/\s+/gu, ' ').trim()
 }
 
 // Plan w `limit` wierszach: najpierw wypadają najstarsze zrobione (`earlier`),

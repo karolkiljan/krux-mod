@@ -17,9 +17,9 @@ export type CrewEvent =
   // Narzędzie albo faza kumpla (dumanie, pisanie): jego poza i dymek z krokiem, chyba że wisi świeży wtręt.
   | { kind: 'mate-tool'; agentId: string; doing: KruxActivity }
   // Narzędzie Kruxa: wtręt i reakcja Kruxa po zdarzeniu albo koniec dymka kumpla.
-  | { kind: 'own-tool'; event: KruxEvent | null; lore: KruxLore; seed: number }
+  | { kind: 'own-tool'; event: KruxEvent | null; lore: KruxLore; seed: number; failure?: string }
   // Wynik narzędzia kumpla: jego wtręt i reakcja na własną robotę; `lore` to kronika tego jednego wywołania.
-  | { kind: 'mate-event'; agentId: string; event: KruxEvent; lore: KruxLore; seed: number }
+  | { kind: 'mate-event'; agentId: string; event: KruxEvent; lore: KruxLore; seed: number; failure?: string }
   // Pętla kumpla skończona: oddaje zwój i schodzi ze sceny razem ze swoim krokiem.
   | { kind: 'mate-done'; agentId: string }
   // Silnik widzi jako `running` tylko tych; reszta schodzi bez zakończenia i bez zwoju.
@@ -54,7 +54,7 @@ export function crewAfter(crew: KruxCrew, event: CrewEvent, now: number): KruxCr
       if (event.event === null) return bubble?.kind === 'step' ? { ...crew, bubble: null } : crew
       const mate = EVENT_SPEAKER[event.event]
       const member = members.find(other => other.mate === mate)
-      const text = eventLine(event.event, event.lore, event.seed)
+      const text = eventLine(event.event, event.lore, event.seed, event.failure)
       const until = now + EVENT_HOLD_MS
       // Komentuje kumpel z pasującym fachem, ale reaguje ten, kto robił: Krux.
       const cues = cued(crew, { key: 'krux', kind: event.event, until }, now)
@@ -63,7 +63,7 @@ export function crewAfter(crew: KruxCrew, event: CrewEvent, now: number): KruxCr
     case 'mate-event': {
       const member = members.find(other => other.agentId === event.agentId)
       if (member === undefined) return crew
-      const text = eventLine(event.event, event.lore, event.seed)
+      const text = eventLine(event.event, event.lore, event.seed, event.failure)
       const until = now + EVENT_HOLD_MS
       return { ...crew, cues: cued(crew, { key: member.agentId, kind: event.event, until }, now), bubble: { kind: 'event', key: member.agentId, speaker: member.mate ?? 'ork', text, until } }
     }

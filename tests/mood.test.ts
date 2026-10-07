@@ -105,6 +105,42 @@ test('event lines carry the numbers from the lore', async () => {
   expect(eventLine('test-pass', recordTool(twice, 'Bash', { command: 'npm test' }, false), 0)).toContain('2')
 })
 
+test('a failed-test event names the supplied first failure in every variant', () => {
+  const failures = ['auth > login', 'cache > expiry']
+  const lines = [0, 1, 2].map(seed => eventLine('test-fail', failed, seed, failures[0]))
+  expect(lines).toEqual([
+    'Smród! 1 na 1 padać. Padły: auth > login.',
+    'Czerwono. Robak gryźć. Padły: auth > login.',
+    'Test padać. Kilof w dłoń! Padły: auth > login.',
+  ])
+})
+
+test('a failed-test event without a name keeps the existing text', () => {
+  const lines = ['Smród! 1 na 1 padać.', 'Czerwono. Robak gryźć.', 'Test padać. Kilof w dłoń!']
+  for (const seed of [0, 1, 2]) {
+    expect(eventLine('test-fail', failed, seed)).toBe(lines[seed])
+    expect(eventLine('test-fail', failed, seed, undefined)).toBe(lines[seed])
+    expect(eventLine('test-fail', failed, seed, '')).toBe(lines[seed])
+  }
+})
+
+test('a failed-test name fits 24 characters including the ellipsis', () => {
+  expect(eventLine('test-fail', failed, 0, 'abcdefghijklmnopqrstuvwx')).toBe('Smród! 1 na 1 padać. Padły: abcdefghijklmnopqrstuvwx.')
+  expect(eventLine('test-fail', failed, 0, 'abcdefghijklmnopqrstuvwxy')).toBe('Smród! 1 na 1 padać. Padły: abcdefghijklmnopqrstuvw…')
+  expect(eventLine('test-fail', failed, 0, 'abcdefghijklmnopqrstuvwxyz > login')).toBe('Smród! 1 na 1 padać. Padły: abcdefghijklmnopqrstuvw…')
+  expect(eventLine('test-fail', failed, 0, 'login…')).toBe('Smród! 1 na 1 padać. Padły: login…')
+})
+
+test('failed-test names preserve Polish characters before and after truncation', () => {
+  expect(eventLine('test-fail', failed, 1, 'zażółć gęślą jaźń')).toBe('Czerwono. Robak gryźć. Padły: zażółć gęślą jaźń.')
+  expect(eventLine('test-fail', failed, 1, 'Zażółć gęślą jaźń — próba logowania')).toBe('Czerwono. Robak gryźć. Padły: Zażółć gęślą jaźń — pró…')
+})
+
+test('other events never present a supplied name as a failed test', () => {
+  expect(eventLine('test-pass', passed, 0, 'auth > login')).toBe('Zielono! Smrodów po drodze: 1.')
+  expect(eventLine('build-fail', { ...EMPTY_LORE, builds: 1, buildFails: 1 }, 0, 'auth > login')).toBe('Piec pluć! 1 na 1 padać.')
+})
+
 // Liczba przy bezokoliczniku albo w etykiecie nie potrzebuje odmiany:
 // „po 1 smrodach” i „2 na 2 padło” były błędne.
 test('event lines never decline a number wrong', async () => {

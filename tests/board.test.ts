@@ -1,6 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
-import { EMPTY_BOARD, boardAfter, limitName, planRows, replayBoard, meter, planCount, resetIn, testLine, tokens, usageOf } from '../hooks/board'
+import type { KruxBoard, KruxGit, KruxTask } from '../types'
+import { EMPTY_BOARD, boardAfter, limitName, planRows, readiness, replayBoard, returnNote, meter, planCount, resetIn, stuckMinutes, testLine, testsStale, tokens, usageOf } from '../hooks/board'
 
 test('TodoWrite replaces the plan with its whole list', () => {
   const board = boardAfter(EMPTY_BOARD, 'TodoWrite', {
@@ -275,4 +276,147 @@ test('node --test reads its default reporter: ✖ names, ℹ counts, the failing
 
 test('printing a quoted test command cannot record green tests', () => {
   expect(run("printf 'x; npm test'", ' 3 pass\n 0 fail')).toBe(null)
+})
+
+test('every file edit records the supplied time, including a mate or an error without deny', () => {
+  for (const tool of ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']) {
+    const before = { ...EMPTY_BOARD, editedAt: 100 }
+    const after = boardAfter(before, tool, {}, undefined, { text: '', isError: false, who: 'Młot' }, 200)
+    expect(after.editedAt).toBe(200)
+    expect(after.tasks).toBe(before.tasks)
+    expect(before.editedAt).toBe(100)
+    expect(boardAfter(before, tool, {}, undefined, { text: 'Error', isError: true, who: 'Krux' }, 300).editedAt).toBe(300)
+    expect(boardAfter(before, tool, {}, { deny: 'blocked' }, undefined, 400)).toBe(before)
+  }
+  expect(boardAfter(EMPTY_BOARD, 'Edit', {}, undefined, undefined, 0).editedAt).toBe(0)
+  expect(boardAfter(EMPTY_BOARD, 'Read', {}, undefined, undefined, 200)).toBe(EMPTY_BOARD)
+})
+
+test('test runs record their completion time and preserve the last edit', () => {
+  const before = { ...EMPTY_BOARD, editedAt: 100 }
+  const call = { text: '3 pass\n0 fail', isError: false, who: 'Krux' as const }
+  const after = boardAfter(before, 'Bash', { command: 'npm test' }, undefined, call, 200)
+  expect(after.test).toMatchObject({ ok: true, passed: 3, at: 200 })
+  expect(after.editedAt).toBe(100)
+  expect(boardAfter(after, 'Bash', { command: 'npm test' }, undefined, call, 300).test?.at).toBe(300)
+  expect(boardAfter(after, 'Bash', { command: 'npm test' }, undefined, { ...call, isError: true }, 400).test).toMatchObject({ ok: false, at: 400 })
+  expect(boardAfter(after, 'Bash', { command: 'npm test', run_in_background: true }, undefined, call, 500)).toBe(after)
+  expect(boardAfter(after, 'Bash', { command: 'npm test' }, undefined, undefined, 500)).toBe(after)
+  expect(boardAfter(after, 'Bash', { command: 'npm test' }, { deny: 'blocked' }, call, 500)).toBe(after)
+})
+
+test('TodoWrite starts running tasks once and preserves their time across list rewrites', () => {
+  const first = boardAfter(EMPTY_BOARD, 'TodoWrite', { todos: [{ content: 'A', status: 'in_progress' }, { content: 'B', status: 'pending' }] }, undefined, undefined, 0)
+  expect(first.tasks).toEqual([{ id: null, subject: 'A', status: 'in_progress', startedAt: 0 }, { id: null, subject: 'B', status: 'pending' }])
+  const reordered = boardAfter(first, 'TodoWrite', { todos: [{ content: 'B', status: 'in_progress' }, { content: ' A ', status: 'in_progress' }] }, undefined, undefined, 100)
+  expect(reordered.tasks).toEqual([{ id: null, subject: 'B', status: 'in_progress', startedAt: 100 }, { id: null, subject: 'A', status: 'in_progress', startedAt: 0 }])
+  const stopped = boardAfter(reordered, 'TodoWrite', { todos: [{ content: 'A', status: 'completed' }, { content: 'B', status: 'pending' }] }, undefined, undefined, 200)
+  expect(stopped.tasks).toEqual([{ id: null, subject: 'A', status: 'completed' }, { id: null, subject: 'B', status: 'pending' }])
+  expect(boardAfter(stopped, 'TodoWrite', { todos: [{ content: 'A', status: 'in_progress' }] }, undefined, undefined, 300).tasks[0]?.startedAt).toBe(300)
+  expect(first.tasks[0]?.startedAt).toBe(0)
+})
+
+test('TodoWrite preserves a running task start when only its subject changes', () => {
+  const before: KruxBoard = { tasks: [{ id: null, subject: 'Old subject', status: 'in_progress', startedAt: 100 }, { id: null, subject: 'Next', status: 'pending' }], test: null }
+  const after = boardAfter(before, 'TodoWrite', { todos: [{ content: 'New subject', status: 'in_progress' }, { content: 'Next', status: 'pending' }] }, undefined, undefined, 200)
+  expect(after.tasks).toEqual([{ id: null, subject: 'New subject', status: 'in_progress', startedAt: 100 }, { id: null, subject: 'Next', status: 'pending' }])
+  expect(before.tasks[0]?.subject).toBe('Old subject')
+})
+
+test('TodoWrite preserves distinct running starts when duplicate subjects change order', () => {
+  const before: KruxBoard = { tasks: [{ id: null, subject: 'A', status: 'in_progress', startedAt: 100 }, { id: null, subject: 'A', status: 'pending' }, { id: null, subject: 'A', status: 'in_progress', startedAt: 150 }], test: null }
+  const after = boardAfter(before, 'TodoWrite', { todos: [{ content: 'A', status: 'pending' }, { content: 'A', status: 'in_progress' }, { content: 'A', status: 'in_progress' }, { content: 'A', status: 'in_progress' }] }, undefined, undefined, 200)
+  expect(after.tasks).toEqual([{ id: null, subject: 'A', status: 'pending' }, { id: null, subject: 'A', status: 'in_progress', startedAt: 100 }, { id: null, subject: 'A', status: 'in_progress', startedAt: 150 }, { id: null, subject: 'A', status: 'in_progress', startedAt: 200 }])
+})
+
+test('TaskUpdate keeps startedAt while running, clears it on status change and restarts it on reentry', () => {
+  const pending = boardAfter(EMPTY_BOARD, 'TaskCreate', { subject: 'A' }, { task: { id: '1' } }, undefined, 10)
+  const running = boardAfter(pending, 'TaskUpdate', { taskId: '1', status: 'in_progress' }, undefined, undefined, 100)
+  expect(running.tasks[0]).toEqual({ id: '1', subject: 'A', status: 'in_progress', startedAt: 100 })
+  expect(boardAfter(running, 'TaskUpdate', { taskId: '1', subject: 'B', status: 'in_progress' }, undefined, undefined, 200).tasks[0]).toEqual({ id: '1', subject: 'B', status: 'in_progress', startedAt: 100 })
+  expect(boardAfter(running, 'TaskUpdate', { taskId: '1', subject: 'B', status: 'blocked' }, undefined, undefined, 200).tasks[0]?.startedAt).toBe(100)
+  for (const status of ['completed', 'pending']) {
+    const stopped = boardAfter(running, 'TaskUpdate', { taskId: '1', status }, undefined, undefined, 300)
+    expect(stopped.tasks[0]).toEqual({ id: '1', subject: 'A', status })
+    expect(boardAfter(stopped, 'TaskUpdate', { taskId: '1', status: 'in_progress' }, undefined, undefined, 400).tasks[0]?.startedAt).toBe(400)
+  }
+  expect(boardAfter(running, 'TaskUpdate', { taskId: '1', status: 'completed' }, { success: false }, undefined, 300)).toBe(running)
+  expect(boardAfter(running, 'TaskUpdate', { taskId: '1', status: 'completed' }, undefined, { text: 'Error', isError: true, who: 'Krux' }, 300)).toBe(running)
+})
+
+test('history without timestamps never invents edit, test or task times', () => {
+  const board = replayBoard([{ role: 'assistant', text: '', toolUses: [
+    { tool: 'Edit', input: {} },
+    { tool: 'TodoWrite', input: { todos: [{ content: 'A', status: 'in_progress' }] } },
+    { tool: 'Bash', input: { command: 'npm test' }, text: '3 pass' },
+  ] }])
+  expect(board.editedAt).toBeUndefined()
+  expect(board.test?.at).toBeUndefined()
+  expect(board.tasks[0]?.startedAt).toBeUndefined()
+})
+
+const GREEN: KruxBoard = { tasks: [], test: { command: 'npm test', ok: true, passed: 301, failed: 0, failures: [], who: 'Krux', at: 100 }, editedAt: 100 }
+const GIT: KruxGit = { branch: 'main', upstream: 'origin/main', ahead: 0, behind: 0, changed: 1, untracked: 0, conflicted: 0, files: [], commits: [], whitespace: true }
+
+test('testsStale needs a run and a strictly later edit, including a zero timestamp', () => {
+  const cases: { board: KruxBoard; stale: boolean }[] = [
+    { board: EMPTY_BOARD, stale: false },
+    { board: { ...EMPTY_BOARD, editedAt: 200 }, stale: false },
+    { board: { tasks: [], test: GREEN.test }, stale: false },
+    { board: { ...GREEN, editedAt: null }, stale: false },
+    { board: { ...GREEN, editedAt: 0 }, stale: false },
+    { board: GREEN, stale: false },
+    { board: { ...GREEN, editedAt: 101 }, stale: true },
+    { board: { ...GREEN, test: { ...GREEN.test!, at: undefined }, editedAt: 200 }, stale: false },
+    { board: { ...GREEN, test: { ...GREEN.test!, at: 0 }, editedAt: 1 }, stale: true },
+    { board: { ...GREEN, test: { ...GREEN.test!, ok: false }, editedAt: 101 }, stale: true },
+  ]
+  for (const item of cases) expect(testsStale(item.board)).toBe(item.stale)
+})
+
+test('stuckMinutes starts at 15 minutes, rounds down and only measures running tasks with a start', () => {
+  const running: KruxTask = { id: null, subject: 'A', status: 'in_progress', startedAt: 0 }
+  expect(stuckMinutes(running, 15 * 60_000 - 1)).toBe(null)
+  expect(stuckMinutes(running, 15 * 60_000)).toBe(15)
+  expect(stuckMinutes(running, 16 * 60_000 - 1)).toBe(15)
+  expect(stuckMinutes(running, 16 * 60_000)).toBe(16)
+  expect(stuckMinutes({ ...running, startedAt: 100 }, 0)).toBe(null)
+  expect(stuckMinutes({ ...running, startedAt: undefined }, 20 * 60_000)).toBe(null)
+  expect(stuckMinutes({ ...running, status: 'pending' }, 20 * 60_000)).toBe(null)
+  expect(stuckMinutes({ ...running, status: 'completed' }, 20 * 60_000)).toBe(null)
+})
+
+test('readiness accepts green fresh tests, no conflicts and unknown or clean whitespace', () => {
+  for (const whitespace of [true, null, undefined]) expect(readiness(GREEN, { ...GIT, whitespace })).toEqual({ ready: true, missing: [] })
+  expect(readiness(GREEN, { ...GIT, changed: 0, untracked: 1, ahead: 2, behind: 3 })).toEqual({ ready: true, missing: [] })
+  expect(readiness(GREEN, null)).toEqual({ ready: false, missing: ['brak repo'] })
+})
+
+test('readiness lists every blocker, including stale failing tests', () => {
+  expect(readiness(EMPTY_BOARD, GIT)).toEqual({ ready: false, missing: ['brak testów'] })
+  expect(readiness({ ...GREEN, editedAt: 101 }, GIT)).toEqual({ ready: false, missing: ['testy nieświeże'] })
+  expect(readiness({ ...GREEN, test: { ...GREEN.test!, ok: false } }, GIT)).toEqual({ ready: false, missing: ['testy padłe'] })
+  expect(readiness(GREEN, { ...GIT, whitespace: false })).toEqual({ ready: false, missing: ['białe znaki'] })
+  expect(readiness(GREEN, { ...GIT, conflicted: 2 })).toEqual({ ready: false, missing: ['konflikty: 2'] })
+  expect(readiness({ ...GREEN, test: { ...GREEN.test!, ok: false }, editedAt: 101 }, { ...GIT, whitespace: false, conflicted: 2 })).toEqual({ ready: false, missing: ['testy padłe', 'testy nieświeże', 'białe znaki', 'konflikty: 2'] })
+})
+
+test('returnNote joins only known board, thread and repo state into one line', () => {
+  const threads = { next: 3, items: [{ id: 1, kind: 'todo' as const, text: 'A' }, { id: 2, kind: 'risk' as const, text: 'B' }] }
+  const board: KruxBoard = { ...GREEN, tasks: [{ id: null, subject: 'A', status: 'completed' }, { id: null, subject: 'B', status: 'pending' }] }
+  const empty = { next: 1, items: [] }
+  expect(returnNote(EMPTY_BOARD, empty, null)).toBe('')
+  expect(returnNote(board, threads, null)).toBe('Plan 1/2 · testy ✓ 301 · wątki 2')
+  expect(returnNote({ ...EMPTY_BOARD, tasks: board.tasks }, empty, null)).toBe('Plan 1/2')
+  expect(returnNote(EMPTY_BOARD, threads, null)).toBe('wątki 2')
+  expect(returnNote(EMPTY_BOARD, empty, { ...GIT, changed: 0 })).toBe('git ✓ main')
+  expect(returnNote(EMPTY_BOARD, empty, { ...GIT, branch: 'topic\nbranch', ahead: 2, behind: 1, untracked: 3, conflicted: 1 })).toBe('git topic branch ↑2 ↓1 ●1 +3 ✗1')
+})
+
+test('returnNote preserves failed and stale run signs and omits unknown counts', () => {
+  const empty = { next: 1, items: [] }
+  expect(returnNote({ ...GREEN, editedAt: 101 }, empty, null)).toBe('testy ✓ 301 ◌ nieświeże')
+  expect(returnNote({ ...GREEN, test: { ...GREEN.test!, ok: false, failed: 2 } }, empty, null)).toBe('testy ✗ 2 padły · 301 przeszło')
+  expect(returnNote({ ...GREEN, test: { ...GREEN.test!, passed: null, failed: null } }, empty, null)).toBe('testy ✓')
+  expect(returnNote({ ...GREEN, test: { ...GREEN.test!, ok: false, passed: null, failed: null }, editedAt: 101 }, empty, null)).toBe('testy ✗ ◌ nieświeże')
 })

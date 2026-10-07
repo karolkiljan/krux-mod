@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register } from 'claude-code'
 
-import type { KruxActivity, KruxEvent, KruxHordeMember, KruxMode, KruxModes } from '../types'
+import type { KruxActivity, KruxBoard, KruxEvent, KruxGit, KruxHordeMember, KruxMode, KruxModes, KruxTestRun } from '../types'
 import { CAPTION_COLUMNS, CAPTION_GAP, bandPlan } from './band'
 import type { BandInput } from './band'
 import { EMPTY_CREW, crewAfter } from './crew'
@@ -11,9 +11,10 @@ import { EMPTY_LORE, lifeNote, recordAnswer, recordTool, replay, turnsAfter } fr
 import { CALM, EVENT_HOLD_MS, eventOf, mateIn, mateMoodAfter, moodsAfter, moodsTick } from './mood'
 import { MATES, ROSTER } from './roster'
 import type { BoardCall } from './board'
-import { EMPTY_BOARD, boardAfter, replayBoard, usageOf } from './board'
-import { GIT_LOG, GIT_STATUS, GIT_UNPUSHED, GIT_TOOLS, gitOf } from './git'
-import { EMPTY_THREADS, THREAD_SPEC, THREAD_TOOL_NAME, replayThreads, threadsAfter, threadsReport } from './threads'
+import { EMPTY_BOARD, boardAfter, replayBoard, returnNote, usageOf } from './board'
+import { GIT_CHECK, GIT_LOG, GIT_STATUS, GIT_UNPUSHED, GIT_TOOLS, gitOf } from './git'
+import { EMPTY_THREADS, THREAD_SPEC, THREAD_TOOL_NAME, replayThreads, saveThread, threadsAfter, threadsReport } from './threads'
+import { dayReport } from './report'
 import { EMPTY_MUSTER, anyRunning, musterDone, musterRows, musterSpawn, musterTool } from './muster'
 import { KRUX_COLOR, ORC_COLOR, shaftDigest, shaftTree } from './shaft'
 import { forgeColumns } from './sprites'
@@ -80,6 +81,9 @@ const muster = atom({ plugin: 'krux-mod', key: 'muster' } as const, EMPTY_MUSTER
 const musterNow = atom({ plugin: 'krux-mod', key: 'musterNow' } as const, 0)
 const git = atom({ plugin: 'krux-mod', key: 'git' } as const, null)
 const threads = atom({ plugin: 'krux-mod', key: 'threads' } as const, EMPTY_THREADS)
+const autoKonkret = atom({ plugin: 'krux-mod', key: 'autoKonkret' } as const, false)
+const turnAt = atom({ plugin: 'krux-mod', key: 'turnAt' } as const, null)
+const seenAt = atom({ plugin: 'krux-mod', key: 'seenAt' } as const, null)
 
 // Teksty głosu czyta session.start; reload modułu czyta je od nowa.
 let texts: Texts = { persona: '', konkret: '', flow: '' }
@@ -181,8 +185,16 @@ async function warnAboutPlugin($: EngineInterface): Promise<void> {
 
 // Pusty `$.state` przy niepustej historii to wznowiona sesja: licznik tur,
 // kronikę, dryf i tablicę Sztolni odtwarzamy raz, przy pierwszym prompcie po
-// starcie, także przy wyłączonej personie, bo tablica liczy się bez niej.
-async function restore($: EngineInterface): Promise<void> {
+// starcie albo notatce czy raporcie. Równoległe wywołania czekają na wynik,
+// żeby zapis notatki nie wyprzedził odtworzenia wątków.
+let restoring: Promise<void> | null = null
+
+function restore($: EngineInterface): Promise<void> {
+  if (restoring === null) restoring = restoreOnce($).finally(() => { restoring = null })
+  return restoring
+}
+
+async function restoreOnce($: EngineInterface): Promise<void> {
   // Sprawdzenie i zapis w jednym `update`: dwa równoległe prompty nie odtworzą dwa razy.
   let first = false
   await update($, replayed, was => {
@@ -192,10 +204,10 @@ async function restore($: EngineInterface): Promise<void> {
   if (!first) return
   try {
     const messages = await $.session.messages()
+    if (messages.length === 0) return
     await update($, board, () => replayBoard(messages))
     await update($, threads, () => replayThreads(messages))
     const found = replay(messages)
-    if (messages.length === 0) return
     await update($, turns, () => found.turns)
     await update($, lore, () => found.lore)
     const last = found.lore.last
@@ -239,7 +251,7 @@ async function liveMembers($: EngineInterface, members: KruxHordeMember[]): Prom
 }
 
 // Własne narzędzie Kruxa: kronika, humor, a po zdarzeniu wtręt na cztery sekundy.
-async function afterOwnTool($: EngineInterface, tool: string, input: Record<string, unknown>, isError: boolean, text: string): Promise<KruxEvent | null> {
+async function afterOwnTool($: EngineInterface, tool: string, input: Record<string, unknown>, isError: boolean, text: string, failure?: string): Promise<KruxEvent | null> {
   let after = EMPTY_LORE
   let found: KruxEvent | null = null
   // Kronika liczona w środku `update`: równoległe narzędzia nie gubią sobie zapisów.
@@ -257,7 +269,7 @@ async function afterOwnTool($: EngineInterface, tool: string, input: Record<stri
     const ids = await runningIds($)
     if (ids !== null) await crewStep($, { kind: 'running', ids })
   }
-  await crewStep($, { kind: 'own-tool', event, lore: after, seed: await read($, sessionStrikes) })
+  await crewStep($, { kind: 'own-tool', event, lore: after, seed: await read($, sessionStrikes), failure })
   // Timer startuje po zapisie dymka, więc nigdy nie wyprzedzi jego `until`.
   if (event !== null) $.clock.after(EVENT_HOLD_MS, () => void crewStep($, { kind: 'expire' }))
   return event
@@ -265,7 +277,7 @@ async function afterOwnTool($: EngineInterface, tool: string, input: Record<stri
 
 // Narzędzie kumpla na scenie: wynik jego roboty zmienia jego minę i daje jego wtręt
 // na cztery sekundy. Kronika Kruxa go nie liczy: to nie robota Kruxa.
-async function afterMateTool($: EngineInterface, agentId: string, tool: string, input: Record<string, unknown>, isError: boolean, text: string): Promise<void> {
+async function afterMateTool($: EngineInterface, agentId: string, tool: string, input: Record<string, unknown>, isError: boolean, text: string, failure?: string): Promise<void> {
   const single = recordTool(EMPTY_LORE, tool, input, isError, text)
   const event = eventOf(EMPTY_LORE, single)
   if (event === null) return
@@ -273,7 +285,7 @@ async function afterMateTool($: EngineInterface, agentId: string, tool: string, 
   if (member === undefined) return
   const mate = member.mate
   if (mate !== null) await update($, moods, now => mateMoodAfter(now, mate, event))
-  await crewStep($, { kind: 'mate-event', agentId, event, lore: single, seed: await read($, sessionStrikes) })
+  await crewStep($, { kind: 'mate-event', agentId, event, lore: single, seed: await read($, sessionStrikes), failure })
   $.clock.after(EVENT_HOLD_MS, () => void crewStep($, { kind: 'expire' }))
 }
 
@@ -322,18 +334,24 @@ function refreshGit($: EngineInterface): Promise<void> {
     try {
       do {
         gitAgain = false
-        let found = null
-        // Czekamy na oba także po błędzie jednego, żeby kolejny odczyt nie nakładał się na stary.
-        const [run, log] = await Promise.all([
+        let found: KruxGit | null = null
+        // Czekamy na wszystkie także po błędzie, żeby kolejny odczyt nie nakładał się na stary.
+        const [run, log, check] = await Promise.all([
           $.process.run(GIT_STATUS, { timeoutMs: 5000 }).catch(() => null),
           $.process.run(GIT_LOG, { timeoutMs: 5000 }).catch(() => null),
+          $.process.run(GIT_CHECK, { timeoutMs: 5000 }).catch(() => null),
         ])
         if (run?.exitCode === 0) {
           const status = gitOf(run.stdout)
           const local = status.upstream === null ? null : await $.process.run(GIT_UNPUSHED, { timeoutMs: 5000 }).catch(() => null)
           found = gitOf(run.stdout, log?.exitCode === 0 ? log.stdout : '', local?.exitCode === 0 && !local.isStdoutTruncated ? local.stdout : null)
+          found.whitespace = check?.exitCode === 0 ? true : check?.exitCode === 2 ? false : null
         }
-        if (JSON.stringify(await read($, git)) !== JSON.stringify(found)) await update($, git, () => found)
+        const previous = await read($, git)
+        if (JSON.stringify(previous) !== JSON.stringify(found)) {
+          await update($, git, () => found)
+          if (previous !== null && found !== null && found.behind > previous.behind) $.ui.toast(`origin ma ${found.behind} nowych commitów — git pull.`)
+        }
       } while (gitAgain)
     } finally {
       // Blokada znika razem z pętlą, zanim następne mikrozadanie poprosi o odczyt.
@@ -348,14 +366,45 @@ async function shaftShown($: EngineInterface, on: boolean): Promise<boolean> {
   return (await $.ui.panes()).some(pane => pane.id === SHAFT_PANE && pane.isPlaced && pane.isShown)
 }
 
+// Panel odświeża utknięcie przy 15 min, potem na każdej pełnej minucie zadania.
+// Nowy plan unieważnia poprzedni timer; zegar apelu pozostaje wspólną zależnością panelu.
+let boardClock = 0
+
+function tickBoard($: EngineInterface, plan: KruxBoard, now: number): void {
+  const revision = ++boardClock
+  const starts = plan.tasks.flatMap(task => task.status === 'in_progress' && task.startedAt !== undefined ? [task.startedAt] : [])
+  if (starts.length === 0) return
+  const at = Math.min(...starts.map(start => start + Math.max(15, Math.floor((now - start) / 60_000) + 1) * 60_000))
+  $.clock.after(Math.max(1, at - now), async () => {
+    if (revision !== boardClock) return
+    const current = await read($, board)
+    const time = await $.clock.now()
+    if (revision !== boardClock || !current.tasks.some(task => task.status === 'in_progress' && task.startedAt !== undefined)) return
+    await update($, musterNow, () => time)
+    if (revision === boardClock) tickBoard($, current, time)
+  })
+}
+
 // Tablica po narzędziu, liczona w środku `update` (równoległe narzędzia nie gubią
 // zapisów); bez zmiany bez zapisu, bo zapis przerysowuje Sztolnię. `TodoWrite`
 // i przebieg testów dają nowy obiekt także przy tej samej treści.
-async function boardStep($: EngineInterface, tool: string, input: Record<string, unknown>, result: unknown, call: BoardCall): Promise<void> {
+async function boardStep($: EngineInterface, tool: string, input: Record<string, unknown>, result: unknown, call: BoardCall): Promise<KruxTestRun | null> {
+  const now = await $.clock.now()
   const seen = await read($, board)
-  const next = boardAfter(seen, tool, input, result, call)
-  if (next === seen || JSON.stringify(next) === JSON.stringify(seen)) return
-  await update($, board, now => boardAfter(now, tool, input, result, call))
+  const next = boardAfter(seen, tool, input, result, call, now)
+  if (next === seen || JSON.stringify(next) === JSON.stringify(seen)) return next.test !== seen.test ? next.test : null
+  let run: KruxTestRun | null = null
+  let plan = seen
+  let tasksChanged = false
+  await update($, board, current => {
+    const after = boardAfter(current, tool, input, result, call, now)
+    if (after.test !== current.test) run = after.test
+    tasksChanged = after.tasks !== current.tasks
+    plan = after
+    return after
+  })
+  if (tasksChanged) tickBoard($, plan, now)
+  return run
 }
 
 // Zapełnienie kontekstu, limity i koszt dla Sztolni; bez odczytu zostaje stary.
@@ -364,6 +413,10 @@ async function refreshUsage($: EngineInterface): Promise<void> {
     const now = usageOf(await $.session.usage())
     // Bez zmiany bez zapisu: zapis przerysowuje Sztolnię.
     if (JSON.stringify(now) !== JSON.stringify(await read($, usage))) await update($, usage, () => now)
+    const automatic = now.limits.some(limit => limit.percentUsed >= 80)
+    let changed = false
+    await update($, autoKonkret, current => { changed = current !== automatic; return automatic })
+    if (changed) $.ui.toast(automatic ? 'Limit planu 80%: konkret włączony do resetu.' : 'Konkret automatyczny wyłączony: limity planu poniżej 80%.')
   } catch {
     // Brak odczytu to nie powód, by psuć narzędzie czy turę.
   }
@@ -404,6 +457,7 @@ export const register: Register = on => {
     if ((await read($, modes)).sztolnia) await syncShaftPane($, true)
     // Reload modułu kasuje zegar apelu; orkowie z `$.state` biegną dalej.
     if (anyRunning(await read($, muster))) tickMuster($)
+    tickBoard($, await read($, board), await $.clock.now())
     await refreshUsage($)
     await refreshGit($)
     try {
@@ -415,7 +469,7 @@ export const register: Register = on => {
       await $.command.register({
         name: 'krux',
         description: 'Kuźnia Kruxa: persona, konkret, flow, animacje, kowal, horda',
-        argumentHint: '[on|off|konkret|flow|animacje|kowal|status]',
+        argumentHint: '[on|off|konkret|flow|animacje|kowal|sztolnia|zapisz <tekst>|raport|status]',
         immediate: true,
       })
     } catch (error) {
@@ -433,15 +487,25 @@ export const register: Register = on => {
 
   on('prompt.compose', async ($, e, next) => {
     const composed = await next(e)
-    const sections = personaSections(await read($, modes), texts)
+    const now = await read($, modes)
+    const sections = personaSections({ ...now, konkret: now.konkret || await read($, autoKonkret) }, texts)
     if (sections.length === 0) return composed
     return { sections: [...composed.sections, ...sections] }
   })
 
   on('prompt.submit', async ($, e, next) => {
-    const extra = freshNotes(await $.clock.now()).map(note => note.text)
+    const now = await $.clock.now()
+    const extra = freshNotes(now).map(note => note.text)
     pendingNotes = []
     await restore($)
+    if (fromPerson(e.origin)) {
+      let returned = false
+      await update($, seenAt, previous => { returned = previous !== null && now - previous >= 1_800_000; return now })
+      if (returned) {
+        const note = returnNote(await read($, board), await read($, threads), await read($, git))
+        if (note) $.ui.toast(note)
+      }
+    }
     const phrase = fromPerson(e.origin) ? parsePhrase(e.text) : null
     if (phrase) {
       const { note } = await setModes($, phrase)
@@ -479,6 +543,21 @@ export const register: Register = on => {
     const command = parseCommand(e.args)
     if (command.kind === 'status') return { text: statusLine(await read($, modes)) }
     if (command.kind === 'help') return { text: `Krux nie znać „${command.unknown}”.\n${HELP}` }
+    if (command.kind === 'save') {
+      await restore($)
+      let id: number | null = null
+      await update($, threads, current => {
+        const next = saveThread(current, command.text)
+        if (next.next > current.next) id = current.next
+        return next
+      })
+      $.ui.toast(id === null ? 'Notatka już w otwartych wątkach.' : `Wątek #${id} zapisany.`)
+      return {}
+    }
+    if (command.kind === 'report') {
+      await restore($)
+      return { text: dayReport(await read($, git), await read($, board), await read($, threads), await read($, lore)) }
+    }
     if (command.kind === 'toggle') {
       const { next: now, on: isOn, note } = await setModes($, command.toggle)
       if (command.toggle.mode === 'sztolnia') await syncShaftPane($, isOn)
@@ -504,6 +583,9 @@ export const register: Register = on => {
   }).catch(($, e, next) => { hookFailure($, 'agent.spawn', next.error); return next(e) })
 
   on('turn.start', async ($, e, next) => {
+    if (e.agentId !== undefined) return next(e)
+    const now = await $.clock.now()
+    await update($, turnAt, () => now)
     plates.live = true
     plates.pending = true
     await update($, strikes, () => 0)
@@ -571,19 +653,21 @@ export const register: Register = on => {
       const isError = result.isError === true
       const text = typeof result.text === 'string' ? result.text : ''
       if (e.agentId === undefined) {
-        await afterOwnTool($, tool, input, isError, text)
-        await boardStep($, tool, input, result.result, { text, isError, who: 'Krux' })
+        const run = await boardStep($, tool, input, result.result, { text, isError, who: 'Krux' })
+        await afterOwnTool($, tool, input, isError, text, run?.failures[0])
         await refreshUsage($)
       } else {
         const agentId = e.agentId
-        // Z pętli kumpla tylko testy: jego lista zadań to nie plan Kruxa. Imię z apelu,
+        // Z pętli kumpla testy i edycje: jego lista zadań to nie plan Kruxa. Imię z apelu,
         // bo ze sceny kumpel schodzi, gdy pas się zwęża.
-        if (workOf(tool, input) === 'test') {
+        let run: KruxTestRun | null = null
+        const work = workOf(tool, input)
+        if (work === 'test' || work === 'edit') {
           const mate = (await read($, muster)).runs.find(one => one.agentId === agentId)?.mate
-          await boardStep($, tool, input, undefined, { text, isError, who: mate ?? 'ork' })
+          run = await boardStep($, tool, input, result.result, { text, isError, who: mate ?? 'ork' })
         }
         await update($, muster, current => musterTool(current, agentId, tool, input))
-        await afterMateTool($, agentId, tool, input, isError, text)
+        await afterMateTool($, agentId, tool, input, isError, text, run?.failures[0])
       }
       if (GIT_TOOLS.has(tool)) await refreshGit($)
     }
@@ -609,6 +693,10 @@ export const register: Register = on => {
       await update($, muster, current => musterDone(current, agentId, now))
       return next(e)
     }
+    const now = await $.clock.now()
+    let elapsed = 0
+    await update($, turnAt, started => { elapsed = started === null ? 0 : now - started; return null })
+    if (elapsed >= 120_000) $.ui.toast(`Krux skończyć po ${Math.floor(elapsed / 60_000)} min.`)
     await update($, activity, () => null)
     await refreshUsage($)
     await refreshGit($)
@@ -631,9 +719,10 @@ export const register: Register = on => {
   // Etykiety trybów w stopce, obok tych, które rysuje Claude Code.
   on('ui.render', { component: 'SessionMode' }, async ($, e, next) => {
     const now = await read($, modes)
+    const automatic = await read($, autoKonkret)
     const labels = (['persona', 'konkret', 'flow'] as const)
-      .filter(mode => now[mode])
-      .map(mode => (mode === 'persona' ? 'krux' : mode))
+      .filter(mode => now[mode] || (mode === 'konkret' && automatic))
+      .map(mode => (mode === 'persona' ? 'krux' : mode === 'konkret' && !now.konkret ? 'konkret (auto)' : mode))
     if (labels.length === 0) return next(e)
     return next({ ...e, props: { ...e.props, modes: [...e.props.modes, ...labels] } })
   })

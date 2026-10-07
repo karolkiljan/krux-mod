@@ -156,6 +156,8 @@ export type Toggle = { mode: KruxMode; on: boolean | 'flip' }
 export type KruxCommand =
   | { kind: 'open' }
   | { kind: 'status' }
+  | { kind: 'save'; text: string }
+  | { kind: 'report' }
   | { kind: 'help'; unknown: string }
   | { kind: 'toggle'; toggle: Toggle }
 
@@ -185,9 +187,15 @@ const MODE_WORDS: Record<string, KruxMode> = {
 }
 
 export function parseCommand(args: string): KruxCommand {
-  const words = args.normalize('NFC').trim().toLocaleLowerCase('pl').split(/\s+/u).filter(Boolean)
+  const clean = args.trim()
+  const words = clean.normalize('NFC').toLocaleLowerCase('pl').split(/\s+/u).filter(Boolean)
   if (words.length === 0) return { kind: 'open' }
   const [first, second] = words
+  if (first === 'zapisz') {
+    const text = clean.slice(first.length).trim()
+    return text ? { kind: 'save', text } : { kind: 'help', unknown: clean }
+  }
+  if (first === 'raport' && words.length === 1) return { kind: 'report' }
   if (first === 'status') return { kind: 'status' }
   if (ON_WORDS.has(first!) && words.length === 1) return { kind: 'toggle', toggle: { mode: 'persona', on: true } }
   if (OFF_WORDS.has(first!) && words.length === 1) return { kind: 'toggle', toggle: { mode: 'persona', on: false } }
@@ -253,6 +261,8 @@ export const HELP = [
   '/krux animacje [on|off] — kowal nad promptem',
   '/krux kowal [on|off] — kowal także w spoczynku',
   '/krux sztolnia [on|off] — panel ze stanem roboty',
+  '/krux zapisz <tekst> — dodaj notatkę do otwartych wątków',
+  '/krux raport — raport dnia do wklejenia',
   '/krux status — stan trybów',
 ].join('\n')
 

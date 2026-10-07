@@ -6,6 +6,7 @@ import type { KruxGit } from '../types'
 
 export const GIT_STATUS = ['git', '--no-optional-locks', '-c', 'core.quotePath=false', 'status', '--porcelain=v2', '--branch'] as const
 export const GIT_LOG = ['git', '--no-optional-locks', '-c', 'core.quotePath=false', 'log', '--format=%H%x09%h%x09%s', '-n', '10'] as const
+export const GIT_CHECK = ['git', '--no-optional-locks', 'diff', '--check'] as const
 
 // Osiągalność zamiast pozycji w logu: merge przeplata commity lokalne i upstream.
 export const GIT_UNPUSHED = ['git', '--no-optional-locks', '-c', 'core.quotePath=false', 'rev-list', '@{upstream}..HEAD'] as const

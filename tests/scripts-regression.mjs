@@ -173,11 +173,11 @@ test('a failed counter reset preserves completed compaction without running next
   assert.equal(await hook.catch({ ui: { log() { throw new Error('log unavailable') } } }, event, caught), result)
 })
 
-test('git refresh runs status and log concurrently and coalesces overlapping reads with one trailing refresh', async () => {
+test('git refresh runs status, log and diff check concurrently and coalesces overlapping reads with one trailing refresh', async () => {
   const gitSource = fs.readFileSync('hooks/git.ts', 'utf8').replace(/^import .*\n/gmu, '').replaceAll('export ', '')
   const gitContext = vm.createContext({})
   vm.runInContext(stripTypeScriptTypes(gitSource), gitContext)
-  const commands = vm.runInContext('({ GIT_STATUS, GIT_LOG, GIT_UNPUSHED, gitOf })', gitContext)
+  const commands = vm.runInContext('({ GIT_STATUS, GIT_LOG, GIT_CHECK, GIT_UNPUSHED, gitOf })', gitContext)
   let state = null
   let failStatus = false
   let blocked = false
@@ -187,8 +187,9 @@ test('git refresh runs status and log concurrently and coalesces overlapping rea
   const context = registerContext({ ...commands, read: async () => state, update: async (_api, _atom, change) => { state = change(state) } })
   const api = { process: { run: async (argv, options) => {
     assert.equal(options.timeoutMs, 5000)
-    assert.deepEqual(Array.from(argv).slice(0, 4), ['git', '--no-optional-locks', '-c', 'core.quotePath=false'])
-    const command = argv[4]
+    const command = argv.includes('--check') ? 'diff' : argv[4]
+    if (command === 'diff') assert.deepEqual(Array.from(argv), ['git', '--no-optional-locks', 'diff', '--check'])
+    else assert.deepEqual(Array.from(argv).slice(0, 4), ['git', '--no-optional-locks', '-c', 'core.quotePath=false'])
     calls.push(command)
     if (command === 'status' && failStatus) throw new Error('git unavailable')
     if (blocked && command === 'log') await gate
@@ -203,12 +204,13 @@ test('git refresh runs status and log concurrently and coalesces overlapping rea
   const third = refresh()
   assert.equal(first, second)
   assert.equal(second, third)
-  assert.deepEqual(calls, ['status', 'log'])
+  assert.deepEqual(calls, ['status', 'log', 'diff'])
   blocked = false
   release()
   await Promise.all([first, second, third])
-  assert.deepEqual(calls, ['status', 'log', 'status', 'log'])
+  assert.deepEqual(calls, ['status', 'log', 'diff', 'status', 'log', 'diff'])
   assert.equal(state.commits[0].pushed, false)
+  assert.equal(state.whitespace, true)
   // Odrzucony status nie zwalnia blokady przed końcem równoległego logu.
   calls.length = 0
   failStatus = true
@@ -218,21 +220,21 @@ test('git refresh runs status and log concurrently and coalesces overlapping rea
   await Promise.resolve()
   const overlapping = refresh()
   assert.equal(failing, overlapping)
-  assert.deepEqual(calls, ['status', 'log'])
+  assert.deepEqual(calls, ['status', 'log', 'diff'])
   blocked = false
   failStatus = false
   release()
   await failing
-  assert.deepEqual(calls, ['status', 'log', 'status', 'log'])
+  assert.deepEqual(calls, ['status', 'log', 'diff', 'status', 'log', 'diff'])
   calls.length = 0
   await refresh()
-  assert.deepEqual(calls, ['status', 'log'])
+  assert.deepEqual(calls, ['status', 'log', 'diff'])
 })
 
 test('git refresh reads upstream reachability with full hashes and safe global options', async () => {
   const gitContext = vm.createContext({})
   vm.runInContext(stripTypeScriptTypes(fs.readFileSync('hooks/git.ts', 'utf8').replace(/^import .*\n/gmu, '').replaceAll('export ', '')), gitContext)
-  const commands = vm.runInContext('({ GIT_STATUS, GIT_LOG, GIT_UNPUSHED, gitOf })', gitContext)
+  const commands = vm.runInContext('({ GIT_STATUS, GIT_LOG, GIT_CHECK, GIT_UNPUSHED, gitOf })', gitContext)
   let state = null
   let reachability = 'ok'
   const calls = []
@@ -240,6 +242,7 @@ test('git refresh reads upstream reachability with full hashes and safe global o
   context.api = { process: { run: async (argv, options) => {
     calls.push(Array.from(argv))
     assert.equal(options.timeoutMs, 5000)
+    if (argv.includes('--check')) return { exitCode: 0, stdout: '' }
     if (argv[4] === 'status') return { exitCode: 0, stdout: '# branch.head main\n# branch.upstream origin/main\n# branch.ab +2 -0' }
     if (argv[4] === 'log') return { exitCode: 0, stdout: 'mergeoid\tmerge\tmerge\nremoteoid\tremote\tupstream\nlocaloid\tlocal\tlocal\nbaseoid\tbase\tbase' }
     assert.deepEqual(Array.from(argv), ['git', '--no-optional-locks', '-c', 'core.quotePath=false', 'rev-list', '@{upstream}..HEAD'])
@@ -247,7 +250,7 @@ test('git refresh reads upstream reachability with full hashes and safe global o
   } } }
   await vm.runInContext('refreshGit(api)', context)
   assert.deepEqual(Array.from(state.commits, commit => commit.pushed), [false, true, false, true])
-  assert.equal(calls.length, 3)
+  assert.equal(calls.length, 4)
   reachability = 'failed'
   await vm.runInContext('refreshGit(api)', context)
   assert.deepEqual(Array.from(state.commits, commit => commit.pushed), [false, false, false, false])
@@ -299,7 +302,7 @@ test('a refresh at completion reads again instead of joining a finished snapshot
   for (let depth = 0; depth < 8; depth += 1) {
     const gitContext = vm.createContext({})
     vm.runInContext(stripTypeScriptTypes(fs.readFileSync('hooks/git.ts', 'utf8').replace(/^import .*\n/gmu, '').replaceAll('export ', '')), gitContext)
-    const commands = vm.runInContext('({ GIT_STATUS, GIT_LOG, GIT_UNPUSHED, gitOf })', gitContext)
+    const commands = vm.runInContext('({ GIT_STATUS, GIT_LOG, GIT_CHECK, GIT_UNPUSHED, gitOf })', gitContext)
     let state = commands.gitOf('# branch.head main', 'oid\tabc\tlocal')
     let schedule = true
     let later
@@ -319,13 +322,13 @@ test('a refresh at completion reads again instead of joining a finished snapshot
       update: async (_api, _atom, change) => { state = change(state) },
     })
     context.api = { process: { run: async argv => {
-      calls.push(argv[4])
+      calls.push(argv.includes('--check') ? 'diff' : argv[4])
       return { exitCode: 0, stdout: argv[4] === 'status' ? '# branch.head main' : 'oid\tabc\tlocal' }
     } } }
     const first = vm.runInContext('refreshGit(api)', context)
     await first
     await lateCall
     await later
-    assert.deepEqual(calls, ['status', 'log', 'status', 'log'], `microtask depth ${depth}`)
+    assert.deepEqual(calls, ['status', 'log', 'diff', 'status', 'log', 'diff'], `microtask depth ${depth}`)
   }
 })

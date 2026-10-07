@@ -4,7 +4,7 @@
 import type { BoxProps, ElementConstructor, RenderElement, RenderNode, TextProps } from 'claude-code'
 
 import type { KruxBoard, KruxGit, KruxThreads, KruxUsage } from '../types'
-import { limitName, meter, planCount, planRows, resetIn, testLine, tokens } from './board'
+import { limitName, meter, planCount, planRows, readiness, resetIn, stuckMinutes, testLine, testsStale, tokens } from './board'
 import { gitBusy, gitShort } from './git'
 import type { MusterRow } from './muster'
 import { PALETTE, SPEAKER_COLOR } from './sprites'
@@ -30,7 +30,7 @@ export type ShaftData = {
   // Stan repo (`null` poza repo) i wątki, których Krux nie domknął.
   git: KruxGit | null
   threads: KruxThreads
-  // Zegar sesji w ms: reset limitów liczy się od niego.
+  // Zegar sesji w ms: reset limitów i wiek zadania liczą się od niego.
   now: number
   columns: number
   // Wiersze panelu: „Kontekst” stoi na dole, a listy repo rosną z wysokością.
@@ -78,6 +78,7 @@ export function shaftTree({ Box, Text }: ShaftElements, data: ShaftData): Render
           ),
         ]
   const repo = data.git
+  const commit = repo !== null && repo.changed + repo.untracked > 0 ? readiness(data.board, repo) : null
   const room = repoRows(data.rows)
   const files = repo === null ? [] : repo.files.slice(0, room.files)
   // „+N dalej” tylko pod listą: liczby repo stoją wyżej.
@@ -89,6 +90,9 @@ export function shaftTree({ Box, Text }: ShaftElements, data: ShaftData): Render
           section('git', 'Git', [
             Text({ wrap: 'truncate-end', children: [`⎇ ${repo.branch}${repo.upstream === null ? ' · bez upstreamu' : ` → ${repo.upstream}`}`] }),
             ...gitRows(repo).map(row => Box({ key: row.key, children: [Text({ ...(row.color === undefined ? {} : { color: row.color }), children: [row.text] })] })),
+            ...(commit === null
+              ? []
+              : [Box({ key: 'readiness', children: [Text({ ...(commit.ready ? { color: OK_COLOR } : { dimColor: true }), children: [commit.ready ? '✓ do commita' : `· do commita: ${commit.missing.join(', ')}`] })] })]),
             ...files.map((file, index) =>
               Box({
                 key: `file-${index}`,
@@ -138,20 +142,31 @@ export function shaftTree({ Box, Text }: ShaftElements, data: ShaftData): Render
             'Plan',
             [
               ...(earlier > 0 ? [Text({ dimColor: true, children: [`  +${earlier} wcześniej`] })] : []),
-              ...shown.map((task, index) =>
-                Box({
+              ...shown.map((task, index) => {
+                const minutes = stuckMinutes(task, data.now)
+                return Box({
                   key: `task-${index}`,
+                  flexDirection: 'row',
+                  columnGap: 1,
                   children: [
-                    Text({
-                      wrap: 'truncate-end',
-                      bold: task.status === 'in_progress',
-                      dimColor: task.status === 'completed',
-                      ...(task.status === 'in_progress' ? { color: KRUX_COLOR } : {}),
-                      children: [`${task.status === 'completed' ? '✓' : task.status === 'in_progress' ? '▸' : '·'} ${task.subject}`],
+                    Box({
+                      flexGrow: 1,
+                      flexShrink: 1,
+                      children: [
+                        Text({
+                          wrap: 'truncate-end',
+                          bold: task.status === 'in_progress',
+                          dimColor: task.status === 'completed',
+                          ...(task.status === 'in_progress' ? { color: KRUX_COLOR } : {}),
+                          children: [`${task.status === 'completed' ? '✓' : task.status === 'in_progress' ? '▸' : '·'} ${task.subject}`],
+                        }),
+                      ],
                     }),
+                    // Dopisek nie ustępuje miejsca długiemu tematowi zadania.
+                    ...(minutes === null ? [] : [Box({ flexShrink: 0, children: [Text({ color: KRUX_COLOR, children: [`⧗ ${minutes} min`] })] })]),
                   ],
-                }),
-              ),
+                })
+              }),
               ...(later > 0 ? [Text({ dimColor: true, children: [`  +${later} dalej`] })] : []),
             ],
             planCount(tasks),
@@ -173,6 +188,7 @@ export function shaftTree({ Box, Text }: ShaftElements, data: ShaftData): Render
                 Box({ flexShrink: 0, children: [Text({ color: SPEAKER_COLOR[run.who], children: [run.who] })] }),
               ],
             }),
+            ...(testsStale(data.board) ? [Text({ dimColor: true, children: ['  ◌ nieświeże'] })] : []),
             ...(counts ? [Text({ dimColor: true, wrap: 'truncate-end', children: [`  ${counts}`] })] : []),
             ...run.failures.map((name, index) => Box({ key: `failure-${index}`, children: [Text({ color: ALARM_COLOR, wrap: 'truncate-middle', children: [`  └ ${name}`] })] })),
           ]),
@@ -306,7 +322,9 @@ export function shaftDigest(board: KruxBoard, usage: KruxUsage | null, extra: Di
   }
   if (run !== null) {
     const counts = testLine(run)
-    lines.push({ key: 'tests', mark: run.ok ? '✓' : '✗', text: counts ? `${run.command} · ${counts}` : run.command, color: run.ok ? OK_COLOR : ALARM_COLOR })
+    // Nieświeżość na początku, żeby nie zginęła przy ucinaniu długiej komendy.
+    const text = `${testsStale(board) ? '◌ nieświeże · ' : ''}${run.command}${counts ? ` · ${counts}` : ''}`
+    lines.push({ key: 'tests', mark: run.ok ? '✓' : '✗', text, color: run.ok ? OK_COLOR : ALARM_COLOR })
   }
   if (usage !== null && usage.percent !== null) {
     // Kontekst i okna limitów w jednej linii; czerwień, gdy którekolwiek blisko końca.

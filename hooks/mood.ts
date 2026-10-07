@@ -98,10 +98,16 @@ export function mateIn(...texts: string[]): KruxMate | null {
 
 // Liczby przy bezokoliczniku albo w etykiecie: „2 na 2 padać”, „smrodów po
 // drodze: 1”. Tak nie trzeba odmiany, której „padło” i „po 1 smrodach” nie miały.
-export function eventLine(event: KruxEvent, lore: KruxLore, seed: number): string {
+// `failure` to `failures[0]` z bieżącego przebiegu, nigdy zgadywana nazwa.
+export function eventLine(event: KruxEvent, lore: KruxLore, seed: number, failure?: string): string {
   switch (event) {
-    case 'test-fail':
-      return pick([`Smród! ${lore.testFails} na ${lore.testRuns} padać.`, 'Czerwono. Robak gryźć.', 'Test padać. Kilof w dłoń!'], seed)
+    case 'test-fail': {
+      const line = pick([`Smród! ${lore.testFails} na ${lore.testRuns} padać.`, 'Czerwono. Robak gryźć.', 'Test padać. Kilof w dłoń!'], seed)
+      if (!failure) return line
+      const chars = Array.from(failure)
+      const name = chars.length > 24 ? `${chars.slice(0, 23).join('')}…` : failure
+      return `${line} Padły: ${name}${name.endsWith('…') ? '' : '.'}`
+    }
     case 'test-pass':
       return lore.testFails > 0
         ? pick([`Zielono! Smrodów po drodze: ${lore.testFails}.`, 'Robak wynocha!', 'Stal trzymać. Hej!'], seed)

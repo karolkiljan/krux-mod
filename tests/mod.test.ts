@@ -37,7 +37,8 @@ const ORIGIN = { kind: 'composer' as const }
 // Wszystko, co Claude Code odpowiedziałby modowi, z magazynem w Mapie.
 type History = { role: 'user' | 'assistant'; text: string; toolUses: { tool_use_id: string; tool: string; input: Record<string, unknown>; isError?: true; text?: string }[] }[]
 
-type Extras = { beforeStoreGet?: () => void; logs?: string[]; onPrompt?: () => void; toasts?: string[]; settings?: Record<string, unknown>; plugins?: string[]; toolError?: string; agentGate?: Promise<void>; history?: History; agents?: { id: string; status: AgentStatus }[]; opened?: string[]; closed?: string[]; usage?: SessionUsage; beforeAgentList?: () => Promise<void>; beforeStoreSet?: () => Promise<void>; paneWaits?: boolean; git?: { stdout: string }; tools?: string[] }
+type ProcessReply = { exitCode: number; stdout: string; stderr: string; isStdoutTruncated: boolean; isStderrTruncated: boolean }
+type Extras = { beforeStoreGet?: () => void; logs?: string[]; onPrompt?: () => void; toasts?: string[]; settings?: Record<string, unknown>; plugins?: string[]; toolError?: string; toolDenied?: boolean; agentGate?: Promise<void>; history?: History; agents?: { id: string; status: AgentStatus }[]; opened?: string[]; closed?: string[]; usage?: SessionUsage; usageRead?: () => SessionUsage; beforeAgentList?: () => Promise<void>; beforeStoreSet?: () => Promise<void>; paneWaits?: boolean; git?: { stdout: string }; tools?: string[]; processRun?: (argv: readonly string[], timeoutMs: number | undefined) => ProcessReply | Promise<ProcessReply> }
 
 function engine(on: On, saved: Map<string, unknown>, extras: Extras = {}) {
   const toasts = extras.toasts ?? []
@@ -74,8 +75,8 @@ function engine(on: On, saved: Map<string, unknown>, extras: Extras = {}) {
     return { value: undefined }
   })
   // Git odpowiada tym, co test trzyma w `git.stdout` (test może to zmienić w trakcie); bez niego repo brak.
-  on('process.run', ($, e) => ({
-    value: { ...(extras.git && e.argv[0] === 'git' ? { exitCode: 0, stdout: extras.git.stdout, stderr: '' } : { exitCode: 128, stdout: '', stderr: 'fatal: not a git repository' }), isStdoutTruncated: false, isStderrTruncated: false },
+  on('process.run', async ($, e) => ({
+    value: extras.processRun ? await extras.processRun(e.argv, e.init?.timeoutMs) : { ...(extras.git && e.argv[0] === 'git' ? { exitCode: 0, stdout: extras.git.stdout, stderr: '' } : { exitCode: 128, stdout: '', stderr: 'fatal: not a git repository' }), isStdoutTruncated: false, isStderrTruncated: false },
   }))
   on('tool.register', ($, e) => {
     extras.tools?.push(String(e.name))
@@ -84,7 +85,7 @@ function engine(on: On, saved: Map<string, unknown>, extras: Extras = {}) {
   on('ui.panes', () => ({ value: [...panes].map(id => ({ id, title: id, isShown: true, isFocused: false, isPlaced: !extras.paneWaits })) }))
   on('session.start', () => ({ cwd: '/work' }))
   on('session.messages', () => ({ value: extras.history ?? [] }))
-  on('session.usage', () => ({ value: extras.usage ?? { startedAt: 0, context: { window: 200_000 }, rateLimits: [] } }))
+  on('session.usage', () => ({ value: extras.usageRead ? extras.usageRead() : extras.usage ?? { startedAt: 0, context: { window: 200_000 }, rateLimits: [] } }))
   const clock = mock.clock(on)
   let spawned = 0
   on('agent.spawn', () => {
@@ -101,6 +102,7 @@ function engine(on: On, saved: Map<string, unknown>, extras: Extras = {}) {
   on('turn.complete', ($, e) => ({ text: e.answer }))
   on('tool.call', async ($, e) => {
     if ((String(e.tool) === 'Agent' || String(e.tool) === 'Task') && extras.agentGate) await extras.agentGate
+    if (extras.toolDenied) return { deny: 'blocked' } as never
     return extras.toolError ? { isError: true as const, result: extras.toolError, text: extras.toolError } : { result: 'ok' }
   })
   on('ui.render', ($, e) => ({ type: 'Text', props: {}, children: [String((e.props as { word?: string }).word ?? 'engine')] }))
@@ -1519,4 +1521,348 @@ test('history ending with persona enable restores lore even when its turn count 
   const entered = await $.prompt.submit({ text: 'dalej', origin: ORIGIN, wait: false })
   expect(entered.context).toContain(VOICE_ANCHOR)
   expect(runs).toBe(1)
+})
+
+test('every main or mate edit makes a completed test run stale, and a new run clears it', async ($, on) => {
+  on('tool.call', { tool: 'Bash' }, () => ({ result: 'ok', text: '3 pass\n0 fail' }))
+  const clock = engine(on, new Map())
+  await start($)
+  const ui = await $.ui.mount({ ...SHAFT_PANE, surface: 'terminal', props: SHAFT_PROPS })
+  for (const agentId of [undefined, 'a1']) {
+    for (const tool of ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']) {
+      await $.tool.call({ tool: 'Bash', command: 'npm test' })
+      expect((await ui.find({ key: 'tests' }))?.text).not.toContain('◌ nieświeże')
+      await clock.advance(1)
+      await $.tool.call({ tool, file_path: '/work/a.ts', notebook_path: '/work/a.ipynb', agentId } as never)
+      expect((await ui.find({ key: 'tests' }))?.text).toContain('◌ nieświeże')
+    }
+  }
+  await $.tool.call(inLoop('a1', { tool: 'Bash', command: 'npm test' }))
+  expect((await ui.find({ key: 'tests' }))?.text).not.toContain('◌ nieświeże')
+})
+
+test('denied edits and tests leave the board intact, and mate tasks cannot replace the main plan', async ($, on) => {
+  on('tool.call', { tool: 'Bash' }, () => extras.toolDenied ? { deny: 'blocked' } as never : { result: 'ok', text: '3 pass\n0 fail' })
+  const extras: Extras = {}
+  const clock = engine(on, new Map(), extras)
+  await start($)
+  await $.tool.call(TODOS as never)
+  await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  const ui = await $.ui.mount({ ...SHAFT_PANE, surface: 'terminal', props: SHAFT_PROPS })
+  const before = (await ui.find({ key: 'plan' }))?.text
+  await clock.advance(1)
+  extras.toolDenied = true
+  for (const agentId of [undefined, 'a1']) {
+    await $.tool.call({ tool: 'Edit', file_path: '/work/a.ts', agentId } as never)
+    await $.tool.call({ tool: 'Bash', command: 'npm test', agentId } as never)
+  }
+  expect((await ui.find({ key: 'tests' }))?.text).not.toContain('◌ nieświeże')
+  extras.toolDenied = false
+  await $.tool.call(inLoop('a1', { tool: 'TodoWrite', todos: [{ content: 'Plan kumpla', status: 'in_progress' }] }))
+  expect((await ui.find({ key: 'plan' }))?.text).toBe(before)
+})
+
+test('git diff --check maps exit codes and errors to commit readiness with a five-second timeout', async ($, on) => {
+  let code = 0
+  let throws = false
+  const calls: { argv: readonly string[]; timeoutMs: number | undefined }[] = []
+  const processRun: Extras['processRun'] = async (argv, timeoutMs) => {
+    if (argv.includes('--check')) {
+      calls.push({ argv, timeoutMs })
+      if (throws) throw new Error('git unavailable')
+      return { exitCode: code, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
+    }
+    return { exitCode: 0, stdout: '# branch.head main\n? a.ts\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
+  }
+  on('tool.call', { tool: 'Bash' }, () => ({ result: 'ok', text: '3 pass\n0 fail' }))
+  engine(on, new Map(), { processRun })
+  await start($)
+  await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  const ui = await $.ui.mount({ ...SHAFT_PANE, surface: 'terminal', props: SHAFT_PROPS })
+  expect((await ui.find({ key: 'readiness' }))?.text).toBe('✓ do commita')
+  code = 2
+  await $.tool.call({ tool: 'Bash', command: 'git status' })
+  expect((await ui.find({ key: 'readiness' }))?.text).toBe('· do commita: białe znaki')
+  for (const exitCode of [1, 128]) {
+    code = exitCode
+    await $.tool.call({ tool: 'Bash', command: 'git status' })
+    expect((await ui.find({ key: 'readiness' }))?.text).toBe('✓ do commita')
+  }
+  throws = true
+  await $.tool.call({ tool: 'Bash', command: 'git status' })
+  expect((await ui.find({ key: 'readiness' }))?.text).toBe('✓ do commita')
+  expect(calls.length).toBe(6)
+  for (const call of calls) {
+    expect(call.argv).toEqual(['git', '--no-optional-locks', 'diff', '--check'])
+    expect(call.timeoutMs).toBe(5000)
+  }
+})
+
+test('overlapping git refreshes share one follow-up read, including a delayed diff check', async ($, on) => {
+  let release!: () => void
+  let entered!: () => void
+  const gate = new Promise<void>(resolve => { release = resolve })
+  const started = new Promise<void>(resolve => { entered = resolve })
+  let checks = 0
+  let statuses = 0
+  const processRun: Extras['processRun'] = async argv => {
+    if (argv.includes('status')) statuses += 1
+    if (argv.includes('--check')) {
+      checks += 1
+      if (checks === 2) { entered(); await gate }
+    }
+    return { exitCode: 0, stdout: '# branch.head main\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
+  }
+  engine(on, new Map(), { processRun })
+  await start($)
+  expect(checks).toBe(1)
+  const first = $.tool.call({ tool: 'Edit', file_path: '/work/a.ts' } as never)
+  await started
+  const second = $.tool.call({ tool: 'Write', file_path: '/work/b.ts', content: '' })
+  // Ten prompt stawia barierę po mikrozadaniach drugiego narzędzia.
+  await $.prompt.submit({ text: '', wait: false, origin: ORIGIN })
+  expect(statuses).toBe(2)
+  release()
+  await Promise.all([first, second])
+  expect(statuses).toBe(3)
+  expect(checks).toBe(3)
+})
+
+test('behind toasts compare saved reads and skip initial, equal, lower and missing repo reads', async ($, on) => {
+  const toasts: string[] = []
+  const git = { stdout: '# branch.head main\n# branch.upstream origin/main\n# branch.ab +0 -2\n' }
+  const extras: Extras = { git, toasts }
+  engine(on, new Map(), extras)
+  await start($)
+  expect(toasts).toEqual([])
+  for (const behind of [2, 1, 4, 4]) {
+    git.stdout = `# branch.head main\n# branch.upstream origin/main\n# branch.ab +0 -${behind}\n`
+    await $.tool.call({ tool: 'Bash', command: 'git status' })
+  }
+  expect(toasts).toEqual(['origin ma 4 nowych commitów — git pull.'])
+  extras.git = undefined
+  await $.tool.call({ tool: 'Bash', command: 'git status' })
+  extras.git = git
+  git.stdout = git.stdout.replace('-4', '-8')
+  await $.tool.call(inLoop('a1', { tool: 'Bash', command: 'git status' }))
+  expect(toasts).toHaveLength(1)
+})
+
+test('a live plan gains the stuck mark at fifteen minutes without resetting its start', async ($, on) => {
+  const clock = engine(on, new Map())
+  await start($)
+  await $.tool.call(TODOS as never)
+  const ui = await $.ui.mount({ ...SHAFT_PANE, surface: 'terminal', props: SHAFT_PROPS })
+  await clock.advance(899_999)
+  expect((await ui.find({ key: 'plan' }))?.text).not.toContain('⧗')
+  await $.tool.call(TODOS as never)
+  await clock.advance(1)
+  expect((await ui.find({ key: 'task-1' }))?.text).toContain('⧗ 15 min')
+  await clock.advance(60_000)
+  expect((await ui.find({ key: 'task-1' }))?.text).toContain('⧗ 16 min')
+})
+
+test('main and mate failure bubbles name only the current first failing test', async ($, on) => {
+  const extras: Extras = { toolError: '(fail) cache > drugi request [3ms]\n(fail) auth > login [2ms]\n1 pass\n2 fail', agents: [{ id: 'a1', status: 'running' }] }
+  engine(on, new Map(), extras)
+  await start($)
+  await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal', props: { ...BAND.props, maxRows: 3 } })
+  expect((await ui.find({ type: 'Text', text: /Padły:/ }))?.text).toContain('cache > drugi request.')
+  await $.agent.spawn(spawnOf({ prompt: 'Młot: testy', description: 'Młot' }))
+  extras.toolError = '(fail) nowy test [3ms]\n1 pass\n1 fail'
+  await $.tool.call(inLoop('a1', { tool: 'Bash', command: 'npm test' }))
+  expect((await ui.find({ type: 'Text', text: /^Młot:.*Padły:/ }))?.text).toContain('nowy test.')
+  extras.toolError = '1 fail'
+  await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  expect(await ui.find({ type: 'Text', text: /Padły:/ })).toBeUndefined()
+})
+
+test('plan limits turn automatic konkret on at eighty percent and off only when every window falls', async ($, on) => {
+  on('ui.render', { component: 'SessionMode' }, ($, e) => ({ type: 'Text', props: {}, children: [e.props.modes.join(',')] }))
+  const saved = new Map<string, unknown>()
+  const toasts: string[] = []
+  const usage: SessionUsage = { startedAt: 0, context: { window: 200_000, percent: 99 }, rateLimits: [{ kind: 'five_hour', percentUsed: 79 }, { kind: 'seven_day', percentUsed: 80 }] }
+  engine(on, saved, { usage, toasts })
+  await start($)
+  expect(await sectionIds($)).toEqual(['intro', 'krux-mod:persona', 'krux-mod:konkret'])
+  expect(toasts).toEqual(['Limit planu 80%: konkret włączony do resetu.'])
+  const ui = await $.ui.mount({ plugin: 'krux-mod', surface: 'terminal', component: 'SessionMode', requestId: 'mode', props: { modes: [] } } as never)
+  expect(await ui.find({ type: 'Text', text: 'krux,konkret (auto)' })).toBeDefined()
+  await $.tool.call({ tool: 'Read', file_path: '/work/a.ts' })
+  expect(toasts).toHaveLength(1)
+  usage.rateLimits[0]!.percentUsed = 80
+  usage.rateLimits[1]!.percentUsed = 0
+  await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
+  expect(toasts).toHaveLength(1)
+  usage.rateLimits[0]!.percentUsed = 79
+  await $.tool.call({ tool: 'Read', file_path: '/work/a.ts' })
+  expect(await sectionIds($)).toEqual(['intro', 'krux-mod:persona'])
+  expect(toasts).toHaveLength(2)
+  expect(toasts[1]).toContain('Konkret automatyczny wyłączony')
+  expect(saved.size).toBe(0)
+})
+
+test('automatic konkret preserves a manually enabled mode through the limit reset', async ($, on) => {
+  on('ui.render', { component: 'SessionMode' }, ($, e) => ({ type: 'Text', props: {}, children: [e.props.modes.join(',')] }))
+  const saved = new Map<string, unknown>([['mode.persona', false], ['mode.konkret', true]])
+  const usage: SessionUsage = { startedAt: 0, context: { window: 200_000 }, rateLimits: [{ kind: 'five_hour', percentUsed: 90 }] }
+  engine(on, saved, { usage })
+  await start($)
+  const ui = await $.ui.mount({ plugin: 'krux-mod', surface: 'terminal', component: 'SessionMode', requestId: 'mode', props: { modes: [] } } as never)
+  expect(await ui.find({ type: 'Text', text: 'konkret' })).toBeDefined()
+  usage.rateLimits = []
+  await $.tool.call({ tool: 'Read', file_path: '/work/a.ts' })
+  expect(await sectionIds($)).toEqual(['intro', 'krux-mod:konkret'])
+  expect(saved.get('mode.konkret')).toBe(true)
+  expect(saved.size).toBe(2)
+})
+
+test('overlapping usage reads cannot leave automatic konkret on after the limit reset', async ($, on) => {
+  const low: SessionUsage = { startedAt: 0, context: { window: 200_000 }, rateLimits: [{ kind: 'five_hour', percentUsed: 0 }] }
+  const high: SessionUsage = { ...low, rateLimits: [{ kind: 'five_hour', percentUsed: 90 }] }
+  let reads: SessionUsage[] = [low]
+  const toasts: string[] = []
+  engine(on, new Map(), { toasts, usageRead: () => reads.shift() ?? low })
+  await start($)
+  reads = [high, low]
+  await Promise.all(['/work/a.ts', '/work/b.ts'].map(file_path => $.tool.call({ tool: 'Read', file_path })))
+  expect(await sectionIds($)).toEqual(['intro', 'krux-mod:persona'])
+  expect(toasts).toHaveLength(2)
+  expect(toasts[1]).toContain('Konkret automatyczny wyłączony')
+})
+
+test('/krux zapisz shares tool ids, deduplicates notes and reports the new id in a toast', async ($, on) => {
+  const toasts: string[] = []
+  engine(on, new Map(), { toasts })
+  await start($)
+  await $.tool.call({ tool: 'mcp__krux-mod__watki', open: [{ text: 'narzędzie' }] } as never)
+  const command = { command: 'krux', origin: ORIGIN, presentation: { isFullscreen: false, columns: 120 } }
+  await $.command.run({ ...command, args: 'zapisz Sprawdzić API' })
+  expect(toasts).toEqual(['Wątek #2 zapisany.'])
+  await $.command.run({ ...command, args: 'zapisz Sprawdzić   API' })
+  expect(toasts[1]).toBe('Notatka już w otwartych wątkach.')
+  const report = await $.tool.call({ tool: 'mcp__krux-mod__watki', open: [{ text: 'następny' }] } as never)
+  expect(report.text).toBe('Open threads:\n#1 [todo] narzędzie\n#2 [todo] Sprawdzić API\n#3 [todo] następny')
+  const help = await $.command.run({ ...command, args: 'zapisz' })
+  expect(help.text).toContain('/krux zapisz <tekst>')
+  expect(toasts).toHaveLength(2)
+  const ui = await $.ui.mount({ ...SHAFT_PANE, surface: 'terminal', props: SHAFT_PROPS })
+  expect(await ui.find({ type: 'Text', text: 'Sprawdzić API' })).toBeDefined()
+})
+
+test('concurrent quick notes keep distinct ids', async ($, on) => {
+  const toasts: string[] = []
+  engine(on, new Map(), { toasts })
+  await start($)
+  const command = { command: 'krux', origin: ORIGIN, presentation: { isFullscreen: false, columns: 120 } }
+  await Promise.all(['jeden', 'dwa'].map(text => $.command.run({ ...command, args: `zapisz ${text}` })))
+  const report = await $.tool.call({ tool: 'mcp__krux-mod__watki' } as never)
+  expect(['Open threads:\n#1 [todo] jeden\n#2 [todo] dwa', 'Open threads:\n#1 [todo] dwa\n#2 [todo] jeden']).toContain(report.text)
+  expect(toasts.slice().sort()).toEqual(['Wątek #1 zapisany.', 'Wątek #2 zapisany.'])
+})
+
+test('concurrent quick notes preserve both entries while resumed history is being restored', async ($, on) => {
+  const toasts: string[] = []
+  engine(on, new Map(), { toasts, history: [{ role: 'assistant', text: '', toolUses: [{ tool_use_id: 'old', tool: 'mcp__krux-mod__watki', input: {}, text: 'Open threads:\n#99 [todo] stary' }] }] })
+  await start($)
+  const command = { command: 'krux', origin: ORIGIN, presentation: { isFullscreen: false, columns: 120 } }
+  await Promise.all(['jeden', 'dwa'].map(text => $.command.run({ ...command, args: `zapisz ${text}` })))
+  const report = await $.tool.call({ tool: 'mcp__krux-mod__watki' } as never)
+  expect(['Open threads:\n#99 [todo] stary\n#100 [todo] jeden\n#101 [todo] dwa', 'Open threads:\n#99 [todo] stary\n#100 [todo] dwa\n#101 [todo] jeden']).toContain(report.text)
+  expect(toasts.slice().sort()).toEqual(['Wątek #100 zapisany.', 'Wątek #101 zapisany.'])
+})
+
+test('a quick note before the first prompt survives restoration and continues resumed ids', async ($, on) => {
+  engine(on, new Map(), { history: [{ role: 'assistant', text: '', toolUses: [{ tool_use_id: 'old', tool: 'mcp__krux-mod__watki', input: {}, text: 'Open threads:\n#99 [todo] stary' }] }] })
+  await start($)
+  await $.command.run({ command: 'krux', args: 'zapisz nowy', origin: ORIGIN, presentation: { isFullscreen: false, columns: 120 } })
+  await $.prompt.submit({ text: 'dalej', wait: false, origin: ORIGIN })
+  const report = await $.tool.call({ tool: 'mcp__krux-mod__watki' } as never)
+  expect(report.text).toBe('Open threads:\n#99 [todo] stary\n#100 [todo] nowy')
+})
+
+test('long-turn toasts use the main clock, floor minutes and reset after completion', async ($, on) => {
+  const toasts: string[] = []
+  const clock = engine(on, new Map(), { toasts })
+  await start($)
+  await $.turn.start({ text: '', turnId: 't1' })
+  await clock.advance(119_999)
+  await $.turn.complete({ answer: '', durationMs: 999_999, isAborted: false, turnId: 't1', reason: 'answer' })
+  expect(toasts).toEqual([])
+  await $.turn.start({ text: '', turnId: 't2' })
+  await clock.advance(120_000)
+  await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't2', reason: 'answer' })
+  expect(toasts).toEqual(['Krux skończyć po 2 min.'])
+  await clock.advance(120_000)
+  await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't2', reason: 'answer' })
+  expect(toasts).toHaveLength(1)
+  await $.turn.start({ text: '', turnId: 't3' })
+  await clock.advance(179_999)
+  await $.turn.complete({ answer: '', durationMs: 1, isAborted: true, turnId: 't3', reason: 'answer' })
+  expect(toasts[1]).toBe('Krux skończyć po 2 min.')
+})
+
+test('mate turn events cannot replace or clear the main turn timer', async ($, on) => {
+  const toasts: string[] = []
+  const clock = engine(on, new Map(), { toasts })
+  await start($)
+  await $.turn.start({ text: '', turnId: 'main' })
+  await clock.advance(60_000)
+  await $.turn.start({ text: '', turnId: 'mate', agentId: 'a1' } as never)
+  await clock.advance(60_000)
+  await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 'mate', reason: 'answer', agentId: 'a1' } as never)
+  expect(toasts).toEqual([])
+  await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 'main', reason: 'answer' })
+  expect(toasts).toEqual(['Krux skończyć po 2 min.'])
+})
+
+test('a person returning after thirty minutes gets board state only in a toast', async ($, on) => {
+  const toasts: string[] = []
+  const clock = engine(on, new Map([['mode.persona', false]]), { toasts })
+  await start($)
+  await $.prompt.submit({ text: 'start', wait: false, origin: ORIGIN })
+  await $.tool.call(TODOS as never)
+  await clock.advance(1_799_999)
+  await $.prompt.submit({ text: 'report', wait: false, origin: { kind: 'task-notification' } })
+  expect(toasts).toEqual([])
+  await clock.advance(1)
+  const returned = await $.prompt.submit({ text: 'dalej', wait: false, origin: ORIGIN })
+  expect(toasts).toEqual(['Plan 1/3'])
+  expect(returned.context).toBeUndefined()
+  await clock.advance(1_799_999)
+  await $.prompt.submit({ text: 'przed progiem', wait: false, origin: ORIGIN })
+  await clock.advance(1)
+  await $.prompt.submit({ text: 'chwilę później', wait: false, origin: ORIGIN })
+  expect(toasts).toHaveLength(1)
+})
+
+test('a return to an empty board is silent and a toggle still refreshes the person timestamp', async ($, on) => {
+  const toasts: string[] = []
+  const clock = engine(on, new Map(), { toasts })
+  await start($)
+  await $.prompt.submit({ text: 'wyłącz krux', wait: false, origin: ORIGIN })
+  await clock.advance(1_800_000)
+  await $.prompt.submit({ text: 'dalej', wait: false, origin: ORIGIN })
+  expect(toasts).toEqual([])
+  await $.tool.call(TODOS as never)
+  await clock.advance(1_800_000)
+  await $.prompt.submit({ text: 'wyłącz konkret', wait: false, origin: ORIGIN })
+  expect(toasts).toEqual(['Plan 1/3'])
+})
+
+test('/krux raport returns session facts as text without model context or a pane', async ($, on) => {
+  const opened: string[] = []
+  const processRun: Extras['processRun'] = argv => ({ exitCode: 0, stdout: argv.includes('log') ? 'full\tabc123\tPoprawka parsera\n' : '# branch.head main\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false })
+  on('tool.call', { tool: 'Bash' }, () => ({ result: 'ok', text: '3 pass\n0 fail' }))
+  engine(on, new Map(), { opened, processRun })
+  await start($)
+  await $.tool.call(TODOS as never)
+  await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  await $.tool.call({ tool: 'mcp__krux-mod__watki', open: [{ text: 'Sprawdzić API' }] } as never)
+  opened.length = 0
+  const report = await $.command.run({ command: 'krux', args: 'raport', origin: ORIGIN, presentation: { isFullscreen: false, columns: 120 } })
+  expect(report.text).toBe('## Commity\n- abc123 Poprawka parsera\n\n## Ostatni przebieg testów\nKomenda: npm test\nWynik: zaliczony\nWykonawca: Krux\nZaliczone: 3\nNieudane: 0\n\n## Plan\nZrobione: 1/3\n- [x] Test odtwarzający błąd\n- [ ] Poprawka w parser.js (w toku)\n- [ ] Changelog\n\n## Otwarte wątki\n- #1 [do zrobienia] Sprawdzić API\n\n## Podsumowanie sesji\nPrzebiegi testów: 1 (nieudane: 0)\nCommity: 0\nRozbiórki: 0')
+  expect(report.context).toBeUndefined()
+  expect(opened).toEqual([])
 })

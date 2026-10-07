@@ -88,7 +88,8 @@ export type KruxLore = {
 }
 
 // Pozycja planu z `TodoWrite` (bez id) albo z `TaskCreate` (id z wyniku narzędzia).
-export type KruxTask = { id: string | null; subject: string; status: 'pending' | 'in_progress' | 'completed' }
+// `startedAt`: ms od epoki, gdy zadanie weszło w `in_progress`; z niego znak utknięcia.
+export type KruxTask = { id: string | null; subject: string; status: 'pending' | 'in_progress' | 'completed'; startedAt?: number }
 
 // Ostatni przebieg testów: komenda, wynik, liczby z wyjścia (gdy dało się je
 // odczytać) i nazwy padających testów; `who` to Krux albo kumpel, który puścił.
@@ -99,10 +100,13 @@ export type KruxTestRun = {
   failed: number | null
   failures: string[]
   who: 'Krux' | KruxMate | 'ork'
+  // Kiedy przebieg się skończył, ms od epoki; brak w stanie starszej sesji.
+  at?: number
 }
 
-// Tablica Sztolni: plan i ostatni przebieg testów.
-export type KruxBoard = { tasks: KruxTask[]; test: KruxTestRun | null }
+// Tablica Sztolni: plan, ostatni przebieg testów i ostatnia edycja pliku (ms od epoki);
+// edycja po przebiegu robi testy nieświeżymi.
+export type KruxBoard = { tasks: KruxTask[]; test: KruxTestRun | null; editedAt?: number | null }
 
 // Zapełnienie okna kontekstu, okna limitów i koszt z `$.session.usage()`.
 export type KruxUsage = {
@@ -142,6 +146,8 @@ export type KruxGit = {
   // `pushed` false dla tych, które czekają na wypchnięcie.
   files: { code: string; path: string }[]
   commits: { hash: string; subject: string; pushed: boolean }[]
+  // Wynik `git diff --check`: true czysto, false błędy białych znaków, null bez odczytu.
+  whitespace?: boolean | null
 }
 
 // Otwarty wątek Sztolni: czego Krux nie domknął (`todo`), co ryzykowne (`risk`)
@@ -169,11 +175,16 @@ declare module 'claude-code' {
       board: KruxBoard
       usage: KruxUsage | null
       muster: KruxMuster
-      // Zegar apelu: tyka co sekundę, póki ork biega, żeby czas w panelu szedł.
+      // Zegar panelu: co sekundę dla apelu, przy progu i pełnych minutach dla utknięcia planu.
       musterNow: number
       // Stan repo (`null` poza repo albo gdy git nie odpowiada) i otwarte wątki.
       git: KruxGit | null
       threads: KruxThreads
+      // `konkret` włączony przez mod, bo okno limitu planu przekroczyło 80%; tryb Morry w `$.store` zostaje.
+      autoKonkret: boolean
+      // Początek bieżącej tury i ostatni prompt człowieka, ms od epoki.
+      turnAt: number | null
+      seenAt: number | null
     }
   }
 }

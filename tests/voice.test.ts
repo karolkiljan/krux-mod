@@ -2,6 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import {
   DEFAULT_MODES,
+  HELP,
   FORMAT_HINT,
   LENGTH_HINT,
   RISK_HINT,
@@ -54,6 +55,29 @@ test('/krux arguments map to toggles, status, help and the pane', async () => {
   expect(parseCommand('anim off')).toEqual({ kind: 'toggle', toggle: { mode: 'animacje', on: false } })
   expect(parseCommand('kowal off')).toEqual({ kind: 'toggle', toggle: { mode: 'kowal', on: false } })
   expect(parseCommand('kopać rudę')).toEqual({ kind: 'help', unknown: 'kopać rudę' })
+})
+
+test('/krux zapisz keeps the entire note, including case and Polish characters', () => {
+  expect(parseCommand('zapisz Sprawdzić Żółć i API v2')).toEqual({ kind: 'save', text: 'Sprawdzić Żółć i API v2' })
+  expect(parseCommand('  ZAPISZ\t Zażółć  GĘŚLĄ\njaźń  ')).toEqual({ kind: 'save', text: 'Zażółć  GĘŚLĄ\njaźń' })
+  expect(parseCommand('zapisz raport flow OFF')).toEqual({ kind: 'save', text: 'raport flow OFF' })
+})
+
+test('/krux zapisz without note text returns help', () => {
+  expect(parseCommand('zapisz')).toEqual({ kind: 'help', unknown: 'zapisz' })
+  expect(parseCommand('  ZAPISZ \t\n ')).toEqual({ kind: 'help', unknown: 'ZAPISZ' })
+})
+
+test('/krux raport accepts only the standalone report command', () => {
+  expect(parseCommand('raport')).toEqual({ kind: 'report' })
+  expect(parseCommand('  RAPORT\t ')).toEqual({ kind: 'report' })
+  expect(parseCommand('raport jutro')).toEqual({ kind: 'help', unknown: 'raport jutro' })
+  expect(parseCommand('zapiszNowy tekst')).toEqual({ kind: 'help', unknown: 'zapiszNowy tekst' })
+})
+
+test('/krux help lists note saving and the daily report', () => {
+  expect(HELP).toContain('/krux zapisz <tekst>')
+  expect(HELP).toContain('/krux raport')
 })
 
 test('a flip toggles one mode and leaves the others', async () => {
