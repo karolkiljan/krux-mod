@@ -326,3 +326,39 @@ test('shell separators inside quotes or escapes do not invent commands', () => {
     expect(workOf('Bash', { command })).toBe('test')
   }
 })
+
+test('heredoc input is data, while real commands after its delimiter still choose the work', () => {
+  const commands = [
+    "cat <<'AUDIT_TEXT'\nnpm test\nAUDIT_TEXT",
+    'cat <<"AUDIT_TEXT"\nnpm test\nAUDIT_TEXT',
+    'cat <<\\AUDIT_TEXT\nnpm test\nAUDIT_TEXT',
+    "cat <<AU'DIT'_TEXT\nnpm test\nAUDIT_TEXT",
+    'cat <<-AUDIT_TEXT\n\tnpm test\n\tAUDIT_TEXT',
+    "cat <<'END;TEXT'\nnpm test\nEND;TEXT",
+    'cat <<ONE <<TWO\nnpm test\nONE\ngit commit -m fake\nTWO',
+  ]
+  for (const command of commands) {
+    expect(shellKind(command)).toBe('look')
+    expect(workOf('Bash', { command })).toBe('look')
+    expect(describeTool('Bash', { command }).scene).toBe('torch')
+    expect(shellKind(`${command}\nnpm test`)).toBe('test')
+    expect(workOf('Bash', { command: `${command}\ngit commit -m real` })).toBe('seal')
+  }
+})
+
+test('a heredoc marker inside a shell comment does not swallow real commands after the data', () => {
+  const command = 'cat <<DATA # documentation mentions <<NOT_A_DOCUMENT\nnpm test\nDATA\nnpm test'
+  expect(workOf('Bash', { command })).toBe('test')
+})
+
+test('arithmetic bit shifts are not heredocs and keep later test commands visible', () => {
+  for (const command of [
+    'workers=$((1 << 2))\nnpm test',
+    '((workers = 1 << 2)); npm test',
+    'workers=$(((1 + 2) << 1))\nnpm test',
+    '((workers = (1 << 2)));\ncat <<DATA\ngit commit -m fake\nDATA\nnpm test',
+  ]) {
+    expect(workOf('Bash', { command })).toBe('test')
+    expect(describeTool('Bash', { command }).scene).toBe('test')
+  }
+})

@@ -12,7 +12,7 @@ import { CALM, EVENT_HOLD_MS, eventOf, mateIn, mateMoodAfter, moodsAfter, moodsT
 import { MATES, ROSTER } from './roster'
 import type { BoardCall } from './board'
 import { EMPTY_BOARD, boardAfter, replayBoard, returnNote, usageOf } from './board'
-import { GIT_CHECK, GIT_LOG, GIT_STATUS, GIT_UNPUSHED, GIT_TOOLS, gitOf } from './git'
+import { GIT_CHECK, GIT_CHECK_CACHED, GIT_LOG, GIT_STATUS, GIT_UNPUSHED, GIT_TOOLS, gitOf } from './git'
 import { EMPTY_THREADS, THREAD_SPEC, THREAD_TOOL_NAME, replayThreads, saveThread, threadsAfter, threadsReport } from './threads'
 import { dayReport } from './report'
 import { EMPTY_MUSTER, anyRunning, musterDone, musterRows, musterSpawn, musterTool } from './muster'
@@ -113,8 +113,8 @@ function freshNotes(now: number): typeof pendingNotes {
 }
 
 // Błąd dodatku nie blokuje sesji; nawet logowanie może zawieść.
-function hookFailure($: EngineInterface, event: string, error: { kind: string; message: string }): void {
-  try { $.ui.log(`krux-mod: ${event}: ${error.kind}: ${error.message}`) } catch { /* Log nie zastępuje zdarzenia. */ }
+function hookFailure($: EngineInterface, event: string, error: { kind: string; message?: string }): void {
+  try { $.ui.log(`krux-mod: ${event}: ${error.kind}${error.message === undefined ? '' : `: ${error.message}`}`) } catch { /* Log nie zastępuje zdarzenia. */ }
 }
 
 // Jeden zegar apelu naraz; reload modułu zaczyna bez zegara.
@@ -271,12 +271,12 @@ async function liveMembers($: EngineInterface, members: KruxHordeMember[]): Prom
 }
 
 // Własne narzędzie Kruxa: kronika, humor, a po zdarzeniu wtręt na cztery sekundy.
-async function afterOwnTool($: EngineInterface, tool: string, input: Record<string, unknown>, isError: boolean, text: string, failure?: string): Promise<KruxEvent | null> {
+async function afterOwnTool($: EngineInterface, tool: string, input: Record<string, unknown>, isError: boolean, text: string, failure?: string, result?: unknown): Promise<KruxEvent | null> {
   let after = EMPTY_LORE
   let found: KruxEvent | null = null
   // Kronika liczona w środku `update`: równoległe narzędzia nie gubią sobie zapisów.
   await update($, lore, before => {
-    after = recordTool(before, tool, input, isError, text)
+    after = recordTool(before, tool, input, isError, text, result)
     found = eventOf(before, after)
     return after
   })
@@ -297,8 +297,8 @@ async function afterOwnTool($: EngineInterface, tool: string, input: Record<stri
 
 // Narzędzie kumpla na scenie: wynik jego roboty zmienia jego minę i daje jego wtręt
 // na cztery sekundy. Kronika Kruxa go nie liczy: to nie robota Kruxa.
-async function afterMateTool($: EngineInterface, agentId: string, tool: string, input: Record<string, unknown>, isError: boolean, text: string, failure?: string): Promise<void> {
-  const single = recordTool(EMPTY_LORE, tool, input, isError, text)
+async function afterMateTool($: EngineInterface, agentId: string, tool: string, input: Record<string, unknown>, isError: boolean, text: string, failure?: string, result?: unknown): Promise<void> {
+  const single = recordTool(EMPTY_LORE, tool, input, isError, text, result)
   const event = eventOf(EMPTY_LORE, single)
   if (event === null) return
   const member = (await read($, crew)).members.find(one => one.agentId === agentId)
@@ -356,16 +356,18 @@ function refreshGit($: EngineInterface): Promise<void> {
         gitAgain = false
         let found: KruxGit | null = null
         // Czekamy na wszystkie także po błędzie, żeby kolejny odczyt nie nakładał się na stary.
-        const [run, log, check] = await Promise.all([
+        const [run, log, check, cachedCheck] = await Promise.all([
           $.process.run(GIT_STATUS, { timeoutMs: 5000 }).catch(() => null),
           $.process.run(GIT_LOG, { timeoutMs: 5000 }).catch(() => null),
           $.process.run(GIT_CHECK, { timeoutMs: 5000 }).catch(() => null),
+          $.process.run(GIT_CHECK_CACHED, { timeoutMs: 5000 }).catch(() => null),
         ])
         if (run?.exitCode === 0) {
           const status = gitOf(run.stdout)
           const local = status.upstream === null ? null : await $.process.run(GIT_UNPUSHED, { timeoutMs: 5000 }).catch(() => null)
           found = gitOf(run.stdout, log?.exitCode === 0 ? log.stdout : '', local?.exitCode === 0 && !local.isStdoutTruncated ? local.stdout : null)
-          found.whitespace = check?.exitCode === 0 ? true : check?.exitCode === 2 ? false : null
+          found.whitespace = check?.exitCode === 2 || cachedCheck?.exitCode === 2 ? false
+            : check?.exitCode === 0 && cachedCheck?.exitCode === 0 ? true : null
         }
         const previous = await read($, git)
         if (JSON.stringify(previous) !== JSON.stringify(found)) {
@@ -512,15 +514,25 @@ async function boardStep($: EngineInterface, tool: string, input: Record<string,
 }
 
 // Zapełnienie kontekstu, limity i koszt dla Sztolni; bez odczytu zostaje stary.
+let usageVersion = 0
+
 async function refreshUsage($: EngineInterface): Promise<void> {
+  const version = ++usageVersion
   try {
     const now = usageOf(await $.session.usage())
+    if (version !== usageVersion) return
     // Bez zmiany bez zapisu: zapis przerysowuje Sztolnię.
-    if (JSON.stringify(now) !== JSON.stringify(await read($, usage))) await update($, usage, () => now)
+    // Starszy odczyt nie cofa resetu, także gdy czekał na zapis stanu.
+    await update($, usage, current => version !== usageVersion || JSON.stringify(current) === JSON.stringify(now) ? current : now)
+    if (version !== usageVersion) return
     const automatic = now.limits.some(limit => limit.percentUsed >= 80)
     let changed = false
-    await update($, autoKonkret, current => { changed = current !== automatic; return automatic })
-    if (changed) $.ui.toast(automatic ? 'Limit planu 80%: konkret włączony do resetu.' : 'Konkret automatyczny wyłączony: limity planu poniżej 80%.')
+    await update($, autoKonkret, current => {
+      if (version !== usageVersion) return current
+      changed = current !== automatic
+      return automatic
+    })
+    if (changed && version === usageVersion) $.ui.toast(automatic ? 'Limit planu 80%: konkret włączony do resetu.' : 'Konkret automatyczny wyłączony: limity planu poniżej 80%.')
   } catch {
     // Brak odczytu to nie powód, by psuć narzędzie czy turę.
   }
@@ -551,6 +563,7 @@ function tickMuster($: EngineInterface): void {
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
+    usageVersion += 1
     await loadSession($)
     texts = {
       persona: await readText($, 'persona'),
@@ -584,6 +597,7 @@ export const register: Register = on => {
 
   // /clear, /resume i /branch zerują $.state, a session.start już nie wraca.
   on('classic.SessionStart', { source: ['clear', 'resume', 'fork'] }, async ($, e, next) => {
+    usageVersion += 1
     await loadSession($)
     await update($, journal, () => EMPTY_JOURNAL)
     await update($, shaftTab, () => 'stan')
@@ -697,7 +711,7 @@ export const register: Register = on => {
   }).catch(($, e, next) => { hookFailure($, 'agent.spawn', next.error); return next(e) })
 
   on('turn.start', async ($, e, next) => {
-    if (e.agentId !== undefined) return next(e)
+    if ('agentId' in e && e.agentId !== undefined) return next(e)
     const now = await $.clock.now()
     await update($, turnAt, () => now)
     plates.live = true
@@ -771,7 +785,7 @@ export const register: Register = on => {
       await update($, journal, current => journalAfter(current, { tool, input, result: result.result, text: result.text, isError, tool_use_id: e.tool_use_id, agentId: e.agentId, who, at }))
       if (e.agentId === undefined) {
         const run = await boardStep($, tool, input, result.result, { text, isError, who: 'Krux' })
-        await afterOwnTool($, tool, input, isError, text, run?.failures[0])
+        await afterOwnTool($, tool, input, isError, text, run?.failures[0], result.result)
         await refreshUsage($)
       } else {
         const agentId = e.agentId
@@ -784,7 +798,7 @@ export const register: Register = on => {
           run = await boardStep($, tool, input, result.result, { text, isError, who: mate ?? 'ork' })
         }
         await update($, muster, current => musterTool(current, agentId, tool, input))
-        await afterMateTool($, agentId, tool, input, isError, text, run?.failures[0])
+        await afterMateTool($, agentId, tool, input, isError, text, run?.failures[0], result.result)
       }
       if (GIT_TOOLS.has(tool)) await refreshGit($)
     }

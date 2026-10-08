@@ -250,7 +250,7 @@ function hop(k: number, marks: readonly number[]): Frame {
 
 function measuring(t: number): Frame {
   // 0–5: trzy miary, za każdą znak kredą; po trzeciej kiwnąć głową na widza: zgadza się.
-  if (t === 0) return laid(0, 'right', [CHALK[0]])
+  if (t === 0) return laid(0, 'right', [CHALK[0]!])
   if (t === 1) return hop(0, CHALK.slice(0, 1))
   if (t === 2) return laid(1, 'right', CHALK.slice(0, 2))
   if (t === 3) return hop(1, CHALK.slice(0, 2))

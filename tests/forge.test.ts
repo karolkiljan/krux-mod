@@ -152,6 +152,19 @@ test('idle typing finishes before freezing, then a nap arrives after thirty seco
   expect((surface.state as Seen).snoozing).toBe(false)
 })
 
+test('animated speech reveals complete emoji and combining graphemes on every tick', () => {
+  for (const grapheme of ['🇵🇱', '👨‍👩‍👧‍👦', 'a\u0301']) {
+    const { surface, tick } = surfaceOf()
+    const props: ForgeProps = { ...BAND, rest: true, orcs: [KRUX], bubble: { key: 'krux', text: `ab${grapheme}cdef`, speaker: 'Krux' } }
+    expect(JSON.stringify(draw(props, surface))).toContain(`│ ab${grapheme} │`)
+    tick()
+    expect(JSON.stringify(draw(props, surface))).toContain(`│ ab${grapheme}cde │`)
+    tick()
+    expect(JSON.stringify(draw(props, surface))).toContain(`│ ab${grapheme}cdef │`)
+    expect((surface.state as Seen).idle).toBe(true)
+  }
+})
+
 test('reduced motion freezes reactions, typing and naps as well as walking', () => {
   const { surface, tick } = surfaceOf()
   const props: ForgeProps = { ...BAND, still: true, rest: true, orcs: [KRUX], cues: [{ key: 'krux', kind: 'test-pass', until: 4000 }], bubble: { key: 'krux', text: 'Gotowe.', speaker: 'Krux' } }

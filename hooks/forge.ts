@@ -3,6 +3,7 @@ import type { ClientModule } from 'claude-code'
 import type { KruxCue, KruxEvent, KruxMood, KruxSpeaker } from '../types'
 import { CATCH_X, CUE_FRAMES, FRAME_MS, SPEAKER_COLOR, bandColumns, behind, bubbleLines, canvasColumns, catchStep, caughtScroll, dress, frameGrid, runsOf, slotX, stageGrid, tossFlight, tossFrames, tossGrid, tossScroll, trackDozing, trackFace, trackGrid, trackOff, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withNap } from './sprites'
 import type { Face, Placed, StageScene, Track } from './sprites'
+import { graphemes } from './terminal-text'
 
 // Moduł powierzchni: rysuje Kruxa, kumpli i dymek na wątku rysującym, z własnym
 // zegarem klatek. Hooks module podaje tylko, kto stoi, w jakiej scenie i humorze;
@@ -216,7 +217,7 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
   // Zegar stoi, gdy płótno nieruchome i nikt nie maszeruje.
   const saidId = props.bubble === null ? '' : `${props.bubble.key}:${props.bubble.text}`
   const speech = state.said?.id === saidId ? state.said : { id: saidId, at: frame }
-  const typing = props.bubble !== null && (frame - speech.at + 1) * 3 < Math.min(40, [...props.bubble.text].length)
+  const typing = props.bubble !== null && (frame - speech.at + 1) * 3 < Math.min(40, graphemes(props.bubble.text).length)
   const idle = props.still || (frozen && !moving && !typing)
   if (changed || idle !== state.idle || speech !== state.said || state.reduced !== props.still) {
     surface.setState({ frame, actors, idle, said: speech, reduced: props.still, snoozing: idle ? state.snoozing : false })
@@ -247,7 +248,7 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
   const said = props.variant === 'band' ? props.bubble : null
   const speaker = said === null ? undefined : actors[said.key]
   const talking = said !== null && speaker !== undefined && speaker.leftAt === null ? said : null
-  const spoken = talking === null ? '' : props.still ? talking.text : [...talking.text].slice(0, Math.max(1, (frame - speech.at + 1) * 3)).join('')
+  const spoken = talking === null ? '' : props.still ? talking.text : graphemes(talking.text).slice(0, Math.max(1, (frame - speech.at + 1) * 3)).join('')
   const bubbleText = talking !== null ? bubbleLines(spoken, speaker!.slot, width) : props.variant === 'band' && props.bubbleRows ? [' ', ' ', ' '] : []
   const bubble = bubbleText.map((line, y) =>
     Box({ key: `bubble-${y}`, children: [Text({ ...(talking === null ? {} : { color: SPEAKER_COLOR[talking.speaker] }), children: [line] })] }),

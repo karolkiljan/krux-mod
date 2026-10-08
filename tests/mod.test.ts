@@ -2,7 +2,7 @@ import { expect, mock, test } from 'claude-code/testing'
 import type { Engine, TestBody } from 'claude-code/testing'
 import type { AgentStatus, CommandSpec, SessionUsage, TurnStepChunk, TurnStepResult } from 'claude-code'
 
-import type { KruxJournal } from '../types'
+import type { KruxCrew, KruxJournal, KruxLore } from '../types'
 import { PALETTE, SPEAKER_COLOR, actsFor } from '../hooks/sprites'
 import type { StageScene } from '../hooks/sprites'
 import { replay } from '../hooks/lore'
@@ -39,7 +39,7 @@ const ORIGIN = { kind: 'composer' as const }
 type History = { role: 'user' | 'assistant'; text: string; toolUses: { tool_use_id: string; tool: string; input: Record<string, unknown>; isError?: true; text?: string }[] }[]
 
 type ProcessReply = { exitCode: number; stdout: string; stderr: string; isStdoutTruncated: boolean; isStderrTruncated: boolean }
-type Extras = { beforePaneList?: () => Promise<void>; paneClosed?: boolean; invalidations?: string[]; journalWrites?: KruxJournal[]; beforeStoreGet?: () => void; logs?: string[]; onPrompt?: () => void; toasts?: string[]; settings?: Record<string, unknown>; plugins?: string[]; toolError?: string; toolDenied?: boolean; toolReply?: { result: unknown; text?: string; isError?: true }; agentGate?: Promise<void>; history?: History; agents?: { id: string; status: AgentStatus; description?: string }[]; opened?: string[]; closed?: string[]; usage?: SessionUsage; usageRead?: () => SessionUsage; beforeAgentList?: () => Promise<void>; beforeStoreSet?: () => Promise<void>; paneWaits?: boolean; paneHidden?: boolean; git?: { stdout: string }; tools?: string[]; commands?: CommandSpec[]; processRun?: (argv: readonly string[], timeoutMs: number | undefined) => ProcessReply | Promise<ProcessReply> }
+type Extras = { beforePaneList?: () => Promise<void>; paneClosed?: boolean; invalidations?: string[]; journalWrites?: KruxJournal[]; beforeStoreGet?: () => void; logs?: string[]; onPrompt?: () => void; toasts?: string[]; settings?: Record<string, unknown>; plugins?: string[]; toolError?: string; toolDenied?: boolean; toolReply?: { result: unknown; text?: string; isError?: true }; agentGate?: Promise<void>; history?: History; agents?: { id: string; status: AgentStatus; description?: string }[]; opened?: string[]; closed?: string[]; usage?: SessionUsage; usageRead?: () => SessionUsage | Promise<SessionUsage>; beforeAgentList?: () => Promise<void>; beforeStoreSet?: () => Promise<void>; paneWaits?: boolean; paneHidden?: boolean; git?: { stdout: string }; tools?: string[]; commands?: CommandSpec[]; processRun?: (argv: readonly string[], timeoutMs: number | undefined) => ProcessReply | Promise<ProcessReply> }
 
 function engine(on: On, saved: Map<string, unknown>, extras: Extras = {}) {
   const toasts = extras.toasts ?? []
@@ -94,7 +94,7 @@ function engine(on: On, saved: Map<string, unknown>, extras: Extras = {}) {
   })
   on('session.start', () => ({ cwd: '/work' }))
   on('session.messages', () => ({ value: extras.history ?? [] }))
-  on('session.usage', () => ({ value: extras.usageRead ? extras.usageRead() : extras.usage ?? { startedAt: 0, context: { window: 200_000 }, rateLimits: [] } }))
+  on('session.usage', async () => ({ value: extras.usageRead ? await extras.usageRead() : extras.usage ?? { startedAt: 0, context: { window: 200_000 }, rateLimits: [] } }))
   const clock = mock.clock(on)
   let spawned = 0
   on('agent.spawn', () => {
@@ -964,24 +964,6 @@ test('session start registers the /krux command under its own name', async ($, o
 
 const REPLY = { plugin: 'krux-mod', component: 'AssistantMessage', requestId: 'm1' } as const
 
-test('the nameplate opens a turn once, not again on the bullet after each tool group', async ($, on) => {
-  engine(on, new Map())
-  await start($)
-  await $.turn.start({ text: 'kuj', turnId: 't1' })
-  const plate = async (requestId: string) => {
-    const ui = await $.ui.mount({ ...REPLY, requestId, surface: 'terminal', props: { text: 'Krux kuć.', isFirstOfReply: true } })
-    const found = (await ui.find({ type: 'Text', text: '⚒ Krux' })) !== undefined
-    await ui.unmount()
-    return found
-  }
-  expect(await plate('m1')).toBe(true)
-  expect(await plate('m2')).toBe(false)
-  // Przerysowanie pierwszego bloku tabliczki nie gubi.
-  expect(await plate('m1')).toBe(true)
-  await $.turn.start({ text: 'dalej', turnId: 't2' })
-  expect(await plate('m3')).toBe(true)
-})
-
 test('a reply opens under the Krux nameplate, only on its first block', async ($, on) => {
   engine(on, new Map())
   await start($)
@@ -1363,7 +1345,7 @@ test('a session resumed with the persona off gets its plan and last test run bac
       role: 'assistant',
       text: 'Krux sprawdzić.',
       toolUses: [
-        { tool_use_id: 'a', tool: 'TodoWrite', input: { todos: TODOS.todos } },
+        { tool_use_id: 'a', tool: 'TodoWrite', input: { todos: TODOS.todos }, text: 'ok' },
         { tool_use_id: 'b', tool: 'Bash', input: { command: 'npm test' }, isError: true, text: ' 3 pass\n 1 fail' },
       ],
     },
@@ -1447,7 +1429,8 @@ test('gating hook failures pass the original session, prompt and compaction even
     if (failStore) throw new Error('store unavailable')
   } })
   on('state.get', ($, e, next) => {
-    if (failCompact && e.key === 'modes') return { value: null }
+    // Uszkodzony stan w poprawnej kopercie SDK, nie pomijany błąd hooka odczytu.
+    if (failCompact && e.key === 'modes') return { value: { value: null, version: 0 } }
     return next(e)
   })
   on('classic.SessionStart', () => { notices += 1; return {} })
@@ -1495,7 +1478,7 @@ test('replay and live counting agree through toggles, disabled persona, empty te
   expect(live.context).toContain(VOICE_ANCHOR)
 })
 
-test('the nameplate retains recent request ids and forgets older turns', async ($, on) => {
+test('the nameplate opens once per turn, survives redraw and forgets older turns', async ($, on) => {
   engine(on, new Map())
   await start($)
   const plate = async (requestId: string) => {
@@ -1507,6 +1490,10 @@ test('the nameplate retains recent request ids and forgets older turns', async (
   for (let turn = 0; turn < 40; turn += 1) {
     await $.turn.start({ text: 'kuj', turnId: `bounded-${turn}` })
     expect(await plate(`bounded-${turn}`)).toBe(true)
+    if (turn === 0) {
+      expect(await plate('second-block')).toBe(false)
+      expect(await plate('bounded-0')).toBe(true)
+    }
   }
   expect(await plate('bounded-39')).toBe(true)
   expect(await plate('bounded-38')).toBe(true)
@@ -1635,15 +1622,48 @@ test('denied edits and tests leave the board intact, and mate tasks cannot repla
   expect((await ui.find({ key: 'plan' }))?.text).toBe(before)
 })
 
-test('git diff --check maps exit codes and errors to commit readiness with a five-second timeout', async ($, on) => {
-  let code = 0
+test('host-backgrounded main and mate tests preserve the failed run without celebrating', async ($, on) => {
+  const journalWrites: KruxJournal[] = []
+  const extras: Extras = {
+    git: { stdout: '# branch.head main\n? a.ts\n' },
+    agents: [{ id: 'a1', status: 'running' }],
+    toolReply: { result: { exitCode: 1 }, isError: true, text: '1 fail\n0 pass' },
+  }
+  let latestLore: KruxLore | undefined
+  let latestCrew: KruxCrew | undefined
+  engine(on, new Map(), extras)
+  on('state.set', ($, e, next) => {
+    if (e.plugin === 'krux-mod' && e.key === 'journal') journalWrites.push(e.value as KruxJournal)
+    if (e.plugin === 'krux-mod' && e.key === 'lore') latestLore = e.value as KruxLore
+    if (e.plugin === 'krux-mod' && e.key === 'crew') latestCrew = e.value as KruxCrew
+    return next(e)
+  })
+  await start($)
+  await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  await $.agent.spawn(spawnOf({ prompt: 'Młot: testy', description: 'Młot' }))
+  const ui = await $.ui.mount({ ...SHAFT_PANE, surface: 'terminal', props: SHAFT_PROPS })
+  const failed = (await ui.find({ key: 'tests' }))?.text
+  extras.toolReply = { result: { backgroundTaskId: 'host-task', timedOutAfterMs: 1000, exitCode: 0 }, text: '5 pass\n0 fail' }
+  for (const agentId of [undefined, 'a1']) {
+    await $.tool.call({ tool: 'Bash', command: 'npm test', agentId } as never)
+    expect((await ui.find({ key: 'tests' }))?.text).toBe(failed)
+    expect((await ui.find({ key: 'readiness' }))?.text).toBe('· do commita: testy padłe')
+    expect(journalWrites.at(-1)?.entries.at(-1)).toMatchObject({ ok: null, summary: '' })
+    expect(latestLore).toMatchObject({ testRuns: 1, testFails: 1, last: 'test-fail' })
+    expect(latestCrew?.cues.some(cue => cue.kind === 'test-pass')).toBe(false)
+  }
+})
+
+test('working and staged whitespace checks gate commit readiness with a five-second timeout', async ($, on) => {
+  let workingCode = 0
+  let cachedCode = 0
   let throws = false
   const calls: { argv: readonly string[]; timeoutMs: number | undefined }[] = []
   const processRun: Extras['processRun'] = async (argv, timeoutMs) => {
     if (argv.includes('--check')) {
       calls.push({ argv, timeoutMs })
-      if (throws) throw new Error('git unavailable')
-      return { exitCode: code, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
+      if (throws && argv.includes('--cached')) throw new Error('git unavailable')
+      return { exitCode: argv.includes('--cached') ? cachedCode : workingCode, stdout: '', stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
     }
     return { exitCode: 0, stdout: '# branch.head main\n? a.ts\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
   }
@@ -1653,52 +1673,68 @@ test('git diff --check maps exit codes and errors to commit readiness with a fiv
   await $.tool.call({ tool: 'Bash', command: 'npm test' })
   const ui = await $.ui.mount({ ...SHAFT_PANE, surface: 'terminal', props: SHAFT_PROPS })
   expect((await ui.find({ key: 'readiness' }))?.text).toBe('✓ do commita')
-  code = 2
-  await $.tool.call({ tool: 'Bash', command: 'git status' })
-  expect((await ui.find({ key: 'readiness' }))?.text).toBe('· do commita: białe znaki')
-  for (const exitCode of [1, 128]) {
-    code = exitCode
+  const outcomes = [
+    [0, 2, '· do commita: białe znaki'],
+    [2, 0, '· do commita: białe znaki'],
+    [1, 0, '✓ do commita'],
+    [0, 128, '✓ do commita'],
+    [2, 128, '· do commita: białe znaki'],
+  ] as const
+  for (const [working, cached, readiness] of outcomes) {
+    workingCode = working
+    cachedCode = cached
     await $.tool.call({ tool: 'Bash', command: 'git status' })
-    expect((await ui.find({ key: 'readiness' }))?.text).toBe('✓ do commita')
+    expect((await ui.find({ key: 'readiness' }))?.text).toBe(readiness)
   }
+  workingCode = 0
   throws = true
   await $.tool.call({ tool: 'Bash', command: 'git status' })
   expect((await ui.find({ key: 'readiness' }))?.text).toBe('✓ do commita')
-  expect(calls.length).toBe(6)
+  expect(calls.length).toBe(16)
   for (const call of calls) {
-    expect(call.argv).toEqual(['git', '--no-optional-locks', 'diff', '--check'])
+    expect(call.argv).toEqual(call.argv.includes('--cached')
+      ? ['git', '--no-optional-locks', 'diff', '--cached', '--check']
+      : ['git', '--no-optional-locks', 'diff', '--check'])
     expect(call.timeoutMs).toBe(5000)
   }
 })
 
-test('overlapping git refreshes share one follow-up read, including a delayed diff check', async ($, on) => {
+test('overlapping git refreshes wait for the staged check before one follow-up read', async ($, on) => {
   let release!: () => void
   let entered!: () => void
   const gate = new Promise<void>(resolve => { release = resolve })
   const started = new Promise<void>(resolve => { entered = resolve })
   let checks = 0
+  let cachedChecks = 0
   let statuses = 0
   const processRun: Extras['processRun'] = async argv => {
     if (argv.includes('status')) statuses += 1
     if (argv.includes('--check')) {
       checks += 1
-      if (checks === 2) { entered(); await gate }
+      if (argv.includes('--cached')) {
+        cachedChecks += 1
+        if (cachedChecks === 2) { entered(); await gate }
+      }
     }
     return { exitCode: 0, stdout: '# branch.head main\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
   }
   engine(on, new Map(), { processRun })
   await start($)
-  expect(checks).toBe(1)
+  expect(checks).toBe(2)
   const first = $.tool.call({ tool: 'Edit', file_path: '/work/a.ts' } as never)
-  await started
-  const second = $.tool.call({ tool: 'Write', file_path: '/work/b.ts', content: '' })
-  // Ten prompt stawia barierę po mikrozadaniach drugiego narzędzia.
-  await $.prompt.submit({ text: '', wait: false, origin: ORIGIN })
-  expect(statuses).toBe(2)
-  release()
+  let second: Promise<unknown> | undefined
+  try {
+    await started
+    second = $.tool.call({ tool: 'Write', file_path: '/work/b.ts', content: '' })
+    // Ten prompt stawia barierę po mikrozadaniach drugiego narzędzia.
+    await $.prompt.submit({ text: '', wait: false, origin: ORIGIN })
+    expect(statuses).toBe(2)
+  } finally {
+    release()
+  }
   await Promise.all([first, second])
   expect(statuses).toBe(3)
-  expect(checks).toBe(3)
+  expect(checks).toBe(6)
 })
 
 test('behind toasts compare saved reads and skip initial, equal, lower and missing repo reads', async ($, on) => {
@@ -1830,18 +1866,39 @@ test('/krux status reports auto, manual and off konkret without saving the autom
   expect(saved.size).toBe(1)
 })
 
-test('overlapping usage reads cannot leave automatic konkret on after the limit reset', async ($, on) => {
+test('a completed limit reset wins over an older usage read that returns late', async ($, on) => {
   const low: SessionUsage = { startedAt: 0, context: { window: 200_000 }, rateLimits: [{ kind: 'five_hour', percentUsed: 0 }] }
   const high: SessionUsage = { ...low, rateLimits: [{ kind: 'five_hour', percentUsed: 90 }] }
-  let reads: SessionUsage[] = [low]
+  let enterFirst!: () => void
+  let releaseFirst!: () => void
+  const firstEntered = new Promise<void>(resolve => { enterFirst = resolve })
+  const firstGate = new Promise<void>(resolve => { releaseFirst = resolve })
+  let reads = 0
   const toasts: string[] = []
-  engine(on, new Map(), { toasts, usageRead: () => reads.shift() ?? low })
+  engine(on, new Map(), { toasts, usageRead: async () => {
+    reads += 1
+    if (reads === 1) return low
+    if (reads === 2) { enterFirst(); await firstGate; return high }
+    return low
+  } })
   await start($)
-  reads = [high, low]
-  await Promise.all(['/work/a.ts', '/work/b.ts'].map(file_path => $.tool.call({ tool: 'Read', file_path })))
-  expect(await sectionIds($)).toEqual(['intro', 'krux-mod:persona'])
-  expect(toasts).toHaveLength(2)
-  expect(toasts[1]).toContain('Konkret automatyczny wyłączony')
+  const command = { command: 'krux', args: 'status', origin: ORIGIN, presentation: { isFullscreen: false, columns: 120 } }
+  const off = {
+    sections: ['intro', 'krux-mod:persona'],
+    status: 'persona: on · konkret: off · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off',
+  }
+  const snapshot = async () => ({ sections: await sectionIds($), status: (await $.command.run(command)).text })
+  const oldRead = $.tool.call({ tool: 'Read', file_path: '/work/old-read.ts' })
+  try {
+    await firstEntered
+    await $.tool.call({ tool: 'Read', file_path: '/work/new-read.ts' })
+    expect(await snapshot()).toEqual(off)
+  } finally {
+    releaseFirst()
+    await oldRead
+  }
+  expect(await snapshot()).toEqual(off)
+  expect(toasts).toEqual([])
 })
 
 test('/krux zapisz shares tool ids, deduplicates notes and reports the new id in a toast', async ($, on) => {

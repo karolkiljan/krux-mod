@@ -20,6 +20,7 @@ import type { Face } from './apron'
 import { PALETTE } from './palette'
 import { MATES, ROSTER } from './roster'
 import { GESTURES } from './fidget'
+import { terminalText } from './terminal-text'
 import { H, W, actFrame, at, dots, draw, finalLoop, flame, leadIn, legAt, moodOf, noise, pad, restFrame, rotation, settleFrames, stander, walker } from './stage'
 import type { Act, Frame, Layer, Leg, Route } from './stage'
 
@@ -337,17 +338,16 @@ export function stageGrid(placed: readonly Placed[], width: number): string[] {
 
 // Trzy wiersze dymka nad slotem `index`, każdy dokładnie na szerokość płótna.
 export function bubbleLines(text: string, index: number, width: number): string[] {
-  const chars = [...text]
-  const body = chars.length > BUBBLE_TEXT ? `${chars.slice(0, BUBBLE_TEXT - 1).join('')}…` : text
-  const inner = [...body].length + 2
+  const body = terminalText(text, BUBBLE_TEXT)
+  const inner = body.columns + 2
   const box = inner + 2
   const center = slotX(index) + 2
   const left = Math.max(0, Math.min(width - box, center - Math.floor(box / 2)))
   const tail = Math.max(1, Math.min(inner, center - left))
-  const place = (line: string) => `${' '.repeat(left)}${line}`.padEnd(width)
+  const place = (line: string) => `${' '.repeat(left)}${line}${' '.repeat(Math.max(0, width - left - box))}`
   return [
     place(`╭${'─'.repeat(inner)}╮`),
-    place(`│ ${body} │`),
+    place(`│ ${body.text} │`),
     place(`╰${'─'.repeat(tail - 1)}┬${'─'.repeat(inner - tail)}╯`),
   ]
 }

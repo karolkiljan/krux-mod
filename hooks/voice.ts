@@ -395,13 +395,48 @@ const SHELL_VERBS: Record<ShellKind, readonly string[]> = {
   dig: ['Krux walić kilofem', 'Krux kruszyć skałę', 'Krux drążyć dalej'],
 }
 
+type HereDocument = { delimiter: string; tabs: boolean; end: number }
+
+// Słowo delimitera po usunięciu cytowania i backslashy; jego treść nie jest
+// komendą. `<<-` pozwala na tabulatory przed delimiterem i w danych.
+function hereDocumentAt(command: string, offset: number): HereDocument | null {
+  let i = offset + 2
+  const tabs = command[i] === '-'
+  if (tabs) i += 1
+  while (command[i] === ' ' || command[i] === '\t') i += 1
+  let delimiter = ''
+  let quote = ''
+  let word = false
+  for (; i < command.length; i += 1) {
+    const char = command[i]!
+    if (char === '\\' && quote !== "'") {
+      const next = command[i + 1]
+      if (next === undefined) return null
+      if (quote === '"' && !'$`"\\\n'.includes(next)) { delimiter += char; continue }
+      if (next !== '\n') delimiter += next
+      word = true
+      i += 1
+    } else if (quote) {
+      if (char === quote) quote = ''
+      else delimiter += char
+    } else if (char === "'" || char === '"') {
+      quote = char
+      word = true
+    } else if (/\s|[;&|<>()]/u.test(char)) break
+    else { delimiter += char; word = true }
+  }
+  return word && quote === '' ? { delimiter, tabs, end: i } : null
+}
+
 // Kawałki łańcucha bez opakowań na przedzie (zmienne, `sudo`, `env`, `time`, `npx`,
 // `uv run`) i bez katalogu gita (`git -C repo commit` to dalej commit).
 function shellParts(command: unknown): string[] {
   if (typeof command !== 'string') return []
   // Separator w cytacie albo za backslashem należy do argumentu, nie łańcucha.
   const parts: string[] = []
+  const documents: HereDocument[] = []
   let quote = ''
+  let arithmetic = 0
   let start = 0
   for (let i = 0; i < command.length; i += 1) {
     const char = command[i]!
@@ -414,9 +449,43 @@ function shellParts(command: unknown): string[] {
       continue
     }
     if (char === "'" || char === '"') quote = char
+    else if (arithmetic > 0) {
+      if (char === '(') arithmetic += 1
+      else if (char === ')') arithmetic -= 1
+    }
+    else if (char === '(' && command[i + 1] === '(') {
+      // `((...))` i `$((...))` używają << do przesuwania bitów, nie do danych heredoc.
+      arithmetic = 2
+      i += 1
+    }
+    else if (char === '#' && (i === 0 || /[\s;&|()]/u.test(command[i - 1]!))) {
+      parts.push(command.slice(start, i))
+      const newline = command.indexOf('\n', i)
+      if (newline < 0) { start = command.length; break }
+      start = newline
+      i = newline - 1
+    }
+    else if (char === '<' && command[i + 1] === '<' && command[i - 1] !== '<' && command[i + 2] !== '<') {
+      const document = hereDocumentAt(command, i)
+      if (document !== null) { documents.push(document); i = document.end - 1 }
+    }
     else if (char === ';' || char === '|' || char === '\n' || (char === '&' && command[i + 1] === '&')) {
       parts.push(command.slice(start, i))
       if ((char === '&' || char === '|') && command[i + 1] === char) i += 1
+      if (char === '\n' && documents.length > 0) {
+        let after = i + 1
+        for (const document of documents) {
+          while (after < command.length) {
+            const newline = command.indexOf('\n', after)
+            const end = newline < 0 ? command.length : newline
+            const line = command.slice(after, end)
+            after = newline < 0 ? command.length : end + 1
+            if ((document.tabs ? line.replace(/^\t+/u, '') : line) === document.delimiter) break
+          }
+        }
+        documents.length = 0
+        i = after - 1
+      }
       start = i + 1
     }
   }
@@ -469,6 +538,28 @@ function bashKind(command: unknown): ShellKind {
     return work === 'look' || work === 'trail'
   })
   return onlyReads ? kind : 'dig'
+}
+
+// Scena pieczęci obejmuje też push, tag i PR. Kronika liczy wyłącznie commit,
+// a próbny przebieg nie zapisuje commita; tekst wiadomości może zawierać nazwę flagi.
+// Najkrótsze jednoznaczne prefiksy: `--d` koliduje z date, `--s` ze signoff/status/squash,
+// `--p` z patch/pathspec, a `--po` z post-rewrite. Formaty statusu też oznaczają próbę.
+const COMMIT_PREVIEWS = [['dry-run', 2], ['short', 2], ['porcelain', 3], ['long', 1]] as const
+
+export function isCommitCommand(command: unknown): boolean {
+  return shellParts(command).some(part => {
+    if (!/^git commit(?:\s|$)/u.test(part)) return false
+    const words = part.match(/(?:[^\s"'\\]|\\[\s\S]|"(?:\\[\s\S]|[^"\\])*"|'[^']*')+/gu) ?? []
+    const args = words.slice(2).map(word => word.replace(/^(["'])([\s\S]*)\1$/u, '$2'))
+    for (let i = 0; i < args.length; i += 1) {
+      const arg = args[i]!
+      if (arg === '--') break
+      // Wiadomość po `-m` także w złożonych krótkich flagach (`-am`, `-qm`).
+      if (['--message', '--file'].includes(arg) || /^-[^-]*[mF]$/u.test(arg)) { i += 1; continue }
+      if (arg.startsWith('--') && COMMIT_PREVIEWS.some(([name, minimum]) => arg.length - 2 >= minimum && name.startsWith(arg.slice(2)))) return false
+    }
+    return true
+  })
 }
 
 // Co kowal robi przy danym narzędziu. Zawsze Krux, nigdy kumpel: kumpel dostaje

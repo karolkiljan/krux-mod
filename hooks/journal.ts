@@ -5,6 +5,7 @@ import type { BoxProps, ElementConstructor, RenderElement, TextProps } from 'cla
 
 import type { KruxJournal, KruxJournalEntry } from '../types'
 import { testLine, testPassed, testRunOf } from './board'
+import { isBackgroundToolCall } from './outcome'
 import { SPEAKER_COLOR } from './sprites'
 import { describeTool, workOf } from './voice'
 
@@ -64,8 +65,8 @@ export function journalAfter(journal: KruxJournal, call: JournalCall): KruxJourn
   const code = exitCode(call, output)
   const error = call.isError === true || result.isError === true || Boolean(result.error) || (code !== null && code !== 0)
   const work = workOf(call.tool, call.input)
-  const background = call.tool === 'Bash' && call.input.run_in_background === true
-  const known = call.result !== undefined || call.text !== undefined || call.isError !== undefined
+  const background = isBackgroundToolCall(call.tool, call.input, call.result)
+  const known = call.result !== undefined || call.text !== undefined || call.isError === true
   const ok = error ? false : background || !known ? null : work === 'test' ? testPassed(output, false) : true
   const summary = background ? '' : work === 'test' && ok !== null
     ? testLine(testRunOf(typeof call.input.command === 'string' ? call.input.command : '', { text: output, isError: error, who: call.who ?? 'Krux' }))

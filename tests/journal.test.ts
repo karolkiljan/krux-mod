@@ -97,6 +97,7 @@ test('errors and nonzero exit codes take precedence over a successful envelope',
 
 test('missing outcomes stay unknown and explicit empty successful output is complete', () => {
   expect(entry({ text: undefined, isError: undefined, result: undefined }).ok).toBe(null)
+  expect(entry({ text: undefined, isError: false, result: undefined }).ok).toBe(null)
   expect(entry({ text: '', isError: undefined }).ok).toBe(true)
   expect(entry({ text: undefined, result: { exitCode: 0 } }).ok).toBe(true)
 })
@@ -130,6 +131,14 @@ test('background tests remain pending without claiming a finished run', () => {
   const call = { tool: 'Bash', input: { command: 'npm test', run_in_background: true }, text: 'running' }
   expect(entry(call)).toMatchObject({ ok: null, summary: '' })
   expect(entry({ ...call, isError: true }).ok).toBe(false)
+})
+
+test('tests backgrounded by the host keep their journal outcome pending even with partial counts', () => {
+  for (const flags of [{}, { timedOutAfterMs: 120_000 }, { backgroundedByUser: true }, { backgroundedByTurnAbort: true }, { backgroundedToDeliverMessage: true }]) {
+    const call = { tool: 'Bash', input: { command: 'npm test' }, result: { stdout: '3 passed', stderr: '', interrupted: false, backgroundTaskId: 'b1', ...flags }, text: '3 passed\nCommand running in background with ID: b1' }
+    expect(entry(call)).toMatchObject({ ok: null, summary: '' })
+    expect(entry({ ...call, isError: true }).ok).toBe(false)
+  }
 })
 
 test('Edit counts replacement lines, empty fragments and a terminal newline', () => {

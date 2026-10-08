@@ -1,6 +1,14 @@
 import { expect, test } from 'claude-code/testing'
+import * as gitCommands from '../hooks/git'
 
 import { GIT_LOG, GIT_STATUS, gitBusy, gitOf, gitShort } from '../hooks/git'
+
+test('whitespace checks inspect the working tree and the index separately without optional locks', () => {
+  expect(gitCommands).toMatchObject({
+    GIT_CHECK: ['git', '--no-optional-locks', 'diff', '--check'],
+    GIT_CHECK_CACHED: ['git', '--no-optional-locks', 'diff', '--cached', '--check'],
+  })
+})
 
 const STATUS = [
   '# branch.oid 87e8e95f00',

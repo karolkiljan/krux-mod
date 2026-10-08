@@ -87,7 +87,8 @@ export function replayThreads(messages: readonly HistoryMessage[]): KruxThreads 
   let threads = EMPTY_THREADS
   for (const message of messages) {
     for (const use of message.toolUses) {
-      if (use.tool !== THREAD_TOOL_NAME || use.isError === true) continue
+      // Samo wejście bez wyniku to wywołanie w toku, nie ukończony fakt.
+      if (use.tool !== THREAD_TOOL_NAME || use.isError === true || (use.text === undefined && use.result === undefined)) continue
       const items = reportedThreads(use.text ?? use.result)
       threads = items === null ? threadsAfter(threads, use.input) : {
         next: Math.max(threads.next, ...items.map(item => item.id + 1)),

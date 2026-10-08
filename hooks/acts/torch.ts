@@ -1,5 +1,5 @@
 import { SLIDE, SQUAT, STAND, at, croucher, draw, head, line, noise, pingPong, stander } from '../stage'
-import type { Act, Frame, Layer } from '../stage'
+import type { Act, Frame, Layer, Point } from '../stage'
 
 // Szukanie w treści plików: ork świeci, węszy, ogląda ślady przez lupę i płucze złoto.
 // Każdy rekwizyt pojawia się na oczach: rośnie, wysuwa się zza pleców albo napływa.
@@ -237,7 +237,7 @@ const track: Act = {
 // Dłoń zagania dym z kadzielnicy ku skale; przeciąg wciąga smugę w szczelinę.
 const DRAFT_ROCK: Frame = ['.kkkk', 'kkknk', 'kkknk', 'kknkk', 'kknkk', 'kkkkk']
 const CENSER: Frame = ['.o.', 'S.S', '.SS']
-const SMOKE_PATH = [[11, 2], [12, 1], [13, 1], [14, 2], [15, 2], [16, 2], [17, 2], [18, 2], [19, 2], [20, 2]] as const
+const SMOKE_PATH: readonly Point[] = [[11, 2], [12, 1], [13, 1], [14, 2], [15, 2], [16, 2], [17, 2], [18, 2], [19, 2], [20, 2]]
 
 function draftProps(dx: number): Layer[] {
   return [[DRAFT_ROCK, 17 + dx, 0], [CENSER, 10 + dx, 3]]

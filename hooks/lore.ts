@@ -6,7 +6,8 @@ import type { KruxDrift, KruxEvent, KruxLore, KruxMate } from '../types'
 import { testPassed } from './board'
 import { gauge, matesNamed } from './gauge'
 import { MATES, ROSTER } from './roster'
-import { parsePhrase, pick, workOf } from './voice'
+import { isBackgroundToolCall } from './outcome'
+import { isCommitCommand, parsePhrase, pick, workOf } from './voice'
 
 export const EMPTY_LORE: KruxLore = {
   testRuns: 0,
@@ -32,7 +33,8 @@ const BUILD_ERROR = /(?<![\p{L}\d])error(?:\[\w+\]|:|\s+TS\d+)|✖\s+[1-9]/iu
 // coś robiła: sam `grep` bez trafień albo `git diff` z kodem 1 tylko patrzyły.
 // Łańcuch z inną robotą zachowuje błąd, nawet gdy zawiera odczyt. Przebieg testów
 // ocenia `testPassed` z wyjścia (`text`), tak jak tablica Sztolni.
-export function recordTool(lore: KruxLore, tool: string, input: Record<string, unknown>, isError: boolean, text = ''): KruxLore {
+export function recordTool(lore: KruxLore, tool: string, input: Record<string, unknown>, isError: boolean, text = '', result?: unknown): KruxLore {
+  if (isBackgroundToolCall(tool, input, result)) return lore
   const work = workOf(tool, input)
   switch (work) {
     case null:
@@ -45,20 +47,17 @@ export function recordTool(lore: KruxLore, tool: string, input: Record<string, u
       return { ...lore, edits: lore.edits + 1, uiEdits: lore.uiEdits + ui }
     }
     case 'test': {
-      // Test w tle odpowiada od razu, zanim cokolwiek przeszło.
-      if (input.run_in_background === true) return lore
       const failed = !testPassed(text, isError)
       const last: KruxEvent = failed ? 'test-fail' : 'test-pass'
       return { ...lore, testRuns: lore.testRuns + 1, testFails: lore.testFails + (failed ? 1 : 0), last }
     }
     case 'build': {
-      if (input.run_in_background === true) return lore
       const failed = isError || BUILD_ERROR.test(text)
       const last: KruxEvent = failed ? 'build-fail' : 'build-pass'
       return { ...lore, builds: lore.builds + 1, buildFails: lore.buildFails + (failed ? 1 : 0), last }
     }
     case 'seal':
-      if (!isError) return { ...lore, commits: lore.commits + 1, last: 'commit' }
+      if (!isError && isCommitCommand(input.command)) return { ...lore, commits: lore.commits + 1, last: 'commit' }
       break
     case 'tear':
       if (!isError) return { ...lore, tears: lore.tears + 1, last: 'tear' }
@@ -132,7 +131,7 @@ export function lifeNote(lore: KruxLore, seed: number): string | null {
 export type HistoryMessage = {
   role: 'user' | 'assistant'
   text: string
-  toolUses: { tool: string; input: Record<string, unknown>; isError?: true; result?: unknown; text?: string }[]
+  toolUses: { tool_use_id?: string; tool: string; input: Record<string, unknown>; isError?: true; result?: unknown; text?: string }[]
   toolResults?: unknown[]
 }
 
@@ -167,7 +166,11 @@ export function replay(messages: readonly HistoryMessage[]): Replayed {
       turns = turnsAfter(turns, message.text, message.toolResults)
       continue
     }
-    for (const use of message.toolUses) lore = recordTool(lore, use.tool, use.input, use.isError === true, use.text ?? '')
+    for (const use of message.toolUses) {
+      // Sam opis wywołania może pochodzić z przerwanej tury, bez zakończonej roboty.
+      if (use.text === undefined && use.result === undefined && use.isError !== true) continue
+      lore = recordTool(lore, use.tool, use.input, use.isError === true, use.text ?? '', use.result)
+    }
     if (message.text.trim()) answer = latest = message.text
   }
   closeTurn()

@@ -219,7 +219,7 @@ test('gestures keep the frame rules on every loop pose and show up while working
   expect(changed).toBe(true)
 })
 
-test('the bubble sits over its speaker, clipped to forty characters, inside the canvas', async () => {
+test('the bubble sits over its speaker, clipped to forty terminal cells, inside the canvas', async () => {
   const width = canvasColumns(3, true)
   const short = bubbleLines('Trop w lore.ts', 1, width)
   expect(short.length).toBe(3)
@@ -230,6 +230,35 @@ test('the bubble sits over its speaker, clipped to forty characters, inside the 
   expect(long[1]!.trim().length).toBe(BUBBLE_TEXT + 4)
   expect(long[1]).toContain('…')
   expect(long.every(line => line.length === canvasColumns(1, true))).toBe(true)
+})
+
+// Oczekiwane ramki policzone w komórkach, niezależnie od pomocników produkcji:
+// 19 szerokich znaków + wielokropek to 39 komórek; 40 á to 40 komórek.
+for (const [name, text, body, top, bottom, padding] of [
+  ['CJK', '漢'.repeat(40), '漢'.repeat(19) + '…', `╭${'─'.repeat(41)}╮ `, `╰─┬${'─'.repeat(39)}╯ `, ' '],
+  ['emoji', '😀'.repeat(40), '😀'.repeat(19) + '…', `╭${'─'.repeat(41)}╮ `, `╰─┬${'─'.repeat(39)}╯ `, ' '],
+  ['combining marks', 'a\u0301'.repeat(40), 'a\u0301'.repeat(40), `╭${'─'.repeat(42)}╮`, `╰─┬${'─'.repeat(40)}╯`, ''],
+  ['joined emoji', '👩‍💻'.repeat(30), '👩‍💻'.repeat(19) + '…', `╭${'─'.repeat(41)}╮ `, `╰─┬${'─'.repeat(39)}╯ `, ' '],
+  ['flags', '🇵🇱'.repeat(30), '🇵🇱'.repeat(19) + '…', `╭${'─'.repeat(41)}╮ `, `╰─┬${'─'.repeat(39)}╯ `, ' '],
+  ['keycaps', '1️⃣'.repeat(30), '1️⃣'.repeat(19) + '…', `╭${'─'.repeat(41)}╮ `, `╰─┬${'─'.repeat(39)}╯ `, ' '],
+] as const) {
+  test(`the bubble fits ${name} in forty-four terminal cells and preserves graphemes`, () => {
+    expect(bubbleLines(text, 0, 44)).toEqual([top, `│ ${body} │${padding}`, bottom])
+  })
+}
+
+test('a wide-text bubble keeps its tail over later slots in a seventy-cell canvas', () => {
+  const body = '漢'.repeat(19) + '…'
+  expect(bubbleLines('漢'.repeat(40), 1, 70)).toEqual([
+    `     ╭${'─'.repeat(41)}╮${' '.repeat(22)}`,
+    `     │ ${body} │${' '.repeat(22)}`,
+    `     ╰${'─'.repeat(20)}┬${'─'.repeat(20)}╯${' '.repeat(22)}`,
+  ])
+  expect(bubbleLines('漢'.repeat(40), 2, 70)).toEqual([
+    `${' '.repeat(27)}╭${'─'.repeat(41)}╮`,
+    `${' '.repeat(27)}│ ${body} │`,
+    `${' '.repeat(27)}╰${'─'.repeat(22)}┬${'─'.repeat(18)}╯`,
+  ])
 })
 
 const framesOf = (act: { intro: readonly (readonly string[])[]; length: number; loop: (t: number, frame: number) => readonly string[] }) => [
@@ -428,17 +457,23 @@ test('test events animate the real canary and retain the cage through the body r
   }
 })
 
-for (const [scene, acts] of Object.entries(ACTS)) {
-  test(`event effects preserve eyes and apron in every ${scene} pose`, () => {
-    for (const act of acts) {
-      for (const frame of framesOf(act)) {
-        const rows = pad(frame)
-        const eyes = [...rows.join('')].filter(cell => cell === 'r').length
-        for (const kind of ['test-pass', 'test-fail', 'build-pass', 'build-fail', 'commit', 'tear', 'zawał'] as const) {
+// One event per test keeps the exhaustive matrix below the runner's time limit.
+for (const kind of ['test-pass', 'test-fail', 'build-pass', 'build-fail', 'commit', 'tear', 'zawał'] as const) {
+  test(`${kind} effects preserve eyes and apron in every distinct act pose`, () => {
+    const seen = new Set<string>()
+    for (const [scene, acts] of Object.entries(ACTS)) {
+      for (const act of acts) {
+        for (const frame of framesOf(act)) {
+          const rows = pad(frame)
+          // withCue depends on the entire grid, event and phase, not its source act.
+          const key = rows.join('\n')
+          if (seen.has(key)) continue
+          seen.add(key)
+          const eyes = (rows.join('').match(/r/g) ?? []).length
           for (let t = 0; t < CUE_FRAMES; t++) {
-            const cue = withCue(rows, kind, t)
-            expect([scene, act.name, kind, t, [...cue.join('')].filter(cell => cell === 'r').length]).toEqual([scene, act.name, kind, t, eyes])
-            expect(cue.join('')).toContain('b')
+            const cells = withCue(rows, kind, t).join('')
+            expect([scene, act.name, kind, t, (cells.match(/r/g) ?? []).length]).toEqual([scene, act.name, kind, t, eyes])
+            expect(cells).toContain('b')
           }
         }
       }

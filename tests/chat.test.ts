@@ -138,11 +138,11 @@ test('the original engine content stays once inside a Box, with no inherited tex
 })
 
 test('a structured content tree retains its own styles and children', () => {
-  const styled: RenderElement = Object.freeze({ type: 'Text', props: Object.freeze({ color: '#abcdef', bold: false, children: ['kod i markdown silnika'] }) })
+  const styled: RenderElement = Object.freeze({ type: 'Text', props: Object.freeze({ color: '#abcdef', bold: false }), children: ['kod i markdown silnika'] })
   const root = draw({ speaker: 'Morra', content: styled })
   expect(children(part(root, 'chat-content'))).toEqual([styled])
   expect(children(part(root, 'chat-content'))[0]).toBe(styled)
-  expect(styled).toEqual({ type: 'Text', props: { color: '#abcdef', bold: false, children: ['kod i markdown silnika'] } })
+  expect(styled).toEqual({ type: 'Text', props: { color: '#abcdef', bold: false }, children: ['kod i markdown silnika'] })
 })
 
 test('every speaker keeps a fixed avatar and a single complete header', () => {

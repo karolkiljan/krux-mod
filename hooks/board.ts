@@ -7,6 +7,7 @@ import type { SessionUsage } from 'claude-code'
 import type { KruxBoard, KruxGit, KruxTask, KruxTestRun, KruxThreads, KruxUsage } from '../types'
 import { gitBusy, gitShort } from './git'
 import type { HistoryMessage } from './lore'
+import { isBackgroundToolCall } from './outcome'
 import { workOf } from './voice'
 
 export const EMPTY_BOARD: KruxBoard = { tasks: [], test: null }
@@ -37,8 +38,9 @@ export type BoardCall = { text: string; isError: boolean; who: KruxTestRun['who'
 const FAILURES_LIMIT = 5
 
 // Linia padającego testu w popularnych runnerach: bun, jest, vitest, mocha, TAP,
-// reporter `node --test` (`✖`), go (`--- FAIL:`), unittest (`FAIL:`).
-const FAILURE_LINE = /^\s*(?:\(fail\)|✗|✕|✖|×|--- FAIL:|FAIL(?:ED)?(?!\p{L}):?|not ok \d+(?: -)?)\s*(.*)$/u
+// reporter `node --test` (`✖`), go (`--- FAIL:`), unittest (`FAIL:`, `ERROR: test (moduł…)`),
+// pytest (`ERROR plik::test`). Gołe `ERROR` to log albo bundler, nie test.
+const FAILURE_LINE = /^\s*(?:\(fail\)|✗|✕|✖|×|--- FAIL:|FAIL(?:ED)?(?!\p{L}):?|ERROR:(?=\s+\S+\s+\()|ERROR(?=\s+\S+::)|not ok \d+(?: -)?)\s*(.*)$/u
 
 // Czas na końcu nazwy: `[3ms]`, `(5 ms)`, `(0.00s)`, `4ms`.
 const TIMING = /\s*(?:\[\d+(?:\.\d+)?\s*m?s\]|\(\d+(?:\.\d+)?\s*m?s\)|\d+(?:\.\d+)?m?s)$/u
@@ -69,6 +71,16 @@ function cargoCounts(output: string): { passed: number; failed: number } | null 
   return { passed: lines.reduce((sum, line) => sum + Number(line[1]), 0), failed: lines.reduce((sum, line) => sum + Number(line[2]), 0) }
 }
 
+// Unittest rozdziela nieudane asercje i błędy testów; oba psują przebieg.
+function unittestFailures(output: string): number | null {
+  let failed: number | null = null
+  for (const summary of output.matchAll(/^FAILED\s*\(([^)]*)\)\s*$/gmu)) {
+    const counts = [...summary[1]!.matchAll(/\b(?:failures|errors)=(\d+)\b/gu)]
+    if (counts.length > 0) failed = counts.reduce((sum, count) => sum + Number(count[1]), 0)
+  }
+  return failed
+}
+
 // Przebieg testów z wyjścia komendy: liczby, gdy runner je podał, i nazwy padających.
 // Padłe testy w wyjściu wygrywają z kodem 0: `npm test | tail` kończy się kodem `tail`.
 export function testRunOf(command: string, call: BoardCall): KruxTestRun {
@@ -76,7 +88,7 @@ export function testRunOf(command: string, call: BoardCall): KruxTestRun {
   const failures = [...new Set(output.split(/\r?\n/u).flatMap(line => failureName(line) ?? []))]
   const cargo = cargoCounts(output)
   const passed = cargo?.passed ?? lastCount(output, /(?<![\p{L}\d])(\d+) pass(?:ed|ing)?(?!\p{L})|^(?:#|ℹ) pass (\d+)$/gmu)
-  const failed = cargo?.failed ?? lastCount(output, /(?<![\p{L}\d])(\d+) fail(?:ed|ing|ures?)?(?!\p{L})|^(?:#|ℹ) fail (\d+)$/gmu)
+  const failed = cargo?.failed ?? unittestFailures(output) ?? lastCount(output, /(?<![\p{L}\d])(\d+) fail(?:ed|ing|ures?)?(?!\p{L})|^(?:#|ℹ) fail (\d+)$/gmu)
   return {
     command,
     ok: !call.isError && !(failed !== null && failed > 0) && failures.length === 0,
@@ -107,7 +119,7 @@ export function boardAfter(board: KruxBoard, tool: string, input: Record<string,
   }
   if (call && workOf(tool, input) === 'test') {
     // Test w tle odpowiada od razu, bez wyniku: ostatni prawdziwy przebieg zostaje.
-    if (input.run_in_background === true) return board
+    if (isBackgroundToolCall(tool, input, result)) return board
     return { ...board, test: { ...testRunOf(text(input.command), call), ...(now === undefined ? {} : { at: now }) } }
   }
   // Nieudane wywołanie listy zadań nie zmienia planu.
@@ -286,7 +298,8 @@ export function replayBoard(messages: readonly HistoryMessage[]): KruxBoard {
   let board = EMPTY_BOARD
   for (const message of messages) {
     for (const use of message.toolUses) {
-      const call = use.text === undefined ? undefined : { text: use.text, isError: use.isError === true, who: 'Krux' as const }
+      if (use.text === undefined && use.result === undefined && use.isError !== true) continue
+      const call = use.text === undefined && use.isError !== true ? undefined : { text: use.text ?? '', isError: use.isError === true, who: 'Krux' as const }
       board = boardAfter(board, use.tool, use.input, use.result, call)
     }
   }

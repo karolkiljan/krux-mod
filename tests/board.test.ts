@@ -115,7 +115,7 @@ test('a resumed session rebuilds its plan and last test run from history', () =>
       text: '',
       toolUses: [
         { tool: 'TaskCreate', input: { subject: 'Test', description: '' }, result: { task: { id: '1', subject: 'Test' } } },
-        { tool: 'TaskUpdate', input: { taskId: '1', status: 'completed' } },
+        { tool: 'TaskUpdate', input: { taskId: '1', status: 'completed' }, result: { success: true } },
         { tool: 'Bash', input: { command: 'npm test' }, text: ' 3 pass\n 1 fail', isError: true },
       ],
     },
@@ -124,11 +124,48 @@ test('a resumed session rebuilds its plan and last test run from history', () =>
   expect(board.test).toMatchObject({ command: 'npm test', ok: false, passed: 3, failed: 1, who: 'Krux' })
 })
 
+test('replay keeps confirmed board state instead of applying in-flight plan and test summaries', () => {
+  const board = replayBoard([{ role: 'assistant', text: '', toolUses: [
+    { tool_use_id: 'confirmed-task', tool: 'TaskCreate', input: { subject: 'Confirmed task' }, result: { task: { id: '1' } } },
+    { tool_use_id: 'pending-update', tool: 'TaskUpdate', input: { taskId: '1', status: 'completed' } },
+    { tool_use_id: 'pending-plan', tool: 'TodoWrite', input: { todos: [{ content: 'Unfinished rewrite', status: 'completed' }] } },
+    { tool_use_id: 'failed-test', tool: 'Bash', input: { command: 'npm test' }, text: '1 failed' },
+    { tool_use_id: 'pending-test', tool: 'Bash', input: { command: 'npm test' } },
+    { tool_use_id: 'background-test', tool: 'Bash', input: { command: 'npm test' }, text: 'running', result: { backgroundTaskId: 'job-1' } },
+  ] }])
+  expect(board).toEqual({
+    tasks: [{ id: '1', subject: 'Confirmed task', status: 'pending' }],
+    test: { command: 'npm test', ok: false, passed: null, failed: 1, failures: [], who: 'Krux' },
+  })
+})
+
+test('replay restores a confirmed error without text instead of retaining an older green run', () => {
+  const board = replayBoard([{ role: 'assistant', text: '', toolUses: [
+    { tool_use_id: 'green-test', tool: 'Bash', input: { command: 'npm test' }, text: '3 passed' },
+    { tool_use_id: 'failed-test', tool: 'Bash', input: { command: 'npm test' }, isError: true },
+  ] }])
+  expect(board.test).toMatchObject({ ok: false, passed: null, failed: null, failures: [] })
+})
+
 const run = (command: string, text: string, isError = false, input: Record<string, unknown> = {}) =>
   boardAfter(EMPTY_BOARD, 'Bash', { command, ...input }, undefined, { text, isError, who: 'Krux' }).test
 
 test('failures in the output win over a zero exit, as behind a pipe to tail', () => {
   expect(run('npm test 2>&1 | tail -30', '(fail) auth > login\n 3 pass\n 1 fail')).toMatchObject({ ok: false, failed: 1 })
+})
+
+test('unittest errors behind a successful pipe remain failed tests and block readiness', () => {
+  const output = 'ERROR: test_import (probe_unittest.Probe.test_import)\nRuntimeError: fixture fails\nRan 1 test in 0.000s\nFAILED (errors=1)'
+  const board = boardAfter(EMPTY_BOARD, 'Bash', { command: 'python3 -m unittest probe_unittest 2>&1 | tail -20' }, undefined, { text: output, isError: false, who: 'Krux' })
+  expect(board.test).toMatchObject({ ok: false, failed: 1, failures: ['test_import (probe_unittest.Probe.test_import)'] })
+  expect(readiness(board, GIT)).toEqual({ ready: false, missing: ['testy padłe'] })
+  expect(run('python3 -m unittest', 'FAILED (failures=1, errors=2)')).toMatchObject({ ok: false, failed: 3 })
+})
+
+test('ERROR lines from logs or bundlers do not fail a passing run; pytest errors still do', () => {
+  expect(run('python -m unittest', 'ERROR:root:connection refused (expected)\n...\nRan 3 tests in 0.010s\n\nOK')).toMatchObject({ ok: true, failures: [] })
+  expect(run('npm test', 'ERROR in ./src/x.ts\n  5 passing (20ms)')).toMatchObject({ ok: true, failures: [] })
+  expect(run('pytest', 'ERROR tests/test_db.py::test_connect - RuntimeError\n1 passed, 1 error in 0.10s')).toMatchObject({ ok: false, failures: ['tests/test_db.py::test_connect - RuntimeError'] })
 })
 
 test('counts come from the summary, not from the first number in the output', () => {
@@ -149,6 +186,18 @@ test('failing names lose timings, packages and summary lines', () => {
 test('a test run sent to the background leaves the last real run in place', () => {
   const before = boardAfter(EMPTY_BOARD, 'Bash', { command: 'npm test' }, undefined, { text: ' 3 pass', isError: false, who: 'Krux' })
   expect(boardAfter(before, 'Bash', { command: 'npm test', run_in_background: true }, undefined, { text: 'running', isError: false, who: 'Krux' })).toBe(before)
+})
+
+test('a test moved to the background by the engine keeps the completed failing run', () => {
+  const before = boardAfter(EMPTY_BOARD, 'Bash', { command: 'npm test' }, undefined, { text: '1 failed', isError: true, who: 'Krux' }, 100)
+  const call = { text: 'Command running in background with ID: job-1', isError: false, who: 'Krux' as const }
+  for (const result of [
+    { backgroundTaskId: 'job-1', backgroundedByUser: true },
+    { backgroundTaskId: 'job-2', timedOutAfterMs: 1000 },
+  ]) {
+    expect(boardAfter(before, 'Bash', { command: 'npm test' }, result, call, 200)).toBe(before)
+  }
+  expect(boardAfter(before, 'Bash', { command: 'npm test' }, { backgroundTaskId: '' }, { ...call, text: '2 passed' }, 200).test).toMatchObject({ ok: true, passed: 2, at: 200 })
 })
 
 test('a failed task call leaves the plan alone', () => {
@@ -203,7 +252,7 @@ test('a test command without a known result leaves the board alone', () => {
   expect(boardAfter(before, 'Bash', { command: 'npm test' })).toBe(before)
   const replayed = replayBoard([
     { role: 'assistant', text: '', toolUses: [{ tool: 'Bash', input: { command: 'npm test' }, text: ' 3 pass' }] },
-    { role: 'assistant', text: '', toolUses: [{ tool: 'Bash', input: { command: 'npm test' }, isError: true }] },
+    { role: 'assistant', text: '', toolUses: [{ tool: 'Bash', input: { command: 'npm test' } }] },
   ])
   expect(replayed.test).toMatchObject({ ok: true, passed: 3 })
 })
@@ -373,7 +422,7 @@ test('TaskUpdate keeps startedAt while running, clears it on status change and r
 test('history without timestamps never invents edit, test or task times', () => {
   const board = replayBoard([{ role: 'assistant', text: '', toolUses: [
     { tool: 'Edit', input: {} },
-    { tool: 'TodoWrite', input: { todos: [{ content: 'A', status: 'in_progress' }] } },
+    { tool: 'TodoWrite', input: { todos: [{ content: 'A', status: 'in_progress' }] }, result: {} },
     { tool: 'Bash', input: { command: 'npm test' }, text: '3 pass' },
   ] }])
   expect(board.editedAt).toBeUndefined()

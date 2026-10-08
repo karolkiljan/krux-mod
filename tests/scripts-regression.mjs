@@ -9,6 +9,7 @@ import { spawnSync } from 'node:child_process'
 import { builtinModules, createRequire, stripTypeScriptTypes } from 'node:module'
 import { EventEmitter } from 'node:events'
 import { Writable } from 'node:stream'
+import { GIT_LOG, GIT_STATUS, gitOf } from '../hooks/git.ts'
 
 const sourceOf = file => fs.readFileSync(file, 'utf8').replace(/^import .*\n/gmu, '').replace(/\nmain\(\)\.catch[\s\S]*$/u, '')
 for (const script of ['act-sheet', 'voice-bench']) test(script === 'act-sheet'
@@ -225,7 +226,7 @@ test('git refresh runs status, log and diff check concurrently and coalesces ove
   const gitSource = fs.readFileSync('hooks/git.ts', 'utf8').replace(/^import .*\n/gmu, '').replaceAll('export ', '')
   const gitContext = vm.createContext({})
   vm.runInContext(stripTypeScriptTypes(gitSource), gitContext)
-  const commands = vm.runInContext('({ GIT_STATUS, GIT_LOG, GIT_CHECK, GIT_UNPUSHED, gitOf })', gitContext)
+  const commands = vm.runInContext('({ GIT_STATUS, GIT_LOG, GIT_CHECK, GIT_CHECK_CACHED, GIT_UNPUSHED, gitOf })', gitContext)
   let state = null
   let failStatus = false
   let blocked = false
@@ -235,13 +236,14 @@ test('git refresh runs status, log and diff check concurrently and coalesces ove
   const context = registerContext({ ...commands, read: async () => state, update: async (_api, _atom, change) => { state = change(state) } })
   const api = { process: { run: async (argv, options) => {
     assert.equal(options.timeoutMs, 5000)
-    const command = argv.includes('--check') ? 'diff' : argv[4]
+    const command = argv.includes('--cached') ? 'diff-cached' : argv.includes('--check') ? 'diff' : argv[4]
     if (command === 'diff') assert.deepEqual(Array.from(argv), ['git', '--no-optional-locks', 'diff', '--check'])
+    else if (command === 'diff-cached') assert.deepEqual(Array.from(argv), ['git', '--no-optional-locks', 'diff', '--cached', '--check'])
     else assert.deepEqual(Array.from(argv).slice(0, 4), ['git', '--no-optional-locks', '-c', 'core.quotePath=false'])
     calls.push(command)
     if (command === 'status' && failStatus) throw new Error('git unavailable')
     if (blocked && command === 'log') await gate
-    return { exitCode: 0, stdout: command === 'status' ? '# branch.head main' : 'oid\tabc\tlocal' }
+    return { exitCode: 0, stdout: command === 'status' ? '# branch.head main' : command === 'log' ? 'oid\tabc\tlocal' : '' }
   } } }
   context.api = api
   const refresh = () => vm.runInContext('refreshGit(api)', context)
@@ -252,11 +254,11 @@ test('git refresh runs status, log and diff check concurrently and coalesces ove
   const third = refresh()
   assert.equal(first, second)
   assert.equal(second, third)
-  assert.deepEqual(calls, ['status', 'log', 'diff'])
+  assert.deepEqual(calls, ['status', 'log', 'diff', 'diff-cached'])
   blocked = false
   release()
   await Promise.all([first, second, third])
-  assert.deepEqual(calls, ['status', 'log', 'diff', 'status', 'log', 'diff'])
+  assert.deepEqual(calls, ['status', 'log', 'diff', 'diff-cached', 'status', 'log', 'diff', 'diff-cached'])
   assert.equal(state.commits[0].pushed, false)
   assert.equal(state.whitespace, true)
   // Odrzucony status nie zwalnia blokady przed końcem równoległego logu.
@@ -268,21 +270,21 @@ test('git refresh runs status, log and diff check concurrently and coalesces ove
   await Promise.resolve()
   const overlapping = refresh()
   assert.equal(failing, overlapping)
-  assert.deepEqual(calls, ['status', 'log', 'diff'])
+  assert.deepEqual(calls, ['status', 'log', 'diff', 'diff-cached'])
   blocked = false
   failStatus = false
   release()
   await failing
-  assert.deepEqual(calls, ['status', 'log', 'diff', 'status', 'log', 'diff'])
+  assert.deepEqual(calls, ['status', 'log', 'diff', 'diff-cached', 'status', 'log', 'diff', 'diff-cached'])
   calls.length = 0
   await refresh()
-  assert.deepEqual(calls, ['status', 'log', 'diff'])
+  assert.deepEqual(calls, ['status', 'log', 'diff', 'diff-cached'])
 })
 
 test('git refresh reads upstream reachability with full hashes and safe global options', async () => {
   const gitContext = vm.createContext({})
   vm.runInContext(stripTypeScriptTypes(fs.readFileSync('hooks/git.ts', 'utf8').replace(/^import .*\n/gmu, '').replaceAll('export ', '')), gitContext)
-  const commands = vm.runInContext('({ GIT_STATUS, GIT_LOG, GIT_CHECK, GIT_UNPUSHED, gitOf })', gitContext)
+  const commands = vm.runInContext('({ GIT_STATUS, GIT_LOG, GIT_CHECK, GIT_CHECK_CACHED, GIT_UNPUSHED, gitOf })', gitContext)
   let state = null
   let reachability = 'ok'
   const calls = []
@@ -298,7 +300,7 @@ test('git refresh reads upstream reachability with full hashes and safe global o
   } } }
   await vm.runInContext('refreshGit(api)', context)
   assert.deepEqual(Array.from(state.commits, commit => commit.pushed), [false, true, false, true])
-  assert.equal(calls.length, 4)
+  assert.equal(calls.length, 5)
   reachability = 'failed'
   await vm.runInContext('refreshGit(api)', context)
   assert.deepEqual(Array.from(state.commits, commit => commit.pushed), [false, false, false, false])
@@ -350,7 +352,7 @@ test('a refresh at completion reads again instead of joining a finished snapshot
   for (let depth = 0; depth < 8; depth += 1) {
     const gitContext = vm.createContext({})
     vm.runInContext(stripTypeScriptTypes(fs.readFileSync('hooks/git.ts', 'utf8').replace(/^import .*\n/gmu, '').replaceAll('export ', '')), gitContext)
-    const commands = vm.runInContext('({ GIT_STATUS, GIT_LOG, GIT_CHECK, GIT_UNPUSHED, gitOf })', gitContext)
+    const commands = vm.runInContext('({ GIT_STATUS, GIT_LOG, GIT_CHECK, GIT_CHECK_CACHED, GIT_UNPUSHED, gitOf })', gitContext)
     let state = commands.gitOf('# branch.head main', 'oid\tabc\tlocal')
     let schedule = true
     let later
@@ -370,13 +372,239 @@ test('a refresh at completion reads again instead of joining a finished snapshot
       update: async (_api, _atom, change) => { state = change(state) },
     })
     context.api = { process: { run: async argv => {
-      calls.push(argv.includes('--check') ? 'diff' : argv[4])
+      calls.push(argv.includes('--cached') ? 'diff-cached' : argv.includes('--check') ? 'diff' : argv[4])
       return { exitCode: 0, stdout: argv[4] === 'status' ? '# branch.head main' : 'oid\tabc\tlocal' }
     } } }
     const first = vm.runInContext('refreshGit(api)', context)
     await first
     await lateCall
     await later
-    assert.deepEqual(calls, ['status', 'log', 'diff', 'status', 'log', 'diff'], `microtask depth ${depth}`)
+    assert.deepEqual(calls, ['status', 'log', 'diff', 'diff-cached', 'status', 'log', 'diff', 'diff-cached'], `microtask depth ${depth}`)
   }
 })
+
+test('a real repository without upstream keeps its complete local commit history', t => {
+  const repository = fs.mkdtempSync(path.join(os.tmpdir(), 'krux-git-contract-'))
+  t.after(() => fs.rmSync(repository, { recursive: true, force: true }))
+  const gitEnv = {
+    ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_'))),
+    GIT_CONFIG_NOSYSTEM: '1',
+    GIT_CONFIG_GLOBAL: os.devNull,
+    GIT_AUTHOR_NAME: 'Krux test',
+    GIT_AUTHOR_EMAIL: 'krux-test@example.invalid',
+    GIT_COMMITTER_NAME: 'Krux test',
+    GIT_COMMITTER_EMAIL: 'krux-test@example.invalid',
+  }
+  const git = args => {
+    const result = spawnSync('git', args, { cwd: repository, env: gitEnv, encoding: 'utf8', timeout: 10_000 })
+    assert.ifError(result.error)
+    assert.equal(result.status, 0, result.stderr)
+    return result.stdout
+  }
+  git(['init', '--initial-branch=main'])
+  const expected = []
+  for (const subject of ['base', 'first local change', 'second local change']) {
+    fs.writeFileSync(path.join(repository, 'history.txt'), `${subject}\n`)
+    git(['add', '--', 'history.txt'])
+    git(['-c', 'commit.gpgSign=false', 'commit', '-m', subject])
+    expected.unshift({ hash: git(['rev-parse', '--short', 'HEAD']).trim(), subject, pushed: false })
+  }
+
+  // Exercise the shipped Git commands and the native parser with real output.
+  // Expected commits come from the commits we created, not from the parser.
+  const actual = gitOf(git(GIT_STATUS.slice(1)), git(GIT_LOG.slice(1)))
+  assert.equal(actual.branch, 'main')
+  assert.equal(actual.upstream, null)
+  assert.deepEqual(actual.commits, expected)
+})
+
+// Run the shipped CLI against a local executable at the external Claude boundary.
+// Traffic, reports and scratch cleanup are observed without a model or account.
+function voiceBenchFixture(t, { kind, failAt = 1, exitCode = 0, ignoreTerm = false }) {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'krux-bench-cli-test-'))
+  const bin = path.join(scratch, 'bin')
+  const log = path.join(scratch, 'prompts.jsonl')
+  fs.mkdirSync(bin)
+  fs.mkdirSync(path.join(scratch, 'scripts'))
+  fs.mkdirSync(path.join(scratch, 'hooks'))
+  fs.copyFileSync('scripts/voice-bench.mjs', path.join(scratch, 'scripts', 'voice-bench.mjs'))
+  fs.writeFileSync(path.join(scratch, 'hooks', 'hooks.json'), '{}\n')
+  fs.writeFileSync(path.join(scratch, 'hooks', 'voice.ts'), "export const VOICE_ANCHOR = 'fixture anchor'\nexport const VOICE_SHORT = 'fixture short'\n")
+  fs.writeFileSync(path.join(bin, 'claude'), `#!/usr/bin/env node
+import fs from 'node:fs'
+import path from 'node:path'
+import readline from 'node:readline'
+const argv = process.argv.slice(2)
+const session = argv[argv.indexOf('--session-id') + 1]
+const fixture = JSON.parse(process.env.SCRIPT_FIXTURE)
+const project = path.join(process.env.CLAUDE_CONFIG_DIR, 'projects', path.basename(path.dirname(process.cwd())))
+fs.mkdirSync(project, { recursive: true })
+fs.writeFileSync(path.join(project, session + '.jsonl'), JSON.stringify({ type: 'user', context: ['fixture anchor'] }) + '\\n')
+if (fixture.ignoreTerm) process.on('SIGTERM', () => {})
+let count = 0
+for await (const line of readline.createInterface({ input: process.stdin })) {
+  if (!line.trim()) continue
+  count += 1
+  fs.appendFileSync(process.env.SCRIPT_FIXTURE_LOG, JSON.stringify({ pid: process.pid, cwd: process.cwd(), message: JSON.parse(line) }) + '\\n')
+  const bad = count === fixture.failAt
+  const event = { type: 'result', session_id: bad && fixture.kind === 'session' ? 'other-session' : session,
+    is_error: bad && fixture.kind === 'error', result: bad && fixture.kind === 'empty' ? '  ' : bad && fixture.kind === 'error' ? 'fixture API error' : 'Krux kopać rudę. Robak siedzieć w skale.',
+    total_cost_usd: count / 100, usage: { output_tokens: 5, output_tokens_details: { thinking_tokens: 1 } } }
+  process.stdout.write(JSON.stringify(event) + '\\n')
+}
+if (fixture.ignoreTerm) setInterval(() => {}, 1000)
+else process.exitCode = fixture.exitCode
+`, { mode: 0o700 })
+  const records = () => fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line)) : []
+  t.after(() => {
+    for (const pid of new Set(records().map(record => record.pid))) {
+      try { process.kill(pid, 'SIGKILL') } catch (error) { if (error.code !== 'ESRCH') throw error }
+    }
+    fs.rmSync(scratch, { recursive: true, force: true })
+  })
+  const run = spawnSync(process.execPath, [path.join(scratch, 'scripts', 'voice-bench.mjs'), '--model', 'fixture-model'], {
+    encoding: 'utf8', timeout: 8000,
+    env: { ...process.env, PATH: `${bin}${path.delimiter}${process.env.PATH}`, CLAUDE_CONFIG_DIR: path.join(scratch, 'config'),
+      SCRIPT_FIXTURE_LOG: log, SCRIPT_FIXTURE: JSON.stringify({ kind, failAt, exitCode, ignoreTerm }) },
+  })
+  assert.ifError(run.error)
+  return { run, report: JSON.parse(run.stdout), records: records(), scratch }
+}
+
+for (const [kind, reason] of [['error', /fixture API error/u], ['session', /Zmiana session_id/u], ['empty', /Pusty final response/u]]) {
+  test(`voice bench stops before another prompt after an invalid ${kind} result`, t => {
+    const { run, report, records } = voiceBenchFixture(t, { kind })
+    assert.equal(records.length, 1, 'an invalid result must not buy another model turn')
+    assert.equal(run.status, 1)
+    assert.equal(report.status, 'ERROR')
+    assert.match(report.reason, reason)
+    assert.equal(report.turns, 0)
+    assert.equal(fs.existsSync(records[0].cwd), false, 'the failed run must remove its work directory')
+  })
+}
+
+test('voice bench preserves completed responses and their usage before a later error', t => {
+  const { run, report, records, scratch } = voiceBenchFixture(t, { kind: 'error', failAt: 2 })
+  assert.equal(records.length, 2)
+  assert.equal(run.status, 1)
+  assert.equal(report.status, 'ERROR')
+  assert.equal(report.turns, 1, 'a later error must preserve the completed first turn')
+  assert.equal(report.costUsd, 0.01)
+  assert.deepEqual(report.costUsdPerResult, [0.01])
+  assert.equal(report.visibleTokens, 4)
+  const reports = path.join(scratch, 'benchmarks', 'voice-bench')
+  const directory = path.join(reports, fs.readdirSync(reports)[0])
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(directory, 'responses.json'), 'utf8')), ['Krux kopać rudę. Robak siedzieć w skale.'])
+})
+
+test('voice bench reports a nonzero child exit even after twelve valid results', t => {
+  const { run, report, records } = voiceBenchFixture(t, { kind: 'none', exitCode: 7 })
+  assert.equal(records.length, 12)
+  assert.equal(report.status, 'ERROR')
+  assert.match(report.reason, /claude → exit 7 po 12 turach/u)
+  assert.equal(report.turns, 12, 'the exit error must preserve all completed turns')
+  assert.equal(run.status, 1)
+  assert.equal(report.accepted, false)
+})
+
+test('voice bench stops a child that ignores SIGTERM after an invalid result', t => {
+  const { run, report, records } = voiceBenchFixture(t, { kind: 'error', ignoreTerm: true })
+  assert.equal(records.length, 1)
+  assert.equal(run.status, 1)
+  assert.match(report.reason, /fixture API error/u)
+  assert.throws(() => process.kill(records[0].pid, 0), { code: 'ESRCH' }, 'the failed benchmark must wait for its own child to exit')
+})
+
+test('voice bench completes twelve valid turns and removes only its temporary session', t => {
+  const { run, report, records, scratch } = voiceBenchFixture(t, { kind: 'none' })
+  assert.equal(run.status, 0)
+  assert.deepEqual({ status: report.status, turns: report.turns, costUsd: report.costUsd, visibleTokens: report.visibleTokens, accepted: report.accepted },
+    { status: 'COMPLETE', turns: 12, costUsd: 0.12, visibleTokens: 48, accepted: true })
+  assert.equal(records.length, 12)
+  assert.equal(fs.existsSync(records[0].cwd), false)
+  assert.deepEqual(fs.readdirSync(path.join(scratch, 'config', 'projects')), [])
+})
+
+function tuiShotFixture(t, steps, interrupt = false) {
+  if (process.platform === 'win32') { t.skip('tui-shot requires POSIX pty'); return null }
+  const python = fs.existsSync('.venv/bin/python') ? path.resolve('.venv/bin/python') : 'python3'
+  const available = spawnSync(python, ['-c', 'import pyte'], { encoding: 'utf8', timeout: 5000 })
+  if (available.error || available.status !== 0) { t.skip('tui-shot requires Python with pyte'); return null }
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'krux-tui-cli-test-'))
+  t.after(() => fs.rmSync(scratch, { recursive: true, force: true }))
+  const probe = String.raw`from pathlib import Path
+import json, os, shlex, signal, subprocess, sys, time
+script, directory, encoded = sys.argv[1:]
+config = json.loads(encoded)
+directory = Path(directory)
+pidfile, heartbeat = directory / 'pid.json', directory / 'heartbeat'
+child = directory / 'child.py'
+child.write_text("""from pathlib import Path
+import json, os, signal, subprocess, sys, time
+signal.signal(signal.SIGHUP, signal.SIG_IGN)
+signal.signal(signal.SIGTERM, signal.SIG_IGN)
+beat = 'from pathlib import Path; import signal,time; signal.signal(signal.SIGHUP,signal.SIG_IGN); signal.signal(signal.SIGTERM,signal.SIG_IGN); p=Path(' + repr(sys.argv[2]) + '); exec("while True:\\n p.write_text(str(time.monotonic_ns()))\\n time.sleep(0.03)")'
+mate = subprocess.Popen([sys.executable, '-c', beat])
+Path(sys.argv[1]).write_text(json.dumps({'pid': os.getpid(), 'group': os.getpgrp(), 'mate': mate.pid}))
+print('READY', flush=True)
+time.sleep(30)
+""")
+unrelated = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)'], start_new_session=True)
+process = None
+owned = None
+before = None
+def alive(pid):
+    try: os.kill(pid, 0); return True
+    except ProcessLookupError: return False
+try:
+    command = ' '.join(shlex.quote(str(value)) for value in [sys.executable, child, pidfile, heartbeat])
+    process = subprocess.Popen([sys.executable, script, '--cmd', command, *config['steps']], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    deadline = time.monotonic() + 3
+    while not pidfile.exists() and process.poll() is None and time.monotonic() < deadline:
+        time.sleep(0.01)
+    if pidfile.exists(): owned = json.loads(pidfile.read_text())
+    if config['interrupt'] and process.poll() is None: process.send_signal(getattr(signal, config['interrupt']))
+    stdout, stderr = process.communicate(timeout=4)
+    before = heartbeat.read_text() if heartbeat.exists() else None
+    time.sleep(0.15)
+    after = heartbeat.read_text() if heartbeat.exists() else None
+    print(json.dumps({'exit': process.returncode, 'stdout': stdout, 'stderr': stderr,
+      'childAlive': owned is not None and alive(owned['pid']), 'descendantWorking': before != after,
+      'unrelatedAlive': unrelated.poll() is None, 'ownedStarted': owned is not None}))
+finally:
+    if owned is not None and (alive(owned['pid']) or (heartbeat.exists() and heartbeat.read_text() != before)):
+        try: os.killpg(owned['group'], signal.SIGKILL)
+        except ProcessLookupError: pass
+    if process is not None and process.poll() is None:
+        process.kill()
+        process.wait()
+    unrelated.terminate()
+    unrelated.wait()
+`
+  const run = spawnSync(python, ['-c', probe, path.resolve('scripts/tui-shot.py'), scratch, JSON.stringify({ steps, interrupt })], { encoding: 'utf8', timeout: 10_000 })
+  assert.ifError(run.error)
+  assert.equal(run.status, 0, run.stderr)
+  return JSON.parse(run.stdout)
+}
+
+for (const [name, steps, exit, interrupt] of [
+  ['shot', ['shot'], 0],
+  ['unknown key', ['key:unknown'], 1],
+  ['bad regex', ['fg:['], 1],
+  ['until timeout', ['until:never:0.01'], 1],
+  ['unknown step', ['unknown'], 2],
+  ['interrupt', ['wait:30'], null, 'SIGINT'],
+  ['termination', ['wait:30'], null, 'SIGTERM'],
+  ['hangup', ['wait:30'], null, 'SIGHUP'],
+]) {
+  test(`tui shot cleans up its own process group after ${name}`, t => {
+    const result = tuiShotFixture(t, steps, interrupt ?? false)
+    if (result === null) return
+    assert.equal(result.ownedStarted, true, result.stderr)
+    if (exit === null) assert.notEqual(result.exit, 0)
+    else assert.equal(result.exit, exit, result.stderr)
+    assert.equal(result.childAlive, false, 'the owned child must be terminated and reaped')
+    assert.equal(result.descendantWorking, false, 'the owned descendant must stop with the group')
+    assert.equal(result.unrelatedAlive, true, 'cleanup must leave an unrelated process alone')
+  })
+}

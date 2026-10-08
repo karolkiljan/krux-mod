@@ -367,7 +367,7 @@ function invocation(index, model, sessionId, pluginDir) {
 
 // Jeden proces na całą rozmowę: prompt idzie na stdin dopiero po zdarzeniu
 // `result` poprzedniej tury, więc tury nie zlewają się w jedną.
-function converse({ model, sessionId, pluginDir, cwd, env }) {
+function converse({ model, sessionId, pluginDir, cwd, env, onResult }) {
   const args = [
     '-p',
     '--input-format', 'stream-json',
@@ -383,11 +383,14 @@ function converse({ model, sessionId, pluginDir, cwd, env }) {
   let waiting = null
   return new Promise((resolve, reject) => {
     let failure = null
+    let killTimer
     const fail = error => {
       if (failure) return
       failure = error
       clearTimeout(timer)
       child.kill('SIGTERM')
+      killTimer = setTimeout(() => child.kill('SIGKILL'), 1000)
+      killTimer.unref?.()
     }
     const timer = setTimeout(() => fail(new Error(`Przekroczony czas po ${results.length} turach`)), 300_000 * TURNS)
     const send = index => {
@@ -418,6 +421,12 @@ function converse({ model, sessionId, pluginDir, cwd, env }) {
           continue
         }
         if (event?.type !== 'result') continue
+        try {
+          onResult(checkResult(event, sessionId))
+        } catch (error) {
+          fail(error)
+          return
+        }
         results.push(event)
         process.stderr.write(`tura ${results.length}/${TURNS}\n`)
         if (results.length < TURNS) send(results.length)
@@ -427,11 +436,12 @@ function converse({ model, sessionId, pluginDir, cwd, env }) {
     child.on('error', error => {
       fail(new Error(`claude: ${error.message}`))
     })
-    child.on('close', code => {
+    child.on('close', (code, signal) => {
       clearTimeout(timer)
+      clearTimeout(killTimer)
       if (failure) reject(failure)
-      else if (results.length === TURNS) resolve(results)
-      else reject(new Error(`claude → exit ${code} po ${results.length} turach: ${stderr.trim().slice(0, 500)}`))
+      else if (code === 0 && results.length === TURNS) resolve(results)
+      else reject(new Error(`claude → exit ${code ?? signal} po ${results.length} turach: ${stderr.trim().slice(0, 500)}`))
     })
     send(0)
   })
@@ -573,13 +583,14 @@ async function main() {
     const env = cleanEnvironment(process.env)
     if (mode === 'stream') {
       // W strumieniu `total_cost_usd` rośnie narastająco: liczy się ostatni.
-      for (const event of await converse({ model, sessionId, pluginDir, cwd: workdir, env })) {
-        const parsed = checkResult(event, sessionId)
-        costUsd = Math.max(costUsd, parsed.costUsd)
-        costUsdPerResult.push(parsed.costUsd)
-        visibleTokens.push(parsed.visibleTokens)
-        responses.push(parsed.text)
-      }
+      await converse({ model, sessionId, pluginDir, cwd: workdir, env,
+        onResult: parsed => {
+          costUsd = Math.max(costUsd, parsed.costUsd)
+          costUsdPerResult.push(parsed.costUsd)
+          visibleTokens.push(parsed.visibleTokens)
+          responses.push(parsed.text)
+        },
+      })
     } else {
       for (let index = 0; index < TURNS; index += 1) {
         const result = run(invocation(index, model, sessionId, pluginDir), { cwd: workdir, env })

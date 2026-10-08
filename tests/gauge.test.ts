@@ -72,6 +72,36 @@ test('the chronicle counts tests, commits and edits from real tool calls', async
   expect(recordTool(EMPTY_LORE, 'Bash', { command: './run.sh' }, true).last).toBe('zawał')
 })
 
+test('sealing a push, tag or pull request does not invent a commit', () => {
+  for (const command of ['git push', 'git push --dry-run', 'git tag v1', 'gh pr create --title audit', 'gh pr merge 7', 'git commit --dry-run']) {
+    expect(recordTool(EMPTY_LORE, 'Bash', { command }, false, 'ok')).toEqual(EMPTY_LORE)
+  }
+  for (const command of ['git commit -m x', 'git -C /repo commit -m x', 'git add a.ts && git commit -m x', 'git commit -m "--dry-run"']) {
+    expect(recordTool(EMPTY_LORE, 'Bash', { command }, false, 'ok')).toMatchObject({ commits: 1, last: 'commit' })
+  }
+})
+
+test('commit status formats and their unambiguous abbreviations remain previews, not commits', () => {
+  for (const option of ['--short', '--porcelain', '--long', '--dry', '--dr', '--sho', '--sh', '--por', '--lo', '--l']) {
+    expect(recordTool(EMPTY_LORE, 'Bash', { command: `git commit ${option}` }, false, 'M  a.ts')).toEqual(EMPTY_LORE)
+  }
+  for (const option of ['--short', '--porcelain', '--long', '--dry']) {
+    for (const message of ['-m', '--message', '-am', '-qm']) {
+      expect(recordTool(EMPTY_LORE, 'Bash', { command: `git commit ${message} "${option}"` }, false, 'ok')).toMatchObject({ commits: 1, last: 'commit' })
+    }
+  }
+  expect(recordTool(EMPTY_LORE, 'Bash', { command: 'git commit --signoff --message x' }, false, 'ok')).toMatchObject({ commits: 1, last: 'commit' })
+})
+
+test('work still running in the background adds no finished facts to the chronicle', () => {
+  for (const command of ['npm test', 'npm run build', 'git commit -m x', 'rm old.txt']) {
+    expect(recordTool(EMPTY_LORE, 'Bash', { command, run_in_background: true }, false, 'running')).toBe(EMPTY_LORE)
+    expect(recordTool(EMPTY_LORE, 'Bash', { command }, false, 'running', { backgroundTaskId: 'job-1' })).toBe(EMPTY_LORE)
+  }
+  expect(recordTool(EMPTY_LORE, 'Bash', { command: 'npm test' }, false, '1 passed', { backgroundTaskId: '' })).toMatchObject({ testRuns: 1, last: 'test-pass' })
+  expect(recordTool(EMPTY_LORE, 'Edit', { file_path: 'a.ts' }, false, '', { backgroundTaskId: 'not-a-shell-job' })).toMatchObject({ edits: 1 })
+})
+
 test('the horde speaks every few turns, from a fact, never the same mate twice', async () => {
   const failing = recordTool(EMPTY_LORE, 'Bash', { command: 'npm test' }, true)
   expect(lifeNote(failing, 0)).toBe(null)
@@ -191,7 +221,7 @@ test('a list item ends a sentence even without a period', async () => {
 test('replay counts prompts, not tool results, and gauges the last answer', async () => {
   const found = replay([
     { role: 'user', text: 'napraw', toolUses: [] },
-    { role: 'assistant', text: '', toolUses: [{ tool: 'Bash', input: { command: 'git commit -m x' } }] },
+    { role: 'assistant', text: '', toolUses: [{ tool: 'Bash', input: { command: 'git commit -m x' }, result: 'ok' }] },
     { role: 'user', text: '', toolUses: [], toolResults: [{}] },
     { role: 'assistant', text: ORC, toolUses: [] },
     { role: 'user', text: 'dalej', toolUses: [] },
@@ -208,6 +238,24 @@ test('replay reads a test run from its output, like the live chronicle', async (
     { role: 'user', text: 'testy', toolUses: [] },
     { role: 'assistant', text: '', toolUses: [{ tool: 'Bash', input: { command: 'npm test | tail' }, text: '(fail) a\n 1 pass\n 1 fail' }] },
   ])
+  expect(found.lore).toMatchObject({ testRuns: 1, testFails: 1, last: 'test-fail' })
+})
+
+test('replay does not invent finished facts from in-flight tool summaries', () => {
+  const found = replay([{ role: 'assistant', text: '', toolUses: [
+    { tool_use_id: 'pending-test', tool: 'Bash', input: { command: 'npm test' } },
+    { tool_use_id: 'pending-commit', tool: 'Bash', input: { command: 'git commit -m interrupted' } },
+    { tool_use_id: 'pending-build', tool: 'Bash', input: { command: 'npm run build' } },
+    { tool_use_id: 'pending-tear', tool: 'Bash', input: { command: 'rm old.txt' } },
+    { tool_use_id: 'pending-edit', tool: 'Edit', input: { file_path: 'a.ts' } },
+  ] }])
+  expect(found.lore).toEqual(EMPTY_LORE)
+})
+
+test('an explicit historical error is completion proof even without result text', () => {
+  const found = replay([{ role: 'assistant', text: '', toolUses: [
+    { tool_use_id: 'failed-test', tool: 'Bash', input: { command: 'npm test' }, isError: true },
+  ] }])
   expect(found.lore).toMatchObject({ testRuns: 1, testFails: 1, last: 'test-fail' })
 })
 

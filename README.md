@@ -51,13 +51,17 @@ claude plugin disable krux@krux-marketplace
 
 | Komenda | Skutek |
 |---|---|
-| `/krux` | panel kuźni: tryby pod klawiszami 1–6, horda, palenisko |
+| `/krux` | panel kuźni: tryby pod klawiszami 1–7, horda, palenisko |
 | `/krux on` / `/krux off` | głos orka / tryb neutralny |
 | `/krux konkret [on\|off]` | precyzja zakresu: tylko to, o co proszono |
 | `/krux flow [on\|off]` | jeden ruch na raz, zgoda przed każdym |
 | `/krux animacje [on\|off]` | kowal nad promptem |
 | `/krux kowal [on\|off]` | kowal zostaje nad promptem także w spoczynku |
 | `/krux sztolnia [on\|off]` | panel ze stanem roboty obok transkryptu |
+| `/krux czat [on\|off]` | ramki rozmowy i awatary w terminalu |
+| `/krux dziennik` | otwarcie karty Dziennik w Sztolni |
+| `/krux zapisz <tekst>` | zapis otwartego wątku w tablicy sesji |
+| `/krux raport` | raport sesji do skopiowania |
 | `/krux status` | stan trybów |
 
 Bez `on`/`off` komenda przełącza tryb na przeciwny. `/krux` działa także w trakcie tury i nie kosztuje wywołania modelu. Stare frazy z pluginu (`włącz krux`, `wyłącz konkret`, …) dalej działają, gdy stanowią całą wiadomość. Stan trybów jest trwały i przeżywa restart sesji.
@@ -66,11 +70,11 @@ Mapa hordy ładuje się na żądanie: `/krux-mod:krux-horda`.
 
 ## Animacje
 
-- **Kowal nad promptem.** Póki Claude pracuje, pasek pokazuje pikselowego orka, opis bieżącej czynności i licznik uderzeń. Przy `Edit` i `Write` ork kuje stal, przy `Grep` świeci pochodnią, przy `Glob` wypatruje z krzaka, przy `Read` sięga po zwój, przy planie kreśli mapę, przy sieci i zewnętrznych narzędziach MCP wysyła kruka, przy `AskUserQuestion` drapie się pod znakiem zapytania, przy `Agent` dmie w róg. Własne narzędzie `mcp__krux-mod__watki` zachowuje scenę planowania. Przy `Bash` scena i podpis wynikają z rodzaju komendy, tej samej co w kronice: testy mają próbę stali (także `make test`, `uv run pytest`, `pnpm vitest`), commit i push pieczęć, budowanie piec, rozbiórka dynamit, odczyty i ślady gita pochodnię, instalowanie i pozostałe komendy kilof; odczyt na przedzie łańcucha (`ls && ./deploy.sh`) nie udaje zaglądania. Strumień odpowiedzi zmienia scenę także pomiędzy narzędziami: myślenie uruchamia dumanie, tekst pisanie, a początek wywołania narzędzia jego scenę; przy `Bash` scena czeka na komendę, zamiast zgadywać kilof. Narzędzia silnika też mają swoje sceny: lista zadań mapę, wiadomość do agenta kruka, czytanie wyników z tła zwój. Każda scena ma co najmniej 3 różne czynności. Scena pozostaje przez co najmniej 1,5 s; przy zmianie rekwizyt schodzi 2× szybciej, nadal przez odwrócone wejście. Narzędzie zawsze robi Krux; kumpel pojawia się tylko przy prawdziwym subagencie.
+- **Kowal nad promptem.** Póki Claude pracuje, pasek pokazuje pikselowego orka i opis bieżącej czynności. Przy `Edit` i `Write` ork kuje stal, przy `Grep` świeci pochodnią, przy `Glob` wypatruje z krzaka, przy `Read` sięga po zwój, przy planie kreśli mapę, przy sieci i zewnętrznych narzędziach MCP wysyła kruka, przy `AskUserQuestion` drapie się pod znakiem zapytania, przy `Agent` dmie w róg. Własne narzędzie `mcp__krux-mod__watki` zachowuje scenę planowania. Przy `Bash` scena i podpis wynikają z rodzaju komendy, tej samej co w kronice: testy mają próbę stali (także `make test`, `uv run pytest`, `pnpm vitest`), commit i push pieczęć, budowanie piec, rozbiórka dynamit, odczyty i ślady gita pochodnię, instalowanie i pozostałe komendy kilof; odczyt na przedzie łańcucha (`ls && ./deploy.sh`) nie udaje zaglądania. Strumień odpowiedzi zmienia scenę także pomiędzy narzędziami: myślenie uruchamia dumanie, tekst pisanie, a początek wywołania narzędzia jego scenę; przy `Bash` scena czeka na komendę, zamiast zgadywać kilof. Narzędzia silnika też mają swoje sceny: lista zadań mapę, wiadomość do agenta kruka, czytanie wyników z tła zwój. Każda scena ma co najmniej 3 różne czynności. Scena pozostaje przez co najmniej 1,5 s; przy zmianie rekwizyt schodzi 2× szybciej, nadal przez odwrócone wejście. Narzędzie zawsze robi Krux; kumpel pojawia się tylko przy prawdziwym subagencie.
 - **Horda na scenie i humory.** Kumpel wbiega z prawej w swoim fartuchu i wykonuje czynności wynikające z własnych narzędzi oraz strumienia myślenia i odpowiedzi. Grom nosi hełm, Niuch ma wydłużony nos, Ochra pędzel, Lont tlący się lont. Po zakończeniu kumpel zwija meldunek, odkłada rekwizyt, rzuca Kruxowi zwój, potem maszeruje w prawo. Stojący Krux łapie zwój dłonią i chowa pod fartuch; zwój leci za głowami, nigdy przez oczy. Zniknięcie z listy aktywnych agentów bez zdarzenia zakończenia nie uruchamia rzutu. Gdy Krux czeka na wyniki hordy, leży na szezlongu z kuflem i nie wraca do rogu, kiedy kumpel oddaje zwój. Pas ma stałą wysokość i szerokość. Dymek nad ostatnim mówiącym orkiem odsłania po 3 znaki co 150 ms. Humory zmieniają oczy i brwi, a wynik roboty wywołuje też reakcję na płótnie: zielone testy złote iskry, czerwone robaka, udane budowanie błysk stali, nieudane sadzę, commit pieczęć, rozbiórka wybuch, zawał spadające kamienie. Krux i kumpel zmieniają też postawę: przysiad, uniesiona ręka, przydeptanie robaka albo osłona przed zawałem. Pozy leżące, siedzące i pochylone zachowują dotychczasowy ruch oraz rekwizyty: Krux na szezlongu czy w fotelu nie zrywa się na reakcję. W czynności z kanarkiem faktyczny wynik testów wywołuje śpiew i ruch skrzydeł albo opadnięcie ptaka na żerdź. Kumpel reaguje na własną robotę.
-- **Dłuższa praca i spoczynek.** Po 10 s pojedynczej aktywności pojawia się pot, po 30 s ork okresowo ociera czoło. Kolejne narzędzie lub faza odpowiedzi zaczyna odliczanie od nowa. Gdy Claude skończy, ork stoi przy kowadle, a podpis podaje uderzenia z ostatniej tury i całej sesji. Po 30 s bezczynności Krux zamyka oczy i pokazuje runę snu. `/krux kowal off` pozostawia pasek tylko na czas pracy.
+- **Dłuższa praca i spoczynek.** Po 10 s pojedynczej aktywności pojawia się pot, po 30 s ork okresowo ociera czoło. Kolejne narzędzie lub faza odpowiedzi zaczyna odliczanie od nowa. Gdy Claude skończy, ork stoi przy kowadle, a podpis pokazuje stan spoczynku. Po 30 s bezczynności Krux zamyka oczy i pokazuje runę snu. `/krux kowal off` pozostawia pasek tylko na czas pracy.
 - **Panel `/krux`.** Większa kuźnia z paleniskiem, w którym płonie ogień, przełączniki trybów i horda.
-- **Sztolnia.** Panel obok transkryptu (w pełnym ekranie dokuje się z prawej) ze stanem roboty: plan z listy zadań (`✓` zrobione, `▸` w toku, `·` czeka), ostatni przebieg testów z liczbami i nazwami padających, orkowie, którzy jeszcze biegają (zadanie, czas, ostatnie narzędzie), oraz zapełnienie kontekstu, okna limitów i koszt sesji. Diffu i drzewa zmian nie dubluje: te daje `/diff` Claude Code. Krzyżyk zamyka panel na stałe, wraca przez `/krux sztolnia`.
+- **Sztolnia.** Panel obok transkryptu (w pełnym ekranie dokuje się z prawej) ze stanem roboty: plan z listy zadań (`✓` zrobione, `▸` w toku, `·` czeka), ostatni ukończony przebieg testów z liczbami i nazwami padających, gotowość do commita, otwarte wątki, stan repo i commity, orkowie, którzy jeszcze biegają (zadanie, czas, ostatnie narzędzie), oraz zapełnienie kontekstu, okna limitów i koszt sesji. Diffu i drzewa zmian nie dubluje: te daje `/diff` Claude Code. Krzyżyk zamyka panel na stałe, wraca przez `/krux sztolnia`.
 - **Spinner.** Zamiast angielskich słówek: „Dumać”, „Skrobać runy”; przy pracy narzędzia słowo idzie za sceną, także rodzajem komendy `Bash` („Kopać” przy kopaniu, „Węszyć” przy szukaniu).
 - **Stopka.** Etykiety `krux`, `konkret`, `flow` obok trybów Claude Code.
 
@@ -93,16 +97,19 @@ Okna zgody na narzędzia obsługuje silnik Claude Code. Mod nie podłącza `tool
 
 Poprawność, bezpieczeństwo i wymagany format wyprzedzają głos. Liczby, wersje, ścieżki, komendy i komunikaty błędów idą dosłownie. Kod, JSON, commit messages i opisy PR pozostają neutralne. Przed ruchem nieodwracalnym Krux przechodzi na pełne zdania: warunek, skutek, droga odwrotu.
 
-Mod to kod uruchamiany z uprawnieniami użytkownika. Ten czyta trzy pliki z `voice/`, ustawienia (`prefersReducedMotion`), listę komend, historię sesji (`$.session.messages`, do odtworzenia kroniki i tablicy po wznowieniu), zużycie kontekstu i limitów (`$.session.usage`) oraz listę agentów (`$.agent.list`). Uruchamia dwie komendy, obie tylko do odczytu: `git status` (stan repo w Sztolni) i `git log -n 10` (tematy 10 ostatnich commitów w panelu). Rejestruje jedno narzędzie dla modelu, `mcp__krux-mod__watki`: otwarte wątki tablicy, trzymane w stanie sesji. Pisze wyłącznie do własnego magazynu `$.store` (tryby) i stanu sesji. Nie wysyła niczego poza sesję. Persona i kotwica głosu trafiają do promptu modelu, tak jak reszta sesji, więc każda tura kosztuje trochę więcej tokenów. Pełna lista: `claude plugin validate .`.
+Mod to kod uruchamiany z uprawnieniami użytkownika. Ten czyta trzy pliki z `voice/`, ustawienia (`prefersReducedMotion`), listę komend, historię sesji (`$.session.messages`, do odtworzenia kroniki i tablicy po wznowieniu), zużycie kontekstu i limitów (`$.session.usage`) oraz listę agentów (`$.agent.list`). Uruchamia do pięciu komend, wszystkich tylko do odczytu: `git status` (stan repo), `git log -n 10` (ostatnie commity), `git diff --check` i `git diff --cached --check` (białe znaki w drzewie roboczym i indeksie) oraz `git rev-list @{upstream}..HEAD` (niewypchnięte commity, gdy repo ma upstream). Rejestruje jedno narzędzie dla modelu, `mcp__krux-mod__watki`: otwarte wątki tablicy, trzymane w stanie sesji. Pisze wyłącznie do własnego magazynu `$.store` (tryby) i stanu sesji. Nie wysyła niczego poza sesję. Persona i kotwica głosu trafiają do promptu modelu, tak jak reszta sesji, więc każda tura kosztuje trochę więcej tokenów. Pełna lista: `claude plugin validate .`.
 
 ## Rozwój
 
 ```bash
 claude plugin validate .
 claude plugin test .
+node --test tests/scripts-regression.mjs
+tsc -p .
+git diff --check
 ```
 
-Sprawdzone na Claude Code 2.1.288. API modów jest we wczesnym dostępie i może się zmienić między wersjami.
+Sprawdzone na Claude Code 2.1.293. API modów jest we wczesnym dostępie i może się zmienić między wersjami.
 
 ## Pomiar głosu
 

@@ -62,7 +62,7 @@ test('a junk input changes nothing, long texts are cut, the board keeps the newe
 })
 
 test('after a resume the threads come back from the tool calls in history, failed calls skipped', () => {
-  const use = (input: Record<string, unknown>, isError?: true) => ({ tool: THREAD_TOOL_NAME, input, ...(isError ? { isError } : {}) })
+  const use = (input: Record<string, unknown>, isError?: true) => ({ tool: THREAD_TOOL_NAME, input, text: 'ok', ...(isError ? { isError } : {}) })
   const history = [
     { role: 'assistant' as const, text: '', toolUses: [use({ open: [{ text: 'push czeka' }, { text: 'tsc' }] }), { tool: 'Read', input: {} }] },
     { role: 'assistant' as const, text: '', toolUses: [use({ close: [2] }), use({ open: [{ text: 'zepsute' }] }, true)] },
@@ -74,12 +74,24 @@ test('truncated history replays recorded thread ids and unknown closes cannot hi
   const use = (input: Record<string, unknown>, text?: string) => ({ tool: THREAD_TOOL_NAME, input, text })
   const history = [
     { role: 'assistant' as const, text: '', toolUses: [use({ open: [{ text: 'nowy' }] }, 'Open threads:\n#99 [risk] stary\n#100 [todo] nowy')] },
-    { role: 'assistant' as const, text: '', toolUses: [use({ close: [1, 100, 999] })] },
+    { role: 'assistant' as const, text: '', toolUses: [use({ close: [1, 100, 999] }, 'ok')] },
   ]
   const threads = replayThreads(history)
   expect(threads.items).toEqual([{ id: 99, kind: 'risk', text: 'stary' }])
   expect(threads.next).toBe(101)
   expect(threadsAfter(threads, { open: [{ text: 'dalej' }] }).items[1]!.id).toBe(101)
+})
+
+test('in-flight thread opens and closes cannot change confirmed risks after resume', () => {
+  const confirmed = { role: 'assistant' as const, text: '', toolUses: [
+    { tool: THREAD_TOOL_NAME, input: {}, text: 'Open threads:\n#99 [risk] Keep risk' },
+  ] }
+  const expected = { next: 100, items: [{ id: 99, kind: 'risk', text: 'Keep risk' }] }
+  for (const input of [{ close: [99] }, { open: [{ text: 'Not executed' }] }]) {
+    expect(replayThreads([confirmed, { role: 'assistant', text: '', toolUses: [
+      { tool: THREAD_TOOL_NAME, input },
+    ] }])).toEqual(expected)
+  }
 })
 
 test('a recorded empty report retains the highest replayed id', () => {
