@@ -260,19 +260,27 @@ def metrics_for(text):
 # ---- API ----
 
 def client():
+    # timeout=60 s: serwer potrafi trzymać połączenie godzinami bez błędu. Lepiej wysiąść na
+    # timeout i próbować z innej sesji niż wisieć na hang'u.
     return OpenAI(base_url=BASE_URL, api_key=os.environ["OLLAMA_API_KEY"],
-                  timeout=90, max_retries=2)
+                  timeout=60, max_retries=1)
 
 
-def chat(c, messages, temperature=0.7, max_tokens=6000):
-    """DeepSeek v4.1-flash to model rozumujący: większość completion_tokens idzie w
-    ukryte rozumowanie, zanim padnie pierwsze słowo odpowiedzi. Budżet musi mieć
-    zapas; finish_reason=length przy pustym content to zjedzone myślenie, nie brak odpowiedzi."""
+def chat(c, messages, temperature=0.7, max_tokens=4000):
     started = time.time()
     usage = None
+    last_err = None
     for attempt in range(3):
-        r = c.chat.completions.create(model=MODEL, messages=messages,
-                                      max_tokens=max_tokens, temperature=temperature)
+        try:
+            # Fresh client per wywołanie — reuse connection potrafi zawieszać ollama cloud.
+            cc = OpenAI(base_url=BASE_URL, api_key=os.environ["OLLAMA_API_KEY"],
+                        timeout=45, max_retries=0)
+            r = cc.chat.completions.create(model=MODEL, messages=messages,
+                                          max_tokens=max_tokens, temperature=temperature)
+        except Exception as e:
+            last_err = f"{type(e).__name__}: {e}"
+            time.sleep(2 + attempt * 2)
+            continue
         text = (r.choices[0].message.content or "").strip()
         usage = r.usage
         if text:
@@ -281,7 +289,8 @@ def chat(c, messages, temperature=0.7, max_tokens=6000):
         time.sleep(1.0 + attempt)
     return {"text": "", "inTok": usage.prompt_tokens if usage else 0,
             "outTok": usage.completion_tokens if usage else 0,
-            "latencyMs": int((time.time() - started) * 1000), "retries": attempt, "empty": True}
+            "latencyMs": int((time.time() - started) * 1000), "retries": attempt,
+            "empty": True, "error": last_err}
 
 
 
