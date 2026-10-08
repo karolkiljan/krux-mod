@@ -306,6 +306,7 @@ def chat(c, messages, temperature=0.7, max_tokens=4000, model=None):
     started = time.time()
     usage = None
     last_err = None
+    last_finish = None
     for attempt in range(3):
         try:
             # Fresh client per wywołanie — reuse connection potrafi zawieszać ollama cloud.
@@ -315,18 +316,20 @@ def chat(c, messages, temperature=0.7, max_tokens=4000, model=None):
                                           max_tokens=max_tokens, temperature=temperature)
         except Exception as e:
             last_err = f"{type(e).__name__}: {e}"
-            time.sleep(2 + attempt * 2)
+            time.sleep(3 + attempt * 3)
             continue
         text = (r.choices[0].message.content or "").strip()
         usage = r.usage
+        last_finish = r.choices[0].finish_reason
         if text:
             return {"text": text, "inTok": usage.prompt_tokens, "outTok": usage.completion_tokens,
-                    "latencyMs": int((time.time() - started) * 1000), "retries": attempt}
+                    "latencyMs": int((time.time() - started) * 1000), "retries": attempt,
+                    "finish": last_finish}
         time.sleep(1.0 + attempt)
     return {"text": "", "inTok": usage.prompt_tokens if usage else 0,
             "outTok": usage.completion_tokens if usage else 0,
             "latencyMs": int((time.time() - started) * 1000), "retries": attempt,
-            "empty": True, "error": last_err}
+            "empty": True, "finish": last_finish, "error": last_err}
 
 
 
@@ -398,12 +401,15 @@ def mode_matrix(args):
                     row = {"model": model, "instruction": iname, "promptType": pname, "run": run,
                            "reply": res["text"], "inTok": res["inTok"], "outTok": res["outTok"],
                            "latencyMs": res["latencyMs"], "empty": res.get("empty", False),
+                           "finish": res.get("finish"), "retries": res.get("retries"),
+                           "error": res.get("error"),
                            **metrics_for(res["text"], source=content)}
                     rows.append(row)
                     note(row)
                     done += 1
+                    info = f" EMPTY[{res.get('finish') or res.get('error') or '?'}]" if res.get("empty") else ""
                     print(f"  [{model}] {iname} {pname} r{run + 1}: {res['outTok']} tok out, "
-                          f"{res['latencyMs']} ms{' EMPTY' if res.get('empty') else ''} "
+                          f"{res['latencyMs']} ms{info} "
                           f"({done}/{n_total * len(args.models)})", file=sys.stderr, flush=True)
         agg = {iname: aggregate([r for r in rows if r["instruction"] == iname])
                for iname in MATRIX_INSTRUCTIONS}
@@ -435,16 +441,18 @@ def mode_rewrite(args):
                 for run in range(args.runs):
                     content = f"{instruction}\n\n{item}"
                     res = chat(c, [{"role": "user", "content": content}],
-                               temperature=args.temperature, max_tokens=4000, model=model)
+                               temperature=args.temperature, max_tokens=8000, model=model)
                     row = {"model": model, "rewrite": rname, "item": idx, "run": run, "source": item,
                            "reply": res["text"], "inTok": res["inTok"], "outTok": res["outTok"],
                            "latencyMs": res["latencyMs"], "empty": res.get("empty", False),
+                           "finish": res.get("finish"), "retries": res.get("retries"),
+                           "error": res.get("error"),
                            **metrics_for(res["text"], source=content)}
                     rows.append(row)
                     note(row)
+                    info = f" EMPTY[{res.get('finish') or res.get('error') or '?'}]" if res.get("empty") else ""
                     print(f"  [{model}] {rname} item {idx} r{run + 1}: {res['outTok']} tok out, "
-                          f"{res['latencyMs']} ms{' EMPTY' if res.get('empty') else ''}", file=sys.stderr,
-                          flush=True)
+                          f"{res['latencyMs']} ms{info}", file=sys.stderr, flush=True)
             print(f"  {rname}: gotowe", file=sys.stderr, flush=True)
         agg = {rname: aggregate([r for r in rows if r["rewrite"] == rname])
                for rname in REWRITE_INSTRUCTIONS}
