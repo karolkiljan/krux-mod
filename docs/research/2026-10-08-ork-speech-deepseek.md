@@ -77,6 +77,14 @@ Orkowa forma ma **wyższą tokenowość na słowo** (2,69 vs 2,19 — „widzie�
 
 `matrix` (8 typów wypowiedzi × 3 instrukcje × 3 rundy) upadł w połowie na zawieszeniu ollama cloud (połączenie ESTABLISHED, rchar zamrożone, brak błędu). Wniosek: symulować **sekwencyjnie**, z twardym timeoutem per wywołanie, a wywołania rozpiąć po czasie. Poprawka w `chat()` z retry i pustym contentem w miejscu; pełny przebieg do dokończenia w następnej sesji.
 
+## Roleplay drift bez pełnego kontekstu
+
+Szybki test (`Przepisz po orkowemu (bezokoliczniki, bez 'jest', krótkie zdania): <zdanie>`) — bez osoby Morry, bez fixture, bez `persona.md` w systemie — dał:
+- „Bud się wywala z TypeError na linii 42, WAAAGH!" — model schodzi w **generyczny orkowy roleplay** (Warhammer), nie w mowę Kruxa.
+- Jedno wywołanie w 3 wyszło na `finish_reason=length` z pustym contentem (budżet 4000, wszystko poszło w reasoning).
+
+**Wniosek:** deepseek-v4.1-flash bez `persona.md` **nie wie, co to Krux**. Sama fraza „mowa orka" odpala stereotypy, nie kontrakt. Wszystkie warianty sesji muszą mieć `persona.md` w system prompt — inaczej mierzymy wikifeeder, nie nasz głos.
+
 ## Metryki jakościowe — zamknięcia i wstawki o hordzie (port z `voice-bench`)
 
 | Wariant | powtórz. zamknięcia | consentClosings | tury z hordą | powtórz. otwarcia hordy |
