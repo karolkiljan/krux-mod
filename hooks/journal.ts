@@ -6,6 +6,7 @@ import type { BoxProps, ElementConstructor, RenderElement, TextProps } from 'cla
 import type { KruxJournal, KruxJournalEntry } from '../types'
 import { testLine, testPassed, testRunOf } from './board'
 import { isBackgroundToolCall } from './outcome'
+import { terminalText } from './terminal-text'
 import { SPEAKER_COLOR } from './sprites'
 import { describeTool, workOf } from './voice'
 
@@ -152,6 +153,8 @@ function oneLine(text: string): string {
   return text.replace(/\s+/gu, ' ').trim()
 }
 
+const TOOL_NAME_MAX = 16
+
 function columns(width: number): number {
   return Math.max(1, Number.isFinite(width) ? Math.floor(width) : 1)
 }
@@ -185,7 +188,8 @@ export function journalTree({ Box, Text }: JournalElements, journal: KruxJournal
           columnGap: 1,
           children: [
             Box({ flexShrink: 0, children: [Text({ ...outcomeColor(entry.ok), children: [markOf(entry.ok)] })] }),
-            Box({ flexShrink: 1, children: [Text({ wrap: 'truncate-end', children: [oneLine(entry.tool)] })] }),
+            // Nazwa narzędzia nie ustępuje długiemu celowi („Bash”, nie „Ba…”); długą nazwę MCP ucina limit.
+            Box({ flexShrink: 0, children: [Text({ wrap: 'truncate-end', children: [terminalText(oneLine(entry.tool), TOOL_NAME_MAX).text] })] }),
             Box({ flexGrow: 1, flexShrink: 1, minWidth: 0, children: [Text({ wrap: 'truncate-end', children: [oneLine(entry.target)] })] }),
             ...(entry.summary ? [Box({ flexShrink: 0, children: [Text({ dimColor: true, wrap: 'truncate-end', children: [oneLine(entry.summary)] })] })] : []),
             Box({ flexShrink: 0, children: [Text({ dimColor: true, children: [clock(entry.at, now)] })] }),

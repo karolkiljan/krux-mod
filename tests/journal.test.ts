@@ -258,6 +258,15 @@ test('long targets truncate and cannot push the clock or wrap a journal row', ()
   expect(texts(row).some(item => item.text === '+3 −2')).toBe(true)
 })
 
+test('a long target never shrinks the tool name, while a long MCP name has a cap', () => {
+  const root = draw([{ ...ENTRY, tool: 'Bash', target: 'git -C /Users/someone/RubymineProjects/krux-mod log' }], 40)
+  const tool = children(children(children(root)[0]!)[1]!)[1]!
+  expect(texts(tool)[0]!.text).toBe('Bash')
+  expect(tool.props.flexShrink).toBe(0)
+  const mcp = children(children(children(draw([{ ...ENTRY, tool: 'mcp__krux-mod__watki' }], 40))[0]!)[1]!)[1]!
+  expect(texts(mcp)[0]!.text).toBe('mcp__krux-mod__…')
+})
+
 test('journal uses the supplied fallback clock only for invalid stored timestamps', () => {
   const now = new Date(2026, 9, 7, 8, 9, 10).getTime()
   expect(texts(draw([{ ...ENTRY, at: Number.NaN }], 56, now)).at(-1)?.text).toBe('08:09:10')
