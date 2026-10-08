@@ -13,6 +13,7 @@ Użycie:
   python experiments/ork-sim/ork-sim.py session --variant anchor-full --runs 2
   python experiments/ork-sim/ork-sim.py matrix --runs 3
   python experiments/ork-sim/ork-sim.py rewrite --runs 3
+  --model: deepseek-v4.1-flash (domyślnie) albo glm-5.3-flash
 """
 import argparse
 import json
@@ -29,6 +30,7 @@ from openai import OpenAI
 HERE = Path(__file__).resolve().parent
 RESULTS = HERE / "results"
 MODEL = "deepseek-v4.1-flash"
+MODELS = ["deepseek-v4.1-flash", "glm-5.3-flash"]
 BASE_URL = "https://ollama.com/v1"
 
 # ---- Źródła moda ----
@@ -240,10 +242,37 @@ def sentence_lengths(text):
     return [word_count(s) for s in re.split(r'(?<=[.!?])\s+', prose) if word_count(s) > 1]
 
 
-def metrics_for(text):
+CODE_TOKEN = re.compile(r'`([^`\n]+)`')
+
+
+def fidelity_tokens(text, source_text):
+    """Tokeny w backtickach: wynalezione (w odpowiedzi, poza materiałem) i zgubione (w materiale, poza odpowiedzią)."""
+    src_lower = (source_text or "").lower()
+    out_lower = (text or "").lower()
+    invented, dropped = [], []
+    seen = set()
+    for t in CODE_TOKEN.findall(text or ""):
+        t = t.strip()
+        if not t or t.lower() in seen:
+            continue
+        seen.add(t.lower())
+        if t.lower() not in src_lower:
+            invented.append(t)
+    seen = set()
+    for t in CODE_TOKEN.findall(source_text or ""):
+        t = t.strip()
+        if not t or t.lower() in seen:
+            continue
+        seen.add(t.lower())
+        if t.lower() not in out_lower:
+            dropped.append(t)
+    return invented[:6], dropped[:6]
+
+
+def metrics_for(text, source=None):
     words = word_count(plain_prose(text))
     lengths = sentence_lengths(text)
-    return {
+    m = {
         "words": words,
         "voiceHits": voice_hits(text),
         "voiceDensityPerThousand": round(1000 * voice_hits(text) / words, 2) if words else 0,
@@ -255,6 +284,13 @@ def metrics_for(text):
         "avgSentenceWords": round(sum(lengths) / len(lengths), 2) if lengths else None,
         "shortSentenceRatio": round(sum(1 for n in lengths if n <= 8) / len(lengths), 3) if lengths else None,
     }
+    if source is not None:
+        invented, dropped = fidelity_tokens(text, source)
+        m["inventedTokens"] = invented
+        m["inventedCount"] = len(invented)
+        m["droppedTokens"] = dropped
+        m["droppedCount"] = len(dropped)
+    return m
 
 
 # ---- API ----
@@ -266,7 +302,7 @@ def client():
                   timeout=60, max_retries=1)
 
 
-def chat(c, messages, temperature=0.7, max_tokens=4000):
+def chat(c, messages, temperature=0.7, max_tokens=4000, model=None):
     started = time.time()
     usage = None
     last_err = None
@@ -274,8 +310,8 @@ def chat(c, messages, temperature=0.7, max_tokens=4000):
         try:
             # Fresh client per wywołanie — reuse connection potrafi zawieszać ollama cloud.
             cc = OpenAI(base_url=BASE_URL, api_key=os.environ["OLLAMA_API_KEY"],
-                        timeout=45, max_retries=0)
-            r = cc.chat.completions.create(model=MODEL, messages=messages,
+                        timeout=75, max_retries=0)
+            r = cc.chat.completions.create(model=model or MODEL, messages=messages,
                                           max_tokens=max_tokens, temperature=temperature)
         except Exception as e:
             last_err = f"{type(e).__name__}: {e}"
@@ -294,9 +330,23 @@ def chat(c, messages, temperature=0.7, max_tokens=4000):
 
 
 
-def save(name, payload):
-    ts = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
-    out = RESULTS / f"{ts}-{name}.json"
+def _stamp():
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H-%M-%S")
+
+
+def partial_writer(stamp, name):
+    RESULTS.mkdir(parents=True, exist_ok=True)
+    path = RESULTS / f"{stamp}-{name}.partial.jsonl"
+
+    def note(row):
+        with path.open("a", encoding="utf-8") as f:
+            f.write(json.dumps(row, ensure_ascii=False, default=str) + "\n")
+
+    return path, note
+
+
+def save(name, payload, stamp=None):
+    out = RESULTS / f"{stamp or _stamp()}-{name}.json"
     RESULTS.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(payload, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
     return out
@@ -316,7 +366,7 @@ def mode_session(args):
             if variant["anchor"] and turn % anchor_every == 0:
                 body = f"{ANCHORS[variant['anchor']]}\n\n{body}"
             messages.append({"role": "user", "content": body})
-            res = chat(c, messages, temperature=args.temperature)
+            res = chat(c, messages, temperature=args.temperature, model=args.models[0])
             messages.append({"role": "assistant", "content": res["text"]})
             rows.append({"run": run, "turn": turn, "prompt": prompt, "reply": res["text"],
                          "inTok": res["inTok"], "outTok": res["outTok"], "latencyMs": res["latencyMs"],
@@ -324,8 +374,8 @@ def mode_session(args):
             print(f"  tura {turn + 1}/12: {res['outTok']} tok out, "
                   f"{rows[-1]['infinitiveHits']} bezok., {rows[-1]['voiceHits']} głos", file=sys.stderr)
     agg = aggregate(rows)
-    out = save(f"session-{args.variant}-e{args.anchor_every}", {"mode": "session",
-                   "variant": args.variant, "anchor_every": args.anchor_every,
+    out = save(f"session-{args.models[0]}-{args.variant}-e{args.anchor_every}", {"mode": "session",
+                   "model": args.models[0], "variant": args.variant, "anchor_every": args.anchor_every,
                    "temperature": args.temperature, "runs": args.runs, "rows": rows, "agg": agg})
     print(f"OK {out}")
     print(json.dumps(agg, ensure_ascii=False, indent=2))
@@ -333,65 +383,75 @@ def mode_session(args):
 
 def mode_matrix(args):
     c = client()
-    rows = []
-    n_total = len(MATRIX_INSTRUCTIONS) * len(MATRIX_PROMPTS) * args.runs
-    done = 0
-    for iname, instruction in MATRIX_INSTRUCTIONS.items():
-        for pname, prompt in MATRIX_PROMPTS.items():
-            for run in range(args.runs):
-                content = f"{instruction}\n\n{prompt}" if instruction else prompt
-                for attempt in range(4):
-                    res = chat(c, [{"role": "user", "content": content}], temperature=args.temperature)
-                    if res["text"]:
-                        break
-                    time.sleep(2 + 2 * attempt)
-                rows.append({"instruction": iname, "promptType": pname, "run": run,
-                             "reply": res["text"], "inTok": res["inTok"], "outTok": res["outTok"],
-                             "latencyMs": res["latencyMs"], "empty": res.get("empty", False),
-                             **metrics_for(res["text"])})
-                done += 1
-        # po każdej instrukcji: prosty zrzut postępu
-        print(f"  {iname}: {done}/{n_total}", file=sys.stderr)
-    agg = {}
-    for iname in MATRIX_INSTRUCTIONS:
-        sel = [r for r in rows if r["instruction"] == iname]
-        agg[iname] = aggregate(sel)
-    out = save("matrix", {"mode": "matrix", "temperature": args.temperature,
-                          "runs": args.runs, "rows": rows, "agg": agg})
-    print(f"OK {out}")
-    print(json.dumps(agg, ensure_ascii=False, indent=2))
+    for model in args.models:
+        stamp = _stamp()
+        _, note = partial_writer(stamp, f"matrix-{model}")
+        rows = []
+        n_total = len(MATRIX_INSTRUCTIONS) * len(MATRIX_PROMPTS) * args.runs
+        done = 0
+        for iname, instruction in MATRIX_INSTRUCTIONS.items():
+            for pname, prompt in MATRIX_PROMPTS.items():
+                for run in range(args.runs):
+                    content = f"{instruction}\n\n{prompt}" if instruction else prompt
+                    res = chat(c, [{"role": "user", "content": content}],
+                               temperature=args.temperature, model=model)
+                    row = {"model": model, "instruction": iname, "promptType": pname, "run": run,
+                           "reply": res["text"], "inTok": res["inTok"], "outTok": res["outTok"],
+                           "latencyMs": res["latencyMs"], "empty": res.get("empty", False),
+                           **metrics_for(res["text"], source=content)}
+                    rows.append(row)
+                    note(row)
+                    done += 1
+                    print(f"  [{model}] {iname} {pname} r{run + 1}: {res['outTok']} tok out, "
+                          f"{res['latencyMs']} ms{' EMPTY' if res.get('empty') else ''} "
+                          f"({done}/{n_total * len(args.models)})", file=sys.stderr, flush=True)
+        agg = {iname: aggregate([r for r in rows if r["instruction"] == iname])
+               for iname in MATRIX_INSTRUCTIONS}
+        out = save(f"matrix-{model}", {"mode": "matrix", "model": model,
+                   "temperature": args.temperature, "runs": args.runs, "rows": rows, "agg": agg},
+                   stamp=stamp)
+        print(f"OK {out}", flush=True)
+
+
+REWRITE_INSTRUCTIONS = {
+    "r-ork": ("Przepisz podane zdanie na mowę orka Kruxa. Zasady: Morra trzecią osobą; "
+              "bezokolicznik zamiast form osobowych (Robak siedzieć, nie siedzi); "
+              "bez „jest/są”; zdania krótkie; negacja, liczby, ścieżki, komunikaty błędów dosłownie; "
+              "słownik górniczy: robak, smród, wykuć, zawał, sztolnia, węszyć. "
+              "Odpowiedz wyłącznie przepisanym tekstem, bez komentarza."),
+    "r-ork-min": ("Przepisz na mowę orka: bezokoliczniki, bez „jest”, krótko. "
+                  "Odpowiedz wyłącznie przepisanym tekstem."),
+}
 
 
 def mode_rewrite(args):
     c = client()
-    instructions = {
-        "r-ork": ("Przepisz podane zdanie na mowę orka Kruxa. Zasady: Morra trzecią osobą; "
-                  "bezokolicznik zamiast form osobowych (Robak siedzieć, nie siedzi); "
-                  "bez „jest/są”; zdania krótkie; negacja, liczby, ścieżki, komunikaty błędów dosłownie; "
-                  "słownik górniczy: robak, smród, wykuć, zawał, sztolnia, węszyć. "
-                  "Odpowiedz wyłącznie przepisanym tekstem, bez komentarza."),
-        "r-ork-min": ("Przepisz na mowę orka: bezokoliczniki, bez „jest”, krótko. "
-                      "Odpowiedz wyłącznie przepisanym tekstem."),
-    }
-    rows = []
-    for rname, instruction in instructions.items():
-        for idx, item in enumerate(REWRITE_ITEMS):
-            for run in range(args.runs):
-                res = chat(c, [{"role": "user", "content": f"{instruction}\n\n{item}"}],
-                           temperature=args.temperature, max_tokens=4000)
-                rows.append({"rewrite": rname, "item": idx, "run": run, "source": item,
-                             "reply": res["text"], "inTok": res["inTok"], "outTok": res["outTok"],
-                             "latencyMs": res["latencyMs"], "empty": res.get("empty", False),
-                             **metrics_for(res["text"])})
-        print(f"  {rname}: gotowe", file=sys.stderr)
-    agg = {}
-    for rname in instructions:
-        sel = [r for r in rows if r["rewrite"] == rname]
-        agg[rname] = aggregate(sel)
-    out = save("rewrite", {"mode": "rewrite", "temperature": args.temperature,
-                           "runs": args.runs, "rows": rows, "agg": agg})
-    print(f"OK {out}")
-    print(json.dumps(agg, ensure_ascii=False, indent=2))
+    for model in args.models:
+        stamp = _stamp()
+        _, note = partial_writer(stamp, f"rewrite-{model}")
+        rows = []
+        for rname, instruction in REWRITE_INSTRUCTIONS.items():
+            for idx, item in enumerate(REWRITE_ITEMS):
+                for run in range(args.runs):
+                    content = f"{instruction}\n\n{item}"
+                    res = chat(c, [{"role": "user", "content": content}],
+                               temperature=args.temperature, max_tokens=4000, model=model)
+                    row = {"model": model, "rewrite": rname, "item": idx, "run": run, "source": item,
+                           "reply": res["text"], "inTok": res["inTok"], "outTok": res["outTok"],
+                           "latencyMs": res["latencyMs"], "empty": res.get("empty", False),
+                           **metrics_for(res["text"], source=content)}
+                    rows.append(row)
+                    note(row)
+                    print(f"  [{model}] {rname} item {idx} r{run + 1}: {res['outTok']} tok out, "
+                          f"{res['latencyMs']} ms{' EMPTY' if res.get('empty') else ''}", file=sys.stderr,
+                          flush=True)
+            print(f"  {rname}: gotowe", file=sys.stderr, flush=True)
+        agg = {rname: aggregate([r for r in rows if r["rewrite"] == rname])
+               for rname in REWRITE_INSTRUCTIONS}
+        out = save(f"rewrite-{model}", {"mode": "rewrite", "model": model,
+                   "temperature": args.temperature, "runs": args.runs, "rows": rows, "agg": agg},
+                   stamp=stamp)
+        print(f"OK {out}", flush=True)
 
 
 MODES = {"session": mode_session, "matrix": mode_matrix, "rewrite": mode_rewrite}
@@ -425,10 +485,14 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("mode", choices=MODES)
     p.add_argument("--variant", default="persona", choices=VARIANTS_SESSION)
+    p.add_argument("--model", default=MODEL, choices=MODELS)
+    p.add_argument("--models", nargs="*", default=None, choices=MODELS)
     p.add_argument("--runs", type=int, default=1)
     p.add_argument("--temperature", type=float, default=0.7)
     p.add_argument("--anchor-every", type=int, default=1)
     args = p.parse_args()
+    if not args.models:
+        args.models = [args.model]
     MODES[args.mode](args)
 
 
