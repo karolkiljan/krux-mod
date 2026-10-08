@@ -73,9 +73,46 @@ Orkowa forma ma **wyższą tokenowość na słowo** (2,69 vs 2,19 — „widzie�
 
 **Wniosek praktyczny:** optymalizować pod *liczbę słów*, nie pod gramatykę. „Plik pusty" kosztuje 4 tokeny, „Plik jest pusty" — 7. Ale „Krux widzieć plik" ≈ „Widzę plik" (oba ~6), więc sama zmiana formy osobowej nie daje zysku — dopiero skrócenie sensownego zdania daje.
 
-## Matrix — przerwany przy i-default 24/72, patrz dziennik sesji
+## Matrix — pełne wyniki (8 typów × 3 instrukcje × 3 rundy, oba modele)
 
-`matrix` (8 typów wypowiedzi × 3 instrukcje × 3 rundy) upadł w połowie na zawieszeniu ollama cloud (połączenie ESTABLISHED, rchar zamrożone, brak błędu). Wniosek: symulować **sekwencyjnie**, z twardym timeoutem per wywołanie, a wywołania rozpiąć po czasie. Poprawka w `chat()` z retry i pustym contentem w miejscu; pełny przebieg do dokończenia w następnej sesji.
+Przebieg dokończony 2026-10-08/09: deepseek (72/72 bez błędów) + glm-5.3-flash (72/72, 2 komórki dorobione `regap.py` z budżetem 16k). Narzędzie: `experiments/ork-sim/ork-sim.py matrix --runs 3 --models deepseek-v4.1-flash glm-5.3-flash`. Surowe pliki: `results/*matrix-*.json`, sklejanie i tabele: `analyze.py`.
+
+| model | instr | n | out/odp | sł/odp | głos/1k | bezok/100 | cop/100 | 2os | avgSł | tok/sł | wynal. | puste |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| deepseek-v4.1-flash | i-default | 24 | 1702 | 143.0 | 2.6 | 0.84 | 1.02 | 60 | 10.3 | 11.91 | 64 | 0 |
+| deepseek-v4.1-flash | i-ork | 24 | 2565 | 34.1 | 184.4 | 22.95 | 0.00 | 0 | 3.1 | 75.16 | 0 | 0 |
+| deepseek-v4.1-flash | i-ork-terse | 24 | 1306 | 10.4 | 0.0 | 14.86 | 0.00 | 0 | 4.1 | 125.92 | 0 | 0 |
+| glm-5.3-flash | i-default | 24 | 1770 | 152.7 | 1.1 | 1.12 | 0.90 | 51 | 14.9 | 11.59 | 75 | 0 |
+| glm-5.3-flash | i-ork | 24 | 3042 | 91.1 | 191.2 | 15.00 | 0.00 | 0 | 4.2 | 33.40 | 24 | 0 |
+| glm-5.3-flash | i-ork-terse | 24 | 698 | 24.8 | 11.8 | 16.16 | 0.00 | 0 | 3.9 | 28.18 | 1 | 0 |
+
+**Wnioski cross-model:**
+
+1. **Kontrakt gramatyczny działa na obu modelach**: instrukcja orkowa znosi copulę do 0.00 i drugą osobę do 0 na obu; bezokoliczniki 15–23/100 słów. Ale sam bezokolicznik to nie „głos" — wariant `i-ork-terse` gubi słownik (deepseek 0.0/1k, glm 11.8/1k). **Klimat bierze się ze słownika, nie z gramatyki** — to bezpośrednia wskazówka dla dalszych wariantów.
+2. **glm-5.3-flash mówi „bardziej orkowo"**: gęstość głosu 191 vs 184/1k, ale za cenę objętości — 91 słów/odp vs 34 (deepseek jest zwięzły). glm rozciąga odpowiedzi (avgSł 4.2 vs 3.1) i częściej wplata „Krux" (3.17 vs 1.88/odp w pierwszym przebiegu).
+3. **`wynalazki` wymagają interpretacji**: metryka fidelity łapie tokeny kodu spoza fixture'u. U glm (24) to w większości **sensowne sugestie** (pg_dump, BEGIN/ROLLBACK przy ostrzeżeniu o DROP TABLE, `items?.map(...)` jako propozycja poprawki) — nie halucynacje. U deepseeka 0/64 — deepseek trzyma się materiału; w `i-default` oba modele „wynajdują" przykładowy kod, bo prompt tego wymaga.
+4. **tok/sł wyjaśnia profil modeli**: deepseek w trybie orkowym 75 tok/sł vs glm 33 — deepseek więcej myśli ukrytego (reasoning) i krócej pisze; glm pisze „na raz".
+
+## Rewrite — pełne wyniki (12 par × 2 instrukcje × 3 rundy, oba modele)
+
+Przebieg: deepseek 71/72 + regap 3 komórki; glm 72/72. Uwaga: **pierwsza próba (16:57/17:26) padła w całości na HTTP 429** — równoległy wątek OAuth wyczerpał limit konta ollama Pro (5h). To pitfall operacyjny: **wszystkie sesje tego konta dzielą jeden limit**; batch trzeba puszczać, gdy inne sesje nie żrą API.
+
+| model | instr | n | out/odp | sł/odp | głos/1k | bezok/100 | cop/100 | 2os | wynal. | zgub. | puste |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| deepseek-v4.1-flash | r-ork | 36 | 4722 | 17.2 | 212.0 | 19.42 | 0.00 | 0 | 0 | 0 | 0 |
+| deepseek-v4.1-flash | r-ork-min | 36 | 1606 | 13.1 | 0.0 | 19.07 | 0.00 | 6 | 0 | 0 | 0 |
+| glm-5.3-flash | r-ork | 36 | 2761 | 21.8 | 188.8 | 19.13 | 0.00 | 2 | 0 | 0 | 0 |
+| glm-5.3-flash | r-ork-min | 36 | 616 | 12.6 | 0.0 | 17.00 | 0.00 | 3 | 0 | 2 | 0 |
+
+**Czytanie:** oba modele trzymają gramatykę, a pełna instrukcja (`r-ork`) daje gęsty słownik (212/188 na 1k). Wariant skrócony (`r-ork-min`) systematycznie **gubi słownik** (0.0 u obu) i podnosi drugą osobę — czyli skrót „bezokoliczniki, bez jest, krótko" NIE wystarcza do wiarygodnego orka; słownik trzeba nazwać. Pojedyncze zguby (`return`, `src/render.js:42`) to miejsca, gdzie model skrócił cytat techniczny — do wyłapania, ale rzadkie.
+
+Przykładowe pary (deepseek, `r-ork`): „Naprawiłem walidację…" → „Krux wykuć sztolnię. Krux zaraz węszyć robaki. Krux dwóch jeszcze nie ruszać." — wiernie, bez straty danych.
+
+## Znane pułapki narzędzia (z tego przebiegu)
+
+- `deepseek-v4.1-flash` przy rewrite spala cały budżet na reasoning — przy 4000 tok wraca pusty content. Budżet 8000+ z retry; przy capie 16000 domyka (finish=stop).
+- `pgrep -f "ork-sim.py matrix"` w pętli-watcherze **self-matchuje** (dopasowuje własną komendę) — watcher nigdy nie kończy. Sprawdzać `pgrep -f` na wzorcu, który nie łapie siebie, albo użyć PID-a.
+- Wiersze puste (429/hang) mają `inTok=0, outTok=0`; po dodaniu pól `finish`/`error`/`retries` do wierszy diagnoza jest natychmiastowa.
 
 ## Roleplay drift bez pełnego kontekstu
 
@@ -123,9 +160,9 @@ Efekt: podaje reguły (jak w `anchor-rules`) i parę dla gramatyki (jak w `ancho
 
 ## Dalej (roboczo)
 
-- Przeprowadzić `matrix` na jednej maszynie sekwencyjnie z retry i twardym `timeout` per wywołanie (120 s). Następnie `rewrite` 12 par × 3 rundy.
-- Dodać metrykę **fidelity**: czy odpowiedź Kruxa nie fabulizuje hordy albo treść spoza fixture (`Concurrent::Map`, `Mutex`, `Stampede` pojawiają się w tury 6 w wariantach z kotwicą, ale fixture ich nie ma — model je *wynosi* z samego tekstu app.rb, co jest akceptowalne, ale warto zmierzyć procent faktów, o które mod nie pytał).
-- Na Claude A/B 2 na 2: obecna `VOICE_ANCHOR` vs wariant E powyżej (powinno obniżyć `repeatedClosings` przy zachowaniu bezokoliczników).
+- **Zrobione**: matrix i rewrite na obu modelach (sekcie wyżej). Fidelity jako metryka działa; przy interpretacji pamiętać, że „wynalazki" to często sensowne sugestie spoza fixture'u, nie halucynacje.
+- **Następne**: nowa runda inspirowana świeżym researchem (2026-10-09) — patrz `2026-10-09-ork-speech-round2.md`: warianty kotwicy z naciskiem na **słownik i rytm** (bo terse gubi słownik), test „dialektu" (skróty, rytuały zwrotu, interpunkcja), oraz pomiar spójności bohatera w dłuższych rozmowach.
+- Na Claude A/B 2 na 2: obecna `VOICE_ANCHOR` vs wariant E z sekcji wyżej (powinno obniżyć `repeatedClosings` przy zachowaniu bezokoliczników).
 
 ## Setup i replikacja
 
