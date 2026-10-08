@@ -1901,6 +1901,61 @@ test('a completed limit reset wins over an older usage read that returns late', 
   expect(toasts).toEqual([])
 })
 
+test('a limit crossing toasts once even when a newer read starts while the flag is being saved', async ($, on) => {
+  const low: SessionUsage = { startedAt: 0, context: { window: 200_000 }, rateLimits: [{ kind: 'five_hour', percentUsed: 0 }] }
+  const high: SessionUsage = { ...low, rateLimits: [{ kind: 'five_hour', percentUsed: 90 }] }
+  let reads = 0
+  let enterNewer!: () => void
+  const newerEntered = new Promise<void>(resolve => { enterNewer = resolve })
+  const toasts: string[] = []
+  engine(on, new Map(), { toasts, usageRead: () => {
+    reads += 1
+    if (reads === 3) enterNewer()
+    return reads === 1 ? low : high
+  } })
+  let newer: Promise<unknown> | null = null
+  on('state.set', async ($state, e, next) => {
+    // Zapis flagi z pierwszego odczytu 90% czeka, aż ruszy nowszy odczyt.
+    if (e.plugin === 'krux-mod' && e.key === 'autoKonkret' && e.value === true && newer === null) {
+      newer = $.tool.call({ tool: 'Read', file_path: '/work/newer.ts' })
+      await newerEntered
+    }
+    return next(e)
+  })
+  await start($)
+  await $.tool.call({ tool: 'Read', file_path: '/work/older.ts' })
+  await newer
+  expect(toasts.filter(text => text.startsWith('Limit planu 80%'))).toEqual(['Limit planu 80%: konkret włączony do resetu.'])
+})
+
+test('/clear invalidates a usage read still in flight from before the reset', async ($, on) => {
+  const low: SessionUsage = { startedAt: 0, context: { window: 200_000 }, rateLimits: [{ kind: 'five_hour', percentUsed: 0 }] }
+  const high: SessionUsage = { ...low, rateLimits: [{ kind: 'five_hour', percentUsed: 90 }] }
+  let reads = 0
+  let enterOld!: () => void
+  let releaseOld!: () => void
+  const oldEntered = new Promise<void>(resolve => { enterOld = resolve })
+  const oldGate = new Promise<void>(resolve => { releaseOld = resolve })
+  const toasts: string[] = []
+  engine(on, new Map(), { toasts, usageRead: async () => {
+    reads += 1
+    if (reads === 2) { enterOld(); await oldGate; return high }
+    return low
+  } })
+  on('classic.SessionStart', () => ({}))
+  await start($)
+  const oldRead = $.tool.call({ tool: 'Read', file_path: '/work/before-clear.ts' })
+  try {
+    await oldEntered
+    await $.classic.SessionStart({ source: 'clear' })
+  } finally {
+    releaseOld()
+    await oldRead
+  }
+  expect(await sectionIds($)).toEqual(['intro', 'krux-mod:persona'])
+  expect(toasts).toEqual([])
+})
+
 test('/krux zapisz shares tool ids, deduplicates notes and reports the new id in a toast', async ($, on) => {
   const toasts: string[] = []
   engine(on, new Map(), { toasts })

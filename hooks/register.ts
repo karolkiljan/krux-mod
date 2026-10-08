@@ -526,13 +526,15 @@ async function refreshUsage($: EngineInterface): Promise<void> {
     await update($, usage, current => version !== usageVersion || JSON.stringify(current) === JSON.stringify(now) ? current : now)
     if (version !== usageVersion) return
     const automatic = now.limits.some(limit => limit.percentUsed >= 80)
+    // Toast należy do żądania, które było najnowsze w chwili zapisu flagi: nowsze
+    // żądanie widzi już zmienioną flagę, więc samo by go nie pokazało.
     let changed = false
     await update($, autoKonkret, current => {
       if (version !== usageVersion) return current
       changed = current !== automatic
       return automatic
     })
-    if (changed && version === usageVersion) $.ui.toast(automatic ? 'Limit planu 80%: konkret włączony do resetu.' : 'Konkret automatyczny wyłączony: limity planu poniżej 80%.')
+    if (changed) $.ui.toast(automatic ? 'Limit planu 80%: konkret włączony do resetu.' : 'Konkret automatyczny wyłączony: limity planu poniżej 80%.')
   } catch {
     // Brak odczytu to nie powód, by psuć narzędzie czy turę.
   }
