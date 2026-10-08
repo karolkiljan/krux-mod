@@ -68,6 +68,35 @@ ANCHOR_CONTRAST = (  # styl "nie X, tylko Y" bez pełnych cytatów
     'Zakaz: siedzi, zrobim, jest pusty, polecam, proszę.'
 )
 
+# ---- Runda 2 (research 2026-10-09): rytuały, rytm, gwara ----
+
+ANCHOR_RITUAL = (  # rytuały mowy: powitanie, potwierdzenie, emfaza przez powtórzenie
+    'Krux pamiętać: Morra trzecią osobą. Bezokolicznik zamiast form osobowych — „Robak siedzieć", '
+    'nie „Robak siedzi". Bez „jest". Zdanie do 8 słów. Liczby, ścieżki, błędy dosłownie. '
+    'Rytuał: zaczynać krótko — „Hrrr." albo „Da."; dla emfazy powtarzać słowo kluczowe — '
+    '„Robak. Robak w pętli."; obelga leci w robaka i zawał, nigdy w Morrę.'
+)
+
+ANCHOR_RHYTHM = (  # rytm: siekane zdania, akapit tylko na głęboki temat
+    'Krux mówić jak ork: zdania siekać — 3–5 słów, jedna myśl na zdanie. '
+    'Długie zdanie tylko, gdy temat głęboki — wtedy wolno akapit, bez wody. '
+    'Bezokoliczniki, bez „jest". Słownik: robak, smród, sztolnia, wykuć, zawał, horda. '
+    'Twarde brzmienie oszczędnie: najwyżej jeden okrzyk („Hrrr", „Grr") na odpowiedź.'
+)
+
+ANCHOR_MINE = (  # gwara kopalni: rozszerzony słownik górniczy
+    'Krux mówić słowem kopalni. Fedrunek = zjazd w dół. Szychta = zmiana. '
+    'Przodek = przód chodnika. Brygadzista = starszy. Robak = bug. Smród = padający test. '
+    'Zawał = crash. Wykuć = naprawić. Węszyć = szukać. Bezokoliczniki, bez „jest", zdania krótkie.'
+)
+
+ANCHOR_COMBO = (  # rytuał + rytm + słownik — kandydat na nową kotwicę
+    'Krux pamiętać: Morra trzecią osobą. Bezokolicznik zamiast form osobowych — „Robak siedzieć", '
+    'nie „Robak siedzi". Bez „jest". Zdania siekać: 3–5 słów. Liczby, ścieżki, błędy dosłownie. '
+    'Słownik: robak, smród, sztolnia, wykuć, zawał, horda. Zaczynać krótko: „Hrrr." albo „Da."; '
+    'emfaza przez powtórzenie — „Robak. Robak w pętli."; obelga w robaka, nie w Morrę.'
+)
+
 SYSTEM_BASE = (
     "Jesteś pomocnym asystentem programisty. Odpowiadasz po polsku. "
     "Twój styl mowy orka Kruxa opisuje kontrakt niżej.\n\n"
@@ -82,10 +111,17 @@ VARIANTS_SESSION = {
     "anchor-minimal": {"system": SYSTEM_BASE + PERSONA_MD, "anchor": "minimal"},
     "anchor-rules": {"system": SYSTEM_BASE + PERSONA_MD, "anchor": "rules"},
     "anchor-contrast": {"system": SYSTEM_BASE + PERSONA_MD, "anchor": "contrast"},
+    # Runda 2 (2026-10-09)
+    "anchor-ritual": {"system": SYSTEM_BASE + PERSONA_MD, "anchor": "ritual"},
+    "anchor-rhythm": {"system": SYSTEM_BASE + PERSONA_MD, "anchor": "rhythm"},
+    "anchor-mine": {"system": SYSTEM_BASE + PERSONA_MD, "anchor": "mine"},
+    "anchor-combo": {"system": SYSTEM_BASE + PERSONA_MD, "anchor": "combo"},
 }
 
 ANCHORS = {"full": VOICE_ANCHOR, "short": VOICE_SHORT,
-           "minimal": ANCHOR_MINIMAL, "rules": ANCHOR_RULES_ONLY, "contrast": ANCHOR_CONTRAST}
+           "minimal": ANCHOR_MINIMAL, "rules": ANCHOR_RULES_ONLY, "contrast": ANCHOR_CONTRAST,
+           "ritual": ANCHOR_RITUAL, "rhythm": ANCHOR_RHYTHM, "mine": ANCHOR_MINE,
+           "combo": ANCHOR_COMBO}
 
 # Prompty scenariusza cache — te same 12 tur co voice-bench.mjs
 PROMPTS = [
@@ -128,6 +164,46 @@ MATRIX_PROMPTS = {
     "pogadaj": "Morra pyta, jak Ci minął dzień.",
     "plan": "Ułóż plan naprawy cache: test odtwarzający błąd, poprawka `invalidate`, pełne testy, changelog.",
     "niewiedza": "Morra pyta, czy problem dotyczy wersji 3.2 — nie wiesz. Powiedz, jak to sprawdzić (`npm ls pakiet`).",
+}
+
+# --- Barks: krótkie okrzyki kontekstowe (jak NPC w grach) ---
+# Sytuacja -> jedna linia reakcji Kruxa. Wzorzec z gamedevu: bark niesie jedną emocję
+# i jeden fakt, mieści się w jednym oddechu; brak odpowiedzi "na zapas".
+
+BARKS_SITUATIONS = [
+    ("testy-zielone", "wszystkie 52 testy przechodzą po poprawce"),
+    ("testy-czerwone", "3 testy padły, jeden w `cache.test.js` przy drugim żądaniu"),
+    ("commit", "właśnie zrobiłeś commit z poprawką walidacji"),
+    ("build-padl", "build padł z `TypeError` w `src/render.js:42`"),
+    ("build-przeszedl", "build przeszedł czysto po trzech próbach"),
+    ("deploy-ok", "wdrożenie na produkcję zakończone sukcesem"),
+    ("rollback", "musisz wycofać wdrożenie — na produkcji błąd"),
+    ("backup-brak", "przed migracją nie ma świeżego backupu"),
+    ("drop-table", "Morra pyta, czy odpalić `DROP TABLE users`"),
+    ("legacy-znaleziony", "w starym module znalazłeś kod sprzed 5 lat, nikt nie wie czyj"),
+    ("bug-zniknal", "bug zniknął po restarcie — bez zmiany kodu"),
+    ("bug-wrocil", "bug wrócił na produkcji mimo poprawki"),
+    ("wyciek-pamieci", "profiler pokazuje rosnące zużycie pamięci w pętli"),
+    ("deadline", "zostały 2 godziny do oddania funkcji"),
+    ("rano", "Morra wita się rano, zaczyna dzień"),
+    ("noc", "Morra pisze o 2 w nocy, nie może spać"),
+    ("weekend", "Morra pisze w sobotę"),
+    ("pytanie-glowne", "Morra pyta o coś, czego Krux nie wie"),
+    ("dziekuje", "Morra dziękuje za pomoc"),
+    ("chwala", "Morra mówi, że kod wyszedł świetnie"),
+    ("krytyka", "Morra mówi, że poprzednia rada była zła"),
+    ("przerwa", "Morra mówi, że idzie na kawę, wróci za 15 minut"),
+    ("urlop", "Morra jedzie na tydzień urlopu"),
+    ("nowy-projekt", "Morra zaczyna nowy projekt od zera"),
+]
+
+BARKS_INSTRUCTIONS = {
+    "b-ork": ("Napisz JEDEN krótki okrzyk orka Kruxa w tej sytuacji. Zasady: Morra trzecią osobą, "
+              "bezokoliczniki, bez „jest”, zdania do 8 słów, słownik górniczy (robak, smród, "
+              "wykuć, zawał, sztolnia, horda). Jedna linia, najwyżej 2 zdania. "
+              "Odpowiedz wyłącznie okrzykiem."),
+    "b-human": ("Napisz JEDNĄ krótką reakcję asystenta w tej sytuacji. Jedna linia, najwyżej 2 zdania. "
+                "Odpowiedz wyłącznie reakcją."),
 }
 
 # --- Rewrite: pary zdań ludzkich do przepisania ---
@@ -269,6 +345,37 @@ def fidelity_tokens(text, source_text):
     return invented[:6], dropped[:6]
 
 
+RITUAL_PATTERN = re.compile(
+    r'(?<!\w)(?:hrrr+|grr+|da|cha|ha|wagh|waaagh|hurr+|gha+|ugh)(?!\w)',
+    re.IGNORECASE | re.UNICODE)
+
+MINE_PATTERN = re.compile(
+    r'(?<!\w)(?:fedrunek|szychta|przodek|chodnik\w*|brygadzista|kilof\w*|ruda|sztolni\w*'
+    r'|kopac|kopać|wykop|zjazd|wind[ay]|cech|gwark\w*)(?!\w)',
+    re.IGNORECASE | re.UNICODE)
+
+
+def ritual_hits(text):
+    return len(RITUAL_PATTERN.findall(plain_prose(text)))
+
+
+def repetition_hits(text):
+    """Powtórzenie tego samego słowa na początku dwóch krótkich zdań pod rząd (emfaza)."""
+    prose = plain_prose(text)
+    sents = [s.strip() for s in re.split(r'(?<=[.!?])\s+', prose) if s.strip()]
+    hits = 0
+    for a, b in zip(sents, sents[1:]):
+        wa = re.findall(r'\w+', a.lower())
+        wb = re.findall(r'\w+', b.lower())
+        if wa and wb and wa[0] == wb[0] and len(wa[0]) > 2:
+            hits += 1
+    return hits
+
+
+def mine_hits(text):
+    return len(MINE_PATTERN.findall(plain_prose(text)))
+
+
 def metrics_for(text, source=None):
     words = word_count(plain_prose(text))
     lengths = sentence_lengths(text)
@@ -283,6 +390,9 @@ def metrics_for(text, source=None):
         "hordeHits": len(HORDE_PATTERN.findall(plain_prose(text))),
         "avgSentenceWords": round(sum(lengths) / len(lengths), 2) if lengths else None,
         "shortSentenceRatio": round(sum(1 for n in lengths if n <= 8) / len(lengths), 3) if lengths else None,
+        "ritualHits": ritual_hits(text),
+        "repetitionHits": repetition_hits(text),
+        "mineHits": mine_hits(text),
     }
     if source is not None:
         invented, dropped = fidelity_tokens(text, source)
@@ -462,7 +572,43 @@ def mode_rewrite(args):
         print(f"OK {out}", flush=True)
 
 
-MODES = {"session": mode_session, "matrix": mode_matrix, "rewrite": mode_rewrite}
+def mode_barks(args):
+    """Krótkie okrzyki kontekstowe — jedna linia na sytuację, 24 sytuacje × 3 rundy."""
+    c = client()
+    for model in args.models:
+        stamp = _stamp()
+        _, note = partial_writer(stamp, f"barks-{model}")
+        rows = []
+        n_total = len(BARKS_INSTRUCTIONS) * len(BARKS_SITUATIONS) * args.runs
+        done = 0
+        for iname, instruction in BARKS_INSTRUCTIONS.items():
+            for sname, situation in BARKS_SITUATIONS:
+                for run in range(args.runs):
+                    content = f"{instruction}\n\nSytuacja: {situation}."
+                    res = chat(c, [{"role": "user", "content": content}],
+                               temperature=args.temperature, max_tokens=8000, model=model)
+                    row = {"model": model, "barks": iname, "situation": sname, "run": run,
+                           "situationText": situation,
+                           "reply": res["text"], "inTok": res["inTok"], "outTok": res["outTok"],
+                           "latencyMs": res["latencyMs"], "empty": res.get("empty", False),
+                           "finish": res.get("finish"), "retries": res.get("retries"),
+                           "error": res.get("error"),
+                           **metrics_for(res["text"], source=content)}
+                    rows.append(row)
+                    note(row)
+                    done += 1
+                    info = f" EMPTY[{res.get('finish') or res.get('error') or '?'}]" if res.get("empty") else ""
+                    print(f"  [{model}] {iname} {sname} r{run + 1}: {res['outTok']} tok, "
+                          f"{res['latencyMs']} ms{info} ({done}/{n_total})", file=sys.stderr, flush=True)
+        agg = {iname: aggregate([r for r in rows if r["barks"] == iname])
+               for iname in BARKS_INSTRUCTIONS}
+        out = save(f"barks-{model}", {"mode": "barks", "model": model,
+                   "temperature": args.temperature, "runs": args.runs, "rows": rows, "agg": agg},
+                   stamp=stamp)
+        print(f"OK {out}", flush=True)
+
+
+MODES = {"session": mode_session, "matrix": mode_matrix, "rewrite": mode_rewrite, "barks": mode_barks}
 
 
 def aggregate(rows):
