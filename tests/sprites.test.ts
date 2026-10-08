@@ -354,6 +354,20 @@ test('effort preserves both eyes in every look, and naps close proud eyes too', 
   for (const look of ['mid', 'left', 'right'] as const) {
     const rows = pad(stander(look))
     expect(withEffort(rows, 66)).toEqual(rows)
+    // Sweat starts cycling after 67 frames, falling beside the face.
+    expect(withEffort(rows, 72)[1]![6]).toBe('i')
+    expect(withEffort(rows, 75)[2]![6]).toBe('i')
+    for (let age = 67; age < 200; age++) {
+      const effort = withEffort(rows, age)
+      expect([look, age, effort[0]![6], effort[1]![7]]).toEqual([look, age, '.', '.'])
+    }
+    // A hand wipes the forehead for four frames in each 40-frame period.
+    for (const start of [200, 240]) {
+      const period = Array.from({ length: 40 }, (_, phase) => withEffort(rows, start + phase))
+      const wipes = period.filter(frame => frame[0]![6] === 'g' && frame[1]![7] === 'g')
+      expect([look, start, wipes.length]).toEqual([look, start, 4])
+      expect(wipes[0]).not.toEqual(rows)
+    }
     for (const age of [67, 72, 200, 202, 240]) expect([...withEffort(rows, age).join('')].filter(cell => cell === 'r').length).toBe(2)
     const proud = pad(moodOf(rows, 'proud', false))
     expect(withNap(proud)[1]!.includes('y')).toBe(false)

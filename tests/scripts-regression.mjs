@@ -5,7 +5,8 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import vm from 'node:vm'
-import { stripTypeScriptTypes } from 'node:module'
+import { spawnSync } from 'node:child_process'
+import { builtinModules, createRequire, stripTypeScriptTypes } from 'node:module'
 import { EventEmitter } from 'node:events'
 import { Writable } from 'node:stream'
 
@@ -120,6 +121,53 @@ for (const script of ['act-sheet', 'voice-bench']) test(script === 'act-sheet'
     } else throw new Error('unknown script test')
   } finally {
     fs.rmSync(scratch, { recursive: true, force: true })
+  }
+})
+
+
+// Próby wyżej czytają skrypty przez `sourceOf`, które wycina linie importu, więc
+// zepsuty import (np. `node:child_proces`) nie zwala żadnej z nich — prawdziwy
+// skrypt umiera wtedy na starcie z ERR_UNKNOWN_BUILTIN_MODULE. voice-bench ma
+// szybkie wyjście bez modelu i bez `claude`: bez `--model` kończy się w
+// `parseArgs`, zanim cokolwiek odpali, więc wstaje jako osobny proces. Skrypt
+// act-sheet goły node nie wczyta (hooki importują bez rozszerzeń, stąd `npx
+// tsx` w CLAUDE.md), więc jego importy sprawdzamy statycznie, bez uruchamiania.
+function scriptRun(script, args) {
+  const run = spawnSync(process.execPath, [script, ...args], { encoding: 'utf8', timeout: 10_000 })
+  assert.ok(!run.error, `${script}: proces nie wstał: ${run.error}`)
+  for (const stream of [run.stdout, run.stderr]) assert.doesNotMatch(stream, /ERR_UNKNOWN_BUILTIN_MODULE|ERR_MODULE_NOT_FOUND/u)
+  return run
+}
+
+test('voice bench without arguments reports the missing model, not a broken import', () => {
+  const run = scriptRun('scripts/voice-bench.mjs', [])
+  assert.equal(run.status, 1)
+  assert.match(run.stderr, /Wymagane --model <model-id>/u)
+  assert.equal(run.stdout, '', 'bez --model skrypt nie dochodzi do raportu')
+})
+
+// Wszystkie specyfikatory importu skryptu: linie `import … from` (także
+// `import type`) i literałowe `import('…')`. Dynamicznych importów z wyliczaną
+// ścieżką (`pathToFileURL(...)`) statycznie sprawdzić się nie da.
+function importSpecifiersOf(script) {
+  const source = fs.readFileSync(script, 'utf8')
+  const specifiers = new Set()
+  for (const pattern of [/^import\b[^'"]*?['"]([^'"]+)['"]/gmu, /(?<![.\w])import\(\s*['"]([^'"]+)['"]/gu]) {
+    for (const match of source.matchAll(pattern)) specifiers.add(match[1])
+  }
+  return [...specifiers]
+}
+
+test('act sheet imports resolve: every builtin it names exists and every hook file is in place', () => {
+  const script = 'scripts/act-sheet.ts'
+  const specifiers = importSpecifiersOf(script)
+  assert.ok(specifiers.some(specifier => specifier.startsWith('node:')), 'skrypt musi importować moduły wbudowane')
+  assert.ok(specifiers.some(specifier => specifier.startsWith('../hooks/')), 'skrypt musi czytać hooki')
+  const require = createRequire(path.resolve(script))
+  for (const specifier of specifiers) {
+    if (specifier.startsWith('node:')) assert.ok(builtinModules.includes(specifier.slice(5)), `${script}: nie ma wbudowanego modułu ${specifier}`)
+    else if (/^\.{1,2}\//u.test(specifier)) assert.ok(fs.existsSync(path.resolve(path.dirname(script), specifier)), `${script}: ${specifier} nie wskazuje pliku`)
+    else assert.doesNotThrow(() => require.resolve(specifier), `${script}: pakiet ${specifier} musi się rozwiązywać`)
   }
 })
 

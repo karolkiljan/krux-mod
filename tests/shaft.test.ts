@@ -252,16 +252,13 @@ test('the digest hides commit readiness outside a repo and without modified or n
   }
 })
 
-test('digest priority keeps commit readiness beside the repo when lower rows are clipped', () => {
+test('digest priority keeps commit readiness right below the repo, ahead of the rows the band clips first', () => {
   const board = { tasks: [task('poprawka', 'in_progress')], test: FRESH_RUN }
   const usage = { percent: 27, tokens: 54_000, window: 200_000, limits: [], usd: null }
   const threads = { next: 2, items: [{ id: 1, kind: 'risk' as const, text: 'push czeka' }] }
   const lines = shaftDigest(board, usage, { git: GIT, threads })
   expect(lines.map(line => line.key)).toEqual(['threads', 'git', 'readiness', 'plan', 'tests', 'usage'])
   expect(lines.map(line => line.mark)).toEqual(['⚠', '⎇', '✓', '▸', '✓', '◔'])
-  // Pas bierze od góry najwyżej tyle linii, ile wierszy płótna.
-  expect(lines.slice(0, 3).map(line => line.key)).toEqual(['threads', 'git', 'readiness'])
-  expect(lines.slice(0, 6)).toHaveLength(6)
 })
 
 test('a running digest task gains full minutes at the 15-minute threshold', () => {

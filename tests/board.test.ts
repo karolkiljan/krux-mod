@@ -297,12 +297,12 @@ test('documentation edits preserve test freshness and the last edit time regardl
   for (const tool of ['Edit', 'Write', 'MultiEdit', 'NotebookEdit']) {
     for (const extension of ['md', 'mdx', 'txt', 'rst', 'adoc', 'MD', 'MdX', 'TXT', 'RsT', 'ADOC']) {
       const input = { [tool === 'NotebookEdit' ? 'notebook_path' : 'file_path']: `/work/docs/read me.${extension}` }
+      expect(boardAfter(EMPTY_BOARD, tool, input, undefined, undefined, 200)).toBe(EMPTY_BOARD)
       for (const who of ['Krux', 'Młot'] as const) {
         for (const isError of [false, true]) {
           const after = boardAfter(before, tool, input, undefined, { text: '', isError, who }, 200)
           expect(after).toBe(before)
           expect(testsStale(after)).toBe(false)
-          expect(boardAfter(EMPTY_BOARD, tool, input, undefined, undefined, 200)).toBe(EMPTY_BOARD)
         }
       }
     }

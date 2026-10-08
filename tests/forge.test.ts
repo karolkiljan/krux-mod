@@ -156,6 +156,9 @@ test('reduced motion freezes reactions, typing and naps as well as walking', () 
   const { surface, tick } = surfaceOf()
   const props: ForgeProps = { ...BAND, still: true, rest: true, orcs: [KRUX], cues: [{ key: 'krux', kind: 'test-pass', until: 4000 }], bubble: { key: 'krux', text: 'Gotowe.', speaker: 'Krux' } }
   const before = draw(props, surface)
+  // Zamrożone płótno nadal rysuje orka i cały dymek: pusty wynik równy sobie nie dowodzi bezruchu.
+  expect(JSON.stringify(before)).toContain('Gotowe.')
+  expect(JSON.stringify(before)).toMatch(/[▀▄█]/u)
   for (let i = 0; i < 240; i++) { tick(); draw(props, surface) }
   expect(draw(props, surface)).toEqual(before)
   expect((surface.state as Seen).frame).toBe(0)

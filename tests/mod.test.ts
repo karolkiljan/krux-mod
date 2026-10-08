@@ -1,6 +1,6 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { Engine, TestBody } from 'claude-code/testing'
-import type { AgentStatus, SessionUsage, TurnStepChunk } from 'claude-code'
+import type { AgentStatus, CommandSpec, SessionUsage, TurnStepChunk, TurnStepResult } from 'claude-code'
 
 import type { KruxJournal } from '../types'
 import { PALETTE, SPEAKER_COLOR, actsFor } from '../hooks/sprites'
@@ -39,7 +39,7 @@ const ORIGIN = { kind: 'composer' as const }
 type History = { role: 'user' | 'assistant'; text: string; toolUses: { tool_use_id: string; tool: string; input: Record<string, unknown>; isError?: true; text?: string }[] }[]
 
 type ProcessReply = { exitCode: number; stdout: string; stderr: string; isStdoutTruncated: boolean; isStderrTruncated: boolean }
-type Extras = { beforePaneList?: () => Promise<void>; paneClosed?: boolean; invalidations?: string[]; journalWrites?: KruxJournal[]; beforeStoreGet?: () => void; logs?: string[]; onPrompt?: () => void; toasts?: string[]; settings?: Record<string, unknown>; plugins?: string[]; toolError?: string; toolDenied?: boolean; toolReply?: { result: unknown; text?: string; isError?: true }; agentGate?: Promise<void>; history?: History; agents?: { id: string; status: AgentStatus; description?: string }[]; opened?: string[]; closed?: string[]; usage?: SessionUsage; usageRead?: () => SessionUsage; beforeAgentList?: () => Promise<void>; beforeStoreSet?: () => Promise<void>; paneWaits?: boolean; paneHidden?: boolean; git?: { stdout: string }; tools?: string[]; processRun?: (argv: readonly string[], timeoutMs: number | undefined) => ProcessReply | Promise<ProcessReply> }
+type Extras = { beforePaneList?: () => Promise<void>; paneClosed?: boolean; invalidations?: string[]; journalWrites?: KruxJournal[]; beforeStoreGet?: () => void; logs?: string[]; onPrompt?: () => void; toasts?: string[]; settings?: Record<string, unknown>; plugins?: string[]; toolError?: string; toolDenied?: boolean; toolReply?: { result: unknown; text?: string; isError?: true }; agentGate?: Promise<void>; history?: History; agents?: { id: string; status: AgentStatus; description?: string }[]; opened?: string[]; closed?: string[]; usage?: SessionUsage; usageRead?: () => SessionUsage; beforeAgentList?: () => Promise<void>; beforeStoreSet?: () => Promise<void>; paneWaits?: boolean; paneHidden?: boolean; git?: { stdout: string }; tools?: string[]; commands?: CommandSpec[]; processRun?: (argv: readonly string[], timeoutMs: number | undefined) => ProcessReply | Promise<ProcessReply> }
 
 function engine(on: On, saved: Map<string, unknown>, extras: Extras = {}) {
   const toasts = extras.toasts ?? []
@@ -61,7 +61,7 @@ function engine(on: On, saved: Map<string, unknown>, extras: Extras = {}) {
   on('command.list', () => ({
     value: (extras.plugins ?? []).map(plugin => ({ name: `${plugin}:${plugin}`, description: '', source: 'plugin' as const, plugin })),
   }))
-  on('command.register', () => ({ value: { command: 'krux' } }))
+  on('command.register', (_$, e) => { extras.commands?.push(e); return { value: { command: e.name } } })
   on('ui.log', ($, e) => { extras.logs?.push(String(e.text)); return { value: undefined } })
   on('ui.toast', ($, e) => {
     toasts.push(String(e.text))
@@ -115,7 +115,11 @@ function engine(on: On, saved: Map<string, unknown>, extras: Extras = {}) {
     if (extras.toolReply) return extras.toolReply
     return extras.toolError ? { isError: true as const, result: extras.toolError, text: extras.toolError } : { result: 'ok' }
   })
-  on('ui.render', ($, e) => ({ type: 'Text', props: {}, children: [String((e.props as { word?: string }).word ?? 'engine')] }))
+  on('ui.render', ($, e) => {
+    const { word, text } = e.props as { word?: string; text?: unknown }
+    const body = word ?? (typeof text === 'string' && text !== '' ? text : 'engine')
+    return { type: 'Text', props: {}, children: [String(body)] }
+  })
   return clock
 }
 
@@ -411,11 +415,19 @@ test('a Bash test uses the testing scene instead of mining', async ($, on) => {
 test('model chunks change the phase live and pass through with their result intact', async ($, on) => {
   engine(on, new Map(), { agents: [{ id: 'a1', status: 'running' }] })
   const chunks: TurnStepChunk[] = [{ kind: 'thinking', index: 0, text: 'Hmm', ref: 1 }, { kind: 'text', index: 1, text: 'Odpowiedź', ref: 2 }]
+  const result: TurnStepResult = {
+    turnId: 't1',
+    index: 0,
+    answer: 'Odpowiedź',
+    toolUses: [{ name: 'Bash', input: { command: 'npm test' } }],
+    stopReason: 'tool_use',
+    usage: { input_tokens: 12, output_tokens: 34, cache_read_input_tokens: 56, cache_creation_input_tokens: 78, model: 'claude-opus-5-5' },
+  }
   let closed = 0
   on('turn.step', async function* (_$, e) {
     try {
       for (const chunk of chunks) yield chunk
-      return { turnId: e.turnId, index: e.index, answer: 'Odpowiedź', toolUses: [], stopReason: 'end_turn', usage: null }
+      return { ...result, turnId: e.turnId, index: e.index }
     } finally { closed += 1 }
   })
   await start($)
@@ -438,7 +450,7 @@ test('model chunks change the phase live and pass through with their result inta
       await ui.unmount()
     }
     expect(received).toEqual(chunks)
-    expect(returned).toMatchObject({ answer: 'Odpowiedź', turnId: 't1', index: 0 })
+    expect(returned).toEqual(result)
   }
   const cancelled = $.turn.step({ turnId: 't1', index: 1, model: 'claude-opus-5-5', messageCount: 1 })
   await cancelled.next()
@@ -902,6 +914,19 @@ test('all seven mode buttons sit in equal cells that wrap to the pane width', as
   }
   expect(new Set(widths).size).toBe(1)
   expect(widths[0]).toBeGreaterThan(0)
+  // Komórki niesie Box bez klucza: widać go po dziecku, a zawija je do szerokości panelu.
+  type Drawn = { props?: Record<string, unknown>; children?: unknown[] }
+  const wrap = (function holder(node: Drawn): Drawn | undefined {
+    const kids = node.children ?? []
+    if (kids.some(child => typeof child === 'object' && child !== null && (child as Drawn).props?.key === 'cell-persona')) return node
+    for (const child of kids) {
+      if (typeof child !== 'object' || child === null) continue
+      const found = holder(child as Drawn)
+      if (found !== undefined) return found
+    }
+    return undefined
+  })((await ui.drawn()) as unknown as Drawn)
+  expect(wrap?.props?.flexWrap).toBe('wrap')
 })
 
 test('reduced motion keeps the smith still', async ($, on) => {
@@ -928,6 +953,13 @@ test('no warning without the plugin', async ($, on) => {
   engine(on, new Map(), { toasts, plugins: ['superpowers'] })
   await start($)
   expect(toasts).toEqual([])
+})
+
+test('session start registers the /krux command under its own name', async ($, on) => {
+  const commands: CommandSpec[] = []
+  engine(on, new Map(), { commands })
+  await start($)
+  expect(commands.map(command => command.name)).toEqual(['krux'])
 })
 
 const REPLY = { plugin: 'krux-mod', component: 'AssistantMessage', requestId: 'm1' } as const
@@ -1986,6 +2018,8 @@ test('chat mode restored from its own store key wraps messages even with persona
   await start($)
   const reply = await $.ui.mount({ ...REPLY, surface: 'terminal', viewport: { columns: 100, rows: 40 }, props: { text: 'Build pad.', isFirstOfReply: false } })
   expect((await reply.find({ key: 'chat-header' }))?.text?.trim()).toMatch(/^Krux · \d{2}:\d{2}$/u)
+  // Dymek niesie treść silnika w całości: opróżniona w `next(e)` gubi słowa.
+  expect(await reply.find({ type: 'Text', text: 'Build pad.' })).toBeDefined()
   // Silnik odrzuca treść pod Boxem z `width`: każdy mówca bierze wiersz bez odsunięcia.
   expect((await reply.find({ key: 'chat' }))?.props.width).toBeUndefined()
   expect((await reply.find({ key: 'chat' }))?.props.paddingLeft).toBeUndefined()
@@ -2004,12 +2038,12 @@ test('chat mode restored from its own store key wraps messages even with persona
   const row = await $.ui.mount({ ...TOOL_USE, requestId: 'in-group', props: { ...READ_ROW, tool_use_id: 'in-group' } })
   expect(await row.find({ key: 'chat-tool' })).toBeUndefined()
   expect(await row.find({ type: 'Text', text: 'engine' })).toBeDefined()
-  expect(await reply.find({ type: 'Text', text: 'engine' })).toBeDefined()
   const own = await $.ui.mount(CHAT_USER)
   expect((await own.find({ key: 'chat-header' }))?.text?.trim()).toMatch(/^Morra · \d{2}:\d{2}$/u)
   expect((await own.find({ key: 'chat' }))?.props.justifyContent).toBeUndefined()
   expect((await own.find({ key: 'chat-message' }))?.props.width).toBeUndefined()
   expect((await own.find({ key: 'chat' }))?.props.paddingLeft).toBeUndefined()
+  expect(await own.find({ type: 'Text', text: 'siema' })).toBeDefined()
 })
 
 test('chat timestamps remain stable through redraw, resize and toggling off then on', async ($, on) => {
@@ -2042,7 +2076,7 @@ test('chat uses a timestamp supplied by props and passes through messages with n
   const unknownWidth = await $.ui.mount({ ...REPLY, surface: 'terminal', props: { text: 'Treść', isFirstOfReply: true } })
   expect(await unknownWidth.find({ key: 'chat' })).toBeUndefined()
   expect(await unknownWidth.find({ key: 'nameplate' })).toBeUndefined()
-  expect(await unknownWidth.find({ type: 'Text', text: 'engine' })).toBeDefined()
+  expect(await unknownWidth.find({ type: 'Text', text: 'Treść' })).toBeDefined()
 })
 
 test('chat reports keep a mate name from muster after the agent leaves the engine list', async ($, on) => {
@@ -2052,7 +2086,7 @@ test('chat reports keep a mate name from muster after the agent leaves the engin
   const report = await $.ui.mount({ ...CHAT_USER, requestId: 'niuch-report', props: { text: 'Gotowe.', origin: { kind: 'task-notification' }, isExpanded: false, task: { id: 'a1' }, from: { name: 'general-purpose' } } })
   expect((await report.find({ key: 'chat-header' }))?.text?.trim()).toMatch(/^Niuch · /u)
   expect((await report.find({ key: 'chat' }))?.props.paddingLeft).toBeUndefined()
-  expect(await report.find({ type: 'Text', text: 'engine' })).toBeDefined()
+  expect(await report.find({ type: 'Text', text: 'Gotowe.' })).toBeDefined()
 })
 
 test('chat resolves unrecorded agents from descriptions, keeps nameless orks and leaves shell notifications native', async ($, on) => {
@@ -2070,7 +2104,7 @@ test('chat resolves unrecorded agents from descriptions, keeps nameless orks and
   ]) {
     const native = await $.ui.mount({ ...CHAT_USER, requestId: props.text, props })
     expect(await native.find({ key: 'chat' })).toBeUndefined()
-    expect(await native.find({ type: 'Text', text: 'engine' })).toBeDefined()
+    expect(await native.find({ type: 'Text', text: props.text })).toBeDefined()
     await native.unmount()
   }
 })
@@ -2083,10 +2117,10 @@ test('chat leaves Desktop messages and tool rows native even with the journal se
   const reply = await $.ui.mount({ ...REPLY, surface: 'desktop', viewport: { columns: 100, rows: 40 }, props: { text: 'Build pad.', isFirstOfReply: true } })
   const own = await $.ui.mount({ ...CHAT_USER, surface: 'desktop' })
   const tool = await $.ui.mount({ ...TOOL_USE, surface: 'desktop' })
-  for (const ui of [reply, own, tool]) {
+  for (const [ui, body] of [[reply, 'Build pad.'], [own, 'siema'], [tool, 'engine']] as const) {
     expect(await ui.find({ key: 'chat' })).toBeUndefined()
     expect(await ui.find({ key: 'nameplate' })).toBeUndefined()
-    expect(await ui.find({ type: 'Text', text: 'engine' })).toBeDefined()
+    expect(await ui.find({ type: 'Text', text: body })).toBeDefined()
   }
 })
 

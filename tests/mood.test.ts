@@ -83,7 +83,8 @@ test('a dispatched mate’s own result moves only that mate’s face', async () 
 
 test('a mood fades back to calm after eight tool calls without news', async () => {
   let moods = moodsAfter('test-fail', failed)
-  for (let i = 1; i < FADE_TOOLS; i += 1) moods = moodsTick(moods)
+  // Liczba wprost: pętla po `FADE_TOOLS` przeszłaby razem ze zmianą progu.
+  for (let i = 1; i < 8; i += 1) moods = moodsTick(moods)
   expect(moods.faces.Krux).toBe('grumpy')
   moods = moodsTick(moods)
   expect(moods).toEqual(CALM)
