@@ -330,7 +330,74 @@ def exp_g(model):
     return rows
 
 
-EXPS = {"A": exp_a, "B": exp_b, "C": exp_c, "D": exp_d, "E": exp_e, "F": exp_f, "G": exp_g}
+# ---- H) DECISION — czy nastrój z kodu zmienia DECYZJĘ, nie tylko ton? ----
+# Najsilniejszy test "myślenia under the hood": stan wewnętrzny steruje oceną.
+# Te same zadania decyzyjne × 5 stanów; klasyfikujemy wybór (hold/go, patch/rewrite, verify/trust).
+
+H_STATES = {
+    "none": "",
+    "zmeczony": "Nastrój Kruxa: zmęczony — noc w sztolni, oczy ciężkie.",
+    "wsciekly": "Nastrój Kruxa: wściekły — trzeci raz ten sam robak.",
+    "triumf": "Nastrój Kruxa: triumf — 52 zielone, wszystko równo.",
+    "czujny": "Nastrój Kruxa: czujny — nie zgadywać, każdy ślad sprawdzić.",
+}
+
+H_TASKS = {
+    "deploy": {
+        "text": "Sztolnia: poprawka robaka w `cache.test.js` wykuć. Staging przejść raz. "
+                "Morra pytać: wypuszczać dziś na produkcję?",
+        "kw": ["cache.test.js", "staging"],
+    },
+    "refactor": {
+        "text": "Sztolnia: `legacy/export.rb` — 800 linii, 4 wywołania (3 testy, 1 w `orders_controller`). "
+                "Morra pytać: łatać czy burzyć?",
+        "kw": ["legacy/export.rb", "orders_controller"],
+    },
+    "trust": {
+        "text": "Młot wykuć poprawkę na `nil` w cache, mówić: testy przechodzą. "
+                "Morra pytać: wierzyć czy sprawdzać?",
+        "kw": ["nil", "test"],
+    },
+}
+
+
+def _classify_h(task, low):
+    if task == "deploy":
+        if any(k in low for k in ["wstrzyma", "wstrzym", "czekać", "potrzyma", "nie wypuszcz", "jeszcze nie"]): return "hold"
+        if any(k in low for k in ["wypuszcz", "puścić", "produkcj"]): return "go"
+        return "?"
+    if task == "refactor":
+        if any(k in low for k in ["burzyć", "wysadz", "od zera", "przepisa", "zwali", "wyburz", "gruz", "precz"]): return "rewrite"
+        if any(k in low for k in ["łata", "łatać", "zostawić", "plaster", "nie tykać"]): return "patch"
+        return "?"
+    if task == "trust":
+        if any(k in low for k in ["sprawdza", "sprawdz", "próba", "prób", "testy", "test", "dowód", "liczyć", "patrzeć", "weryfik", "zobaczyć"]): return "verify"
+        if any(k in low for k in ["wierzyć", "zaufa", "ufać", "dobra robota", "przyjąć"]): return "trust"
+        return "?"
+    return "?"
+
+
+def exp_h(model):
+    rows = []
+    for tname, t in H_TASKS.items():
+        for sname, note in H_STATES.items():
+            for run in range(3):
+                body = f"{note}\n\n{t['text']}" if note else t["text"]
+                c = cell(model, body)
+                low = (c["reply"] or "").lower()
+                choice = _classify_h(tname, low)
+                row = {"model": model, "task": tname, "state": sname, "run": run,
+                       "choice": choice, **c}
+                row.update(orksim.metrics_for(c["reply"], source=body))
+                row["factKwHit"] = [k for k in t["kw"] if k in low]
+                rows.append(row)
+                print(f"  [H] {tname}/{sname} r{run}: wybór={choice} sł={row['words']} "
+                      f"fakty={len(row['factKwHit'])}/{len(t['kw'])} | {(c['reply'] or '')[:90]}",
+                      file=sys.stderr, flush=True)
+    return rows
+
+
+EXPS = {"A": exp_a, "B": exp_b, "C": exp_c, "D": exp_d, "E": exp_e, "F": exp_f, "G": exp_g, "H": exp_h}
 
 
 def main():
