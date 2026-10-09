@@ -126,6 +126,30 @@ Pełny głos orka + limit słów (40 / 20) vs bez limitu. Mierzone: tokeny, sło
   zostaje, treść się kompresuje, fakty (ścieżki, liczby) przeżywają. glm-5.3 z limitem 40 słów jest
   nawet *barwniejszy* niż deepseek bez limitu, przy o połowę mniejszym wyjściu.
 
+### G) kompozyt (recipe vs current) — czy mechanizmy sumują się?
+
+Ostatni test: ramię "current" (jak mod robi dziś — samo zdarzenie, bez nastroju, bez limitu) vs "recipe"
+(kronika + linia nastroju z kodu + limit 40 słów). 4 scenariusze × 2 rundy, oba modele.
+
+| model | ramię | out/odp | sł/odp | głos/odp | nastrój/odp | fakty |
+|---|---|---:|---:|---:|---:|---:|
+| deepseek | current | 3244 | 39,9 | 5,0 | 0,25 | 8/8 |
+| deepseek | **recipe** | **1677** | 20,0 | 4,0 | **1,25** | 7/8 |
+| glm-5.3 | current | 5072 | 103,0 | 10,6 | 0,12 | 6/8 |
+| glm-5.3 | **recipe** | **2423** | 35,0 | 3,9 | **1,50** | **7/8** |
+
+- **Oszczędność 48–52% tokenów wyjścia** — przy *pięciokrotnie* (deepseek) i *dwunastokrotnie* (glm-5.3)
+  większej obecności nastroju. Czyli mechanizmy się sumują: taniej i żywiej jednocześnie.
+- **U glm-5.3 kompozyt paradoksalnie POPRAWIA wierność faktów** (7/8 vs 6/8 w current) — bo bez limitu
+  glm się rozlewa (103 słowa/odp!) i gubi fakty w rozwlekłości. Limit działa jak dyscyplina.
+- U deepseeka jeden fakt wypadł (7/8) — cena kompresji; w praktyce to zwykle mniej istotny szczegół.
+- Głos spada z 5,0–10,6 do 4,0/3,9 — nadal pełny ork (nie „terse-2"), bo limit dotyczy długości,
+  nie koloru.
+
+**To jest domknięcie całego programu: kompozyt (kronika + nastrój z kodu + budżet słów) daje jednocześnie
+życie i połowę kosztu wyjścia — bez oddawania głosu.** Wszystkie trzy elementy są deterministyczne
+(kod), więc nie kosztują tokenów myślenia.
+
 ## Synteza domknięta: przepis na tanie "życie" persony
 
 | mechanizm | koszt | efekt | dowód |

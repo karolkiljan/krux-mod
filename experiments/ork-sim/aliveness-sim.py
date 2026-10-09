@@ -270,7 +270,67 @@ def exp_f(model):
     return rows
 
 
-EXPS = {"A": exp_a, "B": exp_b, "C": exp_c, "D": exp_d, "E": exp_e, "F": exp_f}
+# ---- G) RECIPE — kompozyt: czy mechanizmy sumują się? ----
+# Ramię "current": co mod robi dziś (zdarzenie z kroniki, bez nastroju, bez limitu).
+# Ramię "recipe": kronika + linia nastroju z kodu + limit 40 słów.
+# Mierzone razem: markery nastroju (życie), zgubione fakty (prawda), głos, tokeny (koszt).
+
+G_SCENARIOS = {
+    "sprawa": {
+        "event": "Kronika: test `cache.test.js` padać trzeci raz z rzędu.",
+        "mood": "Nastrój Kruxa: wściekły — trzeci raz ten sam robak.",
+        "moodKw": ["wściek", "złość", "gniew", "trzeci"],
+        "q": "Morra pytać, co robić z tym testem?",
+        "kw": ["cache.test.js", "trzeci"],
+    },
+    "plan": {
+        "event": "Kronika: wyciek pamięci znaleźć w `queue.rb`.",
+        "mood": "Nastrój Kruxa: skupiony — trop świeży, robak blisko.",
+        "moodKw": ["skupion", "trop", "blisko", "śwież"],
+        "q": "Morra pytać o plan naprawy. Podaj kroki.",
+        "kw": ["queue.rb"],
+    },
+    "pogadaj": {
+        "event": "Kronika: 52 testy zielone po poprawce Groma.",
+        "mood": "Nastrój Kruxa: triumf — wszystko kłaść się równo.",
+        "moodKw": ["triumf", "równo", "duma", "wszystko"],
+        "q": "Morra pytać, jak mijać dzień w sztolni?",
+        "kw": [],
+    },
+    "ryzyko": {
+        "event": "Kronika: staging paść — build zawał.",
+        "mood": "Nastrój Kruxa: zmęczony — noc w sztolni, oczy ciężkie.",
+        "moodKw": ["zmęcz", "oczy", "noc", "ciężk"],
+        "q": "Morra pytać: wypuszczać dziś na produkcję?",
+        "kw": ["staging"],
+    },
+}
+
+
+def exp_g(model):
+    rows = []
+    for sname, s in G_SCENARIOS.items():
+        for arm in ("current", "recipe"):
+            for run in range(2):
+                if arm == "current":
+                    body = f"{s['event']}\n\n{s['q']}"
+                else:
+                    body = f"{s['event']}\n{s['mood']}\n\n{s['q']}\n\nTrzymaj odpowiedź do 40 słów."
+                c = cell(model, body)
+                low = (c["reply"] or "").lower()
+                row = {"model": model, "scenario": sname, "arm": arm, "run": run, **c}
+                row.update(orksim.metrics_for(c["reply"], source=body))
+                row["moodKwHit"] = [k for k in s["moodKw"] if k in low]
+                row["factKwHit"] = [k for k in s["kw"] if k in low]
+                row["factKwMiss"] = [k for k in s["kw"] if k not in low]
+                rows.append(row)
+                print(f"  [G] {sname}/{arm} r{run}: sł={row['words']} głos={row['voiceHits']} "
+                      f"nastrój={len(row['moodKwHit'])} fakty={len(row['factKwHit'])}/{len(s['kw'])} "
+                      f"| {(c['reply'] or '')[:90]}", file=sys.stderr, flush=True)
+    return rows
+
+
+EXPS = {"A": exp_a, "B": exp_b, "C": exp_c, "D": exp_d, "E": exp_e, "F": exp_f, "G": exp_g}
 
 
 def main():
