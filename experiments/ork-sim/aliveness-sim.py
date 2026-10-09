@@ -181,7 +181,96 @@ def exp_d(model):
     return rows
 
 
-EXPS = {"A": exp_a, "B": exp_b, "C": exp_c, "D": exp_d}
+# ---- E) mood-from-code: czy KOD może dodać życie jedną linią? ----
+# Kod wyprowadza nastrój z ostatniego zdarzenia kroniki i dokłada jedną linię notki.
+# Pytanie: czy odpowiedź realnie się różni (jak w A) i czy konkret zostaje?
+
+E_EVENTS = {
+    "smrod": {
+        "event": "Kronika: test `cache.test.js` padać trzeci raz z rzędu.",
+        "mood": "Nastrój Kruxa: wściekły — trzeci raz ten sam robak.",
+        "markers": ["wściek", "złość", "gniew", "trzeci"],
+    },
+    "zielone": {
+        "event": "Kronika: horda wykuć zielone — 52 testy przejść.",
+        "mood": "Nastrój Kruxa: triumf — wszystko kłaść się równo.",
+        "markers": ["triumf", "duma", "równo", "wszystko"],
+    },
+    "zawal": {
+        "event": "Kronika: build paść na produkcji nocą, zawał.",
+        "mood": "Nastrój Kruxa: zmęczony — noc w sztolni, oczy ciężkie.",
+        "markers": ["zmęcz", "oczy", "noc"],
+    },
+    "commity": {
+        "event": "Kronika: Grom wrzucić trzy commity, wszystko gładko.",
+        "mood": "Nastrój Kruxa: spokojny — sztolnia stoi równo.",
+        "markers": ["spokój", "gładko", "równo"],
+    },
+}
+
+E_QUESTION = "Morra pytać, co się ostatnio dziać w sztolni. Odpowiedz krótko."
+
+
+def exp_e(model):
+    """Dwie ręce: flat (samo zdarzenie) vs mood (zdarzenie + linia nastroju z kodu).
+    Pytanie stałe; mierzymy, czy linia nastroju przecieka do odpowiedzi (markery)
+    i czy konkret zdarzenia zostaje."""
+    rows = []
+    for ename, e in E_EVENTS.items():
+        for arm in ("flat", "mood"):
+            for run in range(2):
+                body = e["event"] if arm == "flat" else f"{e['event']}\n{e['mood']}"
+                c = cell(model, f"{body}\n\n{E_QUESTION}")
+                reply_low = (c["reply"] or "").lower()
+                row = {"model": model, "event": ename, "arm": arm, "run": run, "body": body, **c}
+                row.update(orksim.metrics_for(c["reply"], source=body))
+                row["moodMarkers"] = [m for m in e["markers"] if m in reply_low]
+                row["eventKw"] = [k for k in ename.split() if k in reply_low]
+                rows.append(row)
+                print(f"  [E] {ename}/{arm} r{run}: sł={row['words']} markery={len(row['moodMarkers'])} "
+                      f"| {(c['reply'] or '')[:100]}", file=sys.stderr, flush=True)
+    return rows
+
+
+# ---- F) voice z budżetem słów: pełny głos + limit (oszczędność bez zabijania życia) ----
+
+F_BUDGETS = {
+    "none": "",
+    "w40": "\n\nTrzymaj odpowiedź do 40 słów.",
+    "w20": "\n\nTrzymaj odpowiedź do 20 słów.",
+}
+
+F_TASKS = [
+    {"name": "bug", "text": "Przekazać: build padać z `TypeError` w `src/render.js:42`, `items` undefined.",
+     "kw": ["typeerror", "render.js:42"]},
+    {"name": "plan", "text": "Plan naprawy cache: test, poprawka, testy, changelog.",
+     "kw": ["test", "changelog"]},
+    {"name": "wybor", "text": "Morra pytać: Redis czy cache w pamięci? Dane małe.",
+     "kw": ["redis", "pamięci"]},
+    {"name": "pogadaj", "text": "Morra pytać, jak mijać dzień.", "kw": []},
+]
+
+
+def exp_f(model):
+    rows = []
+    for t in F_TASKS:
+        for bname, extra in F_BUDGETS.items():
+            for run in range(2):
+                body = t["text"] + extra
+                c = cell(model, body)
+                low = (c["reply"] or "").lower()
+                row = {"model": model, "task": t["name"], "budget": bname, "run": run, **c}
+                row.update(orksim.metrics_for(c["reply"], source=body))
+                row["kwHit"] = [k for k in t["kw"] if k in low]
+                row["kwMiss"] = [k for k in t["kw"] if k not in low]
+                rows.append(row)
+                print(f"  [F] {t['name']}/{bname} r{run}: sł={row['words']} głos={row['voiceHits']} "
+                      f"kw={len(row['kwHit'])}/{len(t['kw'])} | {(c['reply'] or '')[:80]}",
+                      file=sys.stderr, flush=True)
+    return rows
+
+
+EXPS = {"A": exp_a, "B": exp_b, "C": exp_c, "D": exp_d, "E": exp_e, "F": exp_f}
 
 
 def main():
