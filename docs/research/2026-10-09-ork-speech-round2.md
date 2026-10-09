@@ -74,6 +74,36 @@ Wszystkie poniżej 1000 znaków (ograniczenie moda). Mierzone nowymi metrykami: 
 weekend, podziękowanie, krytyka, urlop, nowy projekt…) × 2 instrukcje (orkowa vs ludzka) × 3 rundy.
 Cel: sprawdzić, czy **jedna linia** trzyma głos i niesie sens — czyli czy dymki moda mogą być krótsze i mocniejsze.
 
+**Pierwszy wynik (deepseek, komplet 96 wierszy):** bez `persona.md` w systemie (sam bark z instrukcją) — barks
+wypadają źle w bardzo konkretny sposób:
+
+| metryka | b-ork | b-human (kontrola) |
+|---|---:|---:|
+| słów/odp | 10,4 | 10,4 |
+| głos/1k | **590** | 56 |
+| bezokoliczniki/100 | **2,8** | — |
+| copula/100 | 0,0 | — |
+| forma przeszła | **41/48** | 1/48 |
+| rytuał (Hrrr/Da) | 0 | 0 |
+
+Trzy wnioski:
+
+1. **Słownik wysypany, nie użyty.** 590/1k to „word salad": „Sztolnia, robak, smród, wykuć, zawał, horda!" —
+   model traktuje listę słów z instrukcji jak rekwizyty do wyliczenia. Przyczyna jest w samej instrukcji:
+   wymieniamy słownik wprost („słownik górniczy: robak, smród, wykuć…"), więc model *cytatuje listę*, zamiast
+   używać słów semantycznie. **Reguła: w instrukcji barku nie wolno wyliczać słownika.**
+2. **Bezokoliczniki wyparowały** (2,8/100 vs 22,95/100 w matrix `i-ork`), a **forma przeszła wróciła w 41/48**
+   („Krux wykuł", „ryknął"). Bez kontraktu persona.md sama prośba „napisz okrzyk orka" ściąga model do
+   generycznego roleplay (gatunek), a nie do gramatyki Kruxa.
+3. **Gdy nie ma treści technicznej, model wypełnia pustkę słownikiem.** Sytuacje techniczne (testy, build)
+   jeszcze niosą fakt; społeczne (rano, noc, podziękowanie) to czysty wysyp słów. Kontrast z `b-human`, gdzie
+   te same sytuacje dają sensowne, ciepłe zdania — treść społeczna Kruxa musi pochodzić z **jego fikcyjnego
+   życia** (kuźnia, horda, dzień w kopalni — wzorzec z `pogadaj` w persona.md), nie z listy słów.
+
+**Wniosek wstępny:** bark jako *osobny byt promptowy* nie przechodzi testu — dymki zostają ręczne w `mood.ts`
+albo dostają `persona.md` + fakt z życia Kruxa. Wartość pomiaru: dostaliśmy twardy dowód, że **słownik jest
+przyprawą, nie daniem** — bez treści pod nim zamienia się w wyliczankę.
+
 Użycie:
 
 ```bash
