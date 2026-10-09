@@ -30,7 +30,7 @@ from openai import OpenAI
 HERE = Path(__file__).resolve().parent
 RESULTS = HERE / "results"
 MODEL = "deepseek-v4.1-flash"
-MODELS = ["deepseek-v4.1-flash", "glm-5.3-flash"]
+MODELS = ["deepseek-v4.1-flash", "glm-5.3-flash", "glm-5.3"]
 BASE_URL = "https://ollama.com/v1"
 
 # ---- Źródła moda ----
