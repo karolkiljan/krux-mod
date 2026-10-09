@@ -131,7 +131,30 @@ python experiments/ork-sim/ork-sim.py session --variant anchor-combo --runs 2 --
 python experiments/ork-sim/ork-sim.py barks --runs 3 --models deepseek-v4.1-flash glm-5.3-flash
 ```
 
-## Stan poprzedniej rundy (kontekst dla tej)
+## Wyniki sesji z nowymi kotwicami (12 tur × 2 rundy, deepseek; combo też glm)
+
+| wariant | out/odp | sł/odp | głos/1k | bezok/100 | cop/100 | avgSł | krótkie% |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| anchor-combo (ds) | 811 | 179,1 | 41,2 | 8,24 | 0,14 | 6,06 | 0,81 |
+| anchor-mine (ds) | 924 | 195,5 | **51,6** | 7,29 | 0,26 | 8,47 | 0,59 |
+| anchor-rhythm (ds) | 717 | **136,2** | 42,8 | 7,77 | 0,06 | 6,43 | 0,77 |
+| anchor-ritual (ds) | 866 | 146,4 | 43,3 | 8,11 | **0,00** | **5,72** | **0,84** |
+| anchor-combo (glm) | 1929 | 143,4 | **53,8** | 10,11 | 0,00 | 7,02 | 0,70 |
+| *runda 1: anchor-full (ds)* | *1016* | *—* | *43,6* | *9,02* | *0,12* | *7,61* | *—* |
+
+**Czytanie:**
+
+1. **`anchor-mine` daje najgęstszy słownik** (51,6/1k — przebija anchor-full z rundy 1 o ~18%), ale kosztem
+   dłuższych zdań (avgSł 8,47). Rozszerzony słownik górniczy działa — wariant ma sens, gdy chcemy maksymalnej
+   „orkowości" i nie zależy nam na zwięzłości.
+2. **`anchor-ritual` ma zero copuli i najkrótsze zdania** (5,72 słowa; 84% zdań ≤ 8 słów) — najlepszy do
+   szybkich odpowiedzi; rytuały (Hrrr/Da) nie zaburzyły gramatyki.
+3. **`anchor-rhythm` najmniej pisze** (717 tok out, 136 słów) przy utrzymanej gęstości głosu (42,8) — dobry
+   kompromis kosztowy, choć dłuższe zdania niż w ritual.
+4. **`anchor-combo` działa na obu modelach** (ds: 41,2 głosu / 6,06 słów; glm: 53,8 głosu / 7,02 słów) i trzyma
+   bezokoliczniki — na glm to nawet lepszy wynik niż anchor-full z rundy 1. To najbardziej zbalansowany kandydat.
+5. **Bezokoliczniki trzymają się przez wszystkie 12 tur** we wszystkich wariantach (bez wygasania) — kotwice
+   z rundy 2 są odporne na dryf w środku sesji. Wykres per tura w `analyze.py session`.
 
 - Matrix i rewrite: pełne wyniki na obu modelach (sekcje w `2026-10-08-ork-speech-deepseek.md`).
 - Kluczowe ustalenie: **terse gubi słownik** (0.0/1k u obu modeli) — gramatyka bez leksyki nie daje „orka".

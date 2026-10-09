@@ -40,6 +40,8 @@ def cell_key(kind, row):
         return (row["model"], row.get("scene"), row["turn"])
     if kind == "barks":
         return (row["model"], row["barks"], row["situation"], row["run"])
+    if kind == "session":
+        return (row["model"], row.get("variant"), row["turn"], row["run"])
     return (row["model"], row["rewrite"], row["item"], row["run"])
 
 
@@ -63,6 +65,8 @@ def collect(kind):
             r = {**r, "model": model}
             if kind == "dialogue" and "scene" not in r:
                 r["scene"] = d.get("scene")
+            if kind == "session" and "variant" not in r:
+                r["variant"] = d.get("variant")
             key = cell_key(kind, r)
             prev = merged.get(key)
             if prev is not None and not prev.get("empty") and r.get("empty"):
