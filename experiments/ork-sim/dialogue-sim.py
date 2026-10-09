@@ -172,7 +172,7 @@ def run_scene(name, model, turns, temperature=0.8):
             if line.startswith(prefix):
                 line = line[len(prefix):].strip()
         history.append((who, line))
-        rows.append({"turn": i, "speaker": who, "line": line, "outTok": res["outTok"],
+        rows.append({"model": model, "turn": i, "speaker": who, "line": line, "outTok": res["outTok"],
                      "latencyMs": res["latencyMs"], "empty": res.get("empty", False),
                      "finish": res.get("finish"),
                      **orksim.metrics_for(line, source=scene["situation"])})

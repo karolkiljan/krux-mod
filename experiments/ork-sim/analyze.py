@@ -12,6 +12,7 @@ Użycie:
   python experiments/ork-sim/analyze.py all
 """
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -34,6 +35,9 @@ def fmt(x, nd=2):
 def cell_key(kind, row):
     if kind == "matrix":
         return (row["model"], row["instruction"], row["promptType"], row["run"])
+    if kind == "dialogue":
+        # Scena jest jedna na plik — klucz: model + scena + tura.
+        return (row["model"], row.get("scene"), row["turn"])
     return (row["model"], row["rewrite"], row["item"], row["run"])
 
 
@@ -50,8 +54,13 @@ def collect(kind):
             continue
         files_per_model.setdefault(model, []).append(p.name)
         for r in d.get("rows", []):
-            if r.get("model") != model:
+            # Wiersze dialogue nie niosą modelu ani sceny w sobie — bierzemy z pliku.
+            row_model = r.get("model") or model
+            if row_model != model:
                 continue
+            r = {**r, "model": model}
+            if kind == "dialogue" and "scene" not in r:
+                r["scene"] = d.get("scene")
             key = cell_key(kind, r)
             prev = merged.get(key)
             if prev is not None and not prev.get("empty") and r.get("empty"):
@@ -279,6 +288,71 @@ def analyze_sessions():
     print()
 
 
+def analyze_dialogues():
+    """Symulowane rozmowy: metryki per mówca + powtórki formuł (copy-bias w dialogu)."""
+    per_model, files = model_stats("dialogue")
+    if not per_model:
+        print("## Dialogue — brak danych\n")
+        return
+
+    def norm(s):
+        return re.sub(r'\s+', ' ', (s or '').lower()).strip()
+
+    for model in sorted(per_model):
+        rows = per_model[model]
+        scenes = sorted({r.get("scene") for r in rows if r.get("scene")})
+        print(f"## Dialogue — {model}\n")
+        for scene in scenes:
+            sel = [r for r in rows if r.get("scene") == scene]
+            speakers = sorted({r["speaker"] for r in sel})
+            print(f"### Scena: {scene} ({len(sel)} tur)\n")
+            print("| mówca | tur | sł/odp | głos/odp | bezok/odp | cop | ryt. | powt. | powtórki formuł |")
+            print("|---|---:|---:|---:|---:|---:|---:|---:|---:|")
+            for who in speakers:
+                sp = [r for r in sel if r["speaker"] == who]
+                words = sum(r["words"] for r in sp) or 1
+                # powtórki: pierwsze 4 słowa kwestii powtarzają się w innej turze tej postaci
+                heads = {}
+                dup = 0
+                for r in sp:
+                    head = " ".join(norm(r["line"]).split()[:4])
+                    if head and head in heads:
+                        dup += 1
+                    heads[head] = True
+                print("| " + " | ".join([
+                    who, str(len(sp)),
+                    f"{sum(r['words'] for r in sp)/len(sp):.1f}",
+                    f"{sum(r['voiceHits'] for r in sp)/len(sp):.1f}",
+                    f"{sum(r['infinitiveHits'] for r in sp)/len(sp):.1f}",
+                    str(sum(r['copulaHits'] for r in sp)),
+                    str(sum(r.get('ritualHits', 0) for r in sp)),
+                    str(sum(r.get('repetitionHits', 0) for r in sp)),
+                    str(dup),
+                ]) + " |")
+            print()
+
+            # rozróżnialność: unikalne słowa kluczowe per mówca (bez słów wspólnych)
+            from collections import Counter
+            per_speaker = {}
+            for who in speakers:
+                c = Counter()
+                for r in sel:
+                    if r["speaker"] == who:
+                        c.update(w for w in re.findall(r'[a-ząćęłńóśźż]{4,}', norm(r["line"])))
+                per_speaker[who] = c
+            common = Counter()
+            for c in per_speaker.values():
+                common.update(c.keys())
+            print("Sygnatury słowne (słowa tylko u tej postaci):")
+            for who in speakers:
+                sig = [w for w, n in per_speaker[who].most_common(40) if common[w] == len(speakers) or n >= 2][:6]
+                print(f"- **{who}**: {', '.join(sig) if sig else '—'}")
+            print()
+    for model in sorted(files):
+        print(f"pliki {model}: " + ", ".join(files[model]))
+    print()
+
+
 def main():
     which = sys.argv[1] if len(sys.argv) > 1 else "all"
     if which in ("matrix", "all"):
@@ -289,6 +363,8 @@ def main():
         analyze_barks()
     if which in ("session", "all"):
         analyze_sessions()
+    if which in ("dialogue", "all"):
+        analyze_dialogues()
     if which in ("fidelity", "all"):
         analyze_fidelity_examples()
 
