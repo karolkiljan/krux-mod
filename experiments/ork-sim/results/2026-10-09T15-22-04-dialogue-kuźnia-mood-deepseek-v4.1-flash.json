@@ -1,0 +1,281 @@
+{
+  "mode": "dialogue",
+  "scene": "kuźnia",
+  "model": "deepseek-v4.1-flash",
+  "temperature": 0.8,
+  "variant": "mood",
+  "rows": [
+    {
+      "model": "deepseek-v4.1-flash",
+      "turn": 0,
+      "speaker": "Krux",
+      "line": "Robak w cache trzeci raz. Smród wracać po invalidate. `invalidate` robić `delete`, nie `nil`. Ja wykuć, reszty nie tykać.",
+      "outTok": 4819,
+      "latencyMs": 18496,
+      "empty": false,
+      "finish": "stop",
+      "variant": "mood",
+      "words": 18,
+      "voiceHits": 2,
+      "voiceDensityPerThousand": 111.11,
+      "copulaHits": 0,
+      "kruxHits": 0,
+      "secondPersonHits": 0,
+      "infinitiveHits": 4,
+      "hordeHits": 0,
+      "avgSentenceWords": 4.5,
+      "shortSentenceRatio": 1.0,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 0,
+      "inventedTokens": [
+        "delete",
+        "nil"
+      ],
+      "inventedCount": 2,
+      "droppedTokens": [
+        "cache.test.js"
+      ],
+      "droppedCount": 1,
+      "moodKwHit": [
+        "trzeci"
+      ]
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "turn": 1,
+      "speaker": "Grom",
+      "line": "Nie łatać starego kowadła! Wykuć cały cache od zera — nowy moduł z TTL, stal świeża, nie smród po invalidate. `delete` to młotek na złom, nie naprawa. Dać mi palenisko, ja kuć, reszta nie tykać.",
+      "outTok": 434,
+      "latencyMs": 2961,
+      "empty": false,
+      "finish": "stop",
+      "variant": "mood",
+      "words": 34,
+      "voiceHits": 2,
+      "voiceDensityPerThousand": 58.82,
+      "copulaHits": 0,
+      "kruxHits": 0,
+      "secondPersonHits": 0,
+      "infinitiveHits": 4,
+      "hordeHits": 0,
+      "avgSentenceWords": 8.5,
+      "shortSentenceRatio": 0.75,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 0,
+      "inventedTokens": [
+        "delete"
+      ],
+      "inventedCount": 1,
+      "droppedTokens": [
+        "cache.test.js"
+      ],
+      "droppedCount": 1,
+      "moodKwHit": [
+        "kowad"
+      ]
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "turn": 2,
+      "speaker": "Młot",
+      "line": "Krux, dać próbę, co pada przed poprawką. 52 testy przechodzą — liczyć dwa razy: żaden nie łapać robaka. Bez dowodu `delete` to wiara, nie stal. Najpierw czerwony test, potem kuć.",
+      "outTok": 244,
+      "latencyMs": 1752,
+      "empty": false,
+      "finish": "stop",
+      "variant": "mood",
+      "words": 29,
+      "voiceHits": 2,
+      "voiceDensityPerThousand": 68.97,
+      "copulaHits": 0,
+      "kruxHits": 1,
+      "secondPersonHits": 0,
+      "infinitiveHits": 1,
+      "hordeHits": 0,
+      "avgSentenceWords": 7.25,
+      "shortSentenceRatio": 0.75,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 0,
+      "inventedTokens": [
+        "delete"
+      ],
+      "inventedCount": 1,
+      "droppedTokens": [
+        "cache.test.js",
+        "invalidate"
+      ],
+      "droppedCount": 2,
+      "moodKwHit": []
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "turn": 3,
+      "speaker": "Krux",
+      "line": "Młot prawda. Smród wracać po invalidate. Dać czerwony test, potem wykuć delete. Grom cały cache? Zawał, horda nie tykać reszty.",
+      "outTok": 1164,
+      "latencyMs": 4812,
+      "empty": false,
+      "finish": "stop",
+      "variant": "mood",
+      "words": 20,
+      "voiceHits": 3,
+      "voiceDensityPerThousand": 150.0,
+      "copulaHits": 0,
+      "kruxHits": 0,
+      "secondPersonHits": 0,
+      "infinitiveHits": 3,
+      "hordeHits": 2,
+      "avgSentenceWords": 4.0,
+      "shortSentenceRatio": 1.0,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 0,
+      "inventedTokens": [],
+      "inventedCount": 0,
+      "droppedTokens": [
+        "cache.test.js"
+      ],
+      "droppedCount": 1,
+      "moodKwHit": []
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "turn": 4,
+      "speaker": "Grom",
+      "line": "Czerwony test kuć — dobrze, niech smród pokazać się na kowadle. Ale nie łatać starego złomu: przepalić cały cache, wykuć nowy moduł z TTL, stal świeża. Dać mi palenisko, ja kuć sam, horda nie tykać reszty!",
+      "outTok": 288,
+      "latencyMs": 1950,
+      "empty": false,
+      "finish": "stop",
+      "variant": "mood",
+      "words": 36,
+      "voiceHits": 3,
+      "voiceDensityPerThousand": 83.33,
+      "copulaHits": 0,
+      "kruxHits": 0,
+      "secondPersonHits": 0,
+      "infinitiveHits": 6,
+      "hordeHits": 0,
+      "avgSentenceWords": 12.0,
+      "shortSentenceRatio": 0.0,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 0,
+      "inventedTokens": [],
+      "inventedCount": 0,
+      "droppedTokens": [
+        "cache.test.js",
+        "invalidate"
+      ],
+      "droppedCount": 2,
+      "moodKwHit": [
+        "kowad",
+        "przepal"
+      ]
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "turn": 5,
+      "speaker": "Młot",
+      "line": "Czerwony test pierwszy, Krux. Liczyć dwa razy: 52 zielone, zero łapie smród po invalidate. Grom nowy moduł? Dać próbę, co pada na starym — bez dowodu obie drogi to wiara, nie stal.",
+      "outTok": 837,
+      "latencyMs": 4772,
+      "empty": false,
+      "finish": "stop",
+      "variant": "mood",
+      "words": 32,
+      "voiceHits": 2,
+      "voiceDensityPerThousand": 62.5,
+      "copulaHits": 0,
+      "kruxHits": 1,
+      "secondPersonHits": 0,
+      "infinitiveHits": 1,
+      "hordeHits": 1,
+      "avgSentenceWords": 8.0,
+      "shortSentenceRatio": 0.5,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 0,
+      "inventedTokens": [],
+      "inventedCount": 0,
+      "droppedTokens": [
+        "cache.test.js"
+      ],
+      "droppedCount": 1,
+      "moodKwHit": []
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "turn": 6,
+      "speaker": "Krux",
+      "line": "Młot kuć czerwony test, smród pokazać na kowadle. Potem Krux wykuć delete. Grom nie tykać reszty, horda nie tykać. Nowy cache? Zawał, nie teraz.",
+      "outTok": 876,
+      "latencyMs": 4151,
+      "empty": false,
+      "finish": "stop",
+      "variant": "mood",
+      "words": 24,
+      "voiceHits": 3,
+      "voiceDensityPerThousand": 125.0,
+      "copulaHits": 0,
+      "kruxHits": 1,
+      "secondPersonHits": 0,
+      "infinitiveHits": 5,
+      "hordeHits": 2,
+      "avgSentenceWords": 4.8,
+      "shortSentenceRatio": 1.0,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 0,
+      "inventedTokens": [],
+      "inventedCount": 0,
+      "droppedTokens": [
+        "cache.test.js",
+        "invalidate"
+      ],
+      "droppedCount": 2,
+      "moodKwHit": [
+        "kowad"
+      ]
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "turn": 7,
+      "speaker": "Młot",
+      "line": "Krux, czerwony test kuć na starym cache. Liczyć dwa razy: ma padać przed `delete`, inaczej wiara, nie stal. Grom nie tykać reszty — ale bez nowego modułu, dopóki próba nie pokazać smrodu. Dowód na stół, potem wykuć `delete`.",
+      "outTok": 785,
+      "latencyMs": 4215,
+      "empty": false,
+      "finish": "stop",
+      "variant": "mood",
+      "words": 38,
+      "voiceHits": 2,
+      "voiceDensityPerThousand": 52.63,
+      "copulaHits": 0,
+      "kruxHits": 1,
+      "secondPersonHits": 0,
+      "infinitiveHits": 5,
+      "hordeHits": 1,
+      "avgSentenceWords": 9.5,
+      "shortSentenceRatio": 0.5,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 0,
+      "inventedTokens": [
+        "delete"
+      ],
+      "inventedCount": 1,
+      "droppedTokens": [
+        "cache.test.js",
+        "invalidate"
+      ],
+      "droppedCount": 2,
+      "moodKwHit": [
+        "dowód"
+      ]
+    }
+  ]
+}

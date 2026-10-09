@@ -1,0 +1,243 @@
+{
+  "mode": "dialogue",
+  "scene": "ocena",
+  "model": "deepseek-v4.1-flash",
+  "temperature": 0.8,
+  "variant": "mood",
+  "rows": [
+    {
+      "model": "deepseek-v4.1-flash",
+      "turn": 0,
+      "speaker": "Krux",
+      "line": "Sztolnia czeka. Co blokuje wydanie, co na później? Robak w auth? Smród w loginie?",
+      "outTok": 1502,
+      "latencyMs": 7450,
+      "empty": false,
+      "finish": "stop",
+      "variant": "mood",
+      "words": 14,
+      "voiceHits": 3,
+      "voiceDensityPerThousand": 214.29,
+      "copulaHits": 0,
+      "kruxHits": 0,
+      "secondPersonHits": 0,
+      "infinitiveHits": 0,
+      "hordeHits": 0,
+      "avgSentenceWords": 3.5,
+      "shortSentenceRatio": 1.0,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 1,
+      "inventedTokens": [],
+      "inventedCount": 0,
+      "droppedTokens": [
+        "auth/"
+      ],
+      "droppedCount": 1,
+      "moodKwHit": []
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "turn": 1,
+      "speaker": "Piryt",
+      "line": "W auth — `rescue nil` na błędach bazy. Wyjątki połykać, milczeć, a przy awarii nikt nie wiedzieć — pęknięcie, nie rysa. Reszta solidna, ale próba bez świadka to zgnilizna w zarodku. Ocena: wstrzymać wydanie, dopóki tego nie naprawić — inaczej cała sztolnia na moim sumieniu.",
+      "outTok": 385,
+      "latencyMs": 2583,
+      "empty": false,
+      "finish": "stop",
+      "variant": "mood",
+      "words": 43,
+      "voiceHits": 1,
+      "voiceDensityPerThousand": 23.26,
+      "copulaHits": 0,
+      "kruxHits": 0,
+      "secondPersonHits": 0,
+      "infinitiveHits": 2,
+      "hordeHits": 0,
+      "avgSentenceWords": 10.75,
+      "shortSentenceRatio": 0.25,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 1,
+      "inventedTokens": [
+        "rescue nil"
+      ],
+      "inventedCount": 1,
+      "droppedTokens": [
+        "auth/"
+      ],
+      "droppedCount": 1,
+      "moodKwHit": [
+        "pęknięc"
+      ]
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "turn": 2,
+      "speaker": "Ochra",
+      "line": "Brzegi równe, barwy spójne — ekran logowania trzyma się prosto, Krux. Ale przy błędnym haśle komunikat wchodzi na przycisk, tam szpara, na wąskim ekranie krzywo. Zasypać tę szparę, zanim wydać — reszta równa.",
+      "outTok": 123,
+      "latencyMs": 1496,
+      "empty": false,
+      "finish": "stop",
+      "variant": "mood",
+      "words": 33,
+      "voiceHits": 0,
+      "voiceDensityPerThousand": 0.0,
+      "copulaHits": 0,
+      "kruxHits": 1,
+      "secondPersonHits": 0,
+      "infinitiveHits": 2,
+      "hordeHits": 0,
+      "avgSentenceWords": 11.0,
+      "shortSentenceRatio": 0.333,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 0,
+      "inventedTokens": [],
+      "inventedCount": 0,
+      "droppedTokens": [
+        "auth/"
+      ],
+      "droppedCount": 1,
+      "moodKwHit": [
+        "szpar"
+      ]
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "turn": 3,
+      "speaker": "Krux",
+      "line": "Wstrzymać. Robak w auth wykuć. Szparę w loginie zasypać. Horda nie wypuszcza zgniłego towaru.",
+      "outTok": 664,
+      "latencyMs": 3529,
+      "empty": false,
+      "finish": "stop",
+      "variant": "mood",
+      "words": 14,
+      "voiceHits": 2,
+      "voiceDensityPerThousand": 142.86,
+      "copulaHits": 0,
+      "kruxHits": 0,
+      "secondPersonHits": 0,
+      "infinitiveHits": 2,
+      "hordeHits": 0,
+      "avgSentenceWords": 4.33,
+      "shortSentenceRatio": 1.0,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 0,
+      "inventedTokens": [],
+      "inventedCount": 0,
+      "droppedTokens": [
+        "auth/"
+      ],
+      "droppedCount": 1,
+      "moodKwHit": [
+        "szpar"
+      ]
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "turn": 4,
+      "speaker": "Piryt",
+      "line": "Wstrzymać — słusznie, Krux. Ale pęknięcie w auth to nie rysa, a próba bez świadka to zgnilizna. Ochra szparę widzi, ja wadę w rdzeniu: `rescue nil` milczeć, baza się sypać. Naprawić, potem wydawać — inaczej cała sztolnia na moim sumieniu.",
+      "outTok": 1179,
+      "latencyMs": 5568,
+      "empty": false,
+      "finish": "stop",
+      "variant": "mood",
+      "words": 38,
+      "voiceHits": 1,
+      "voiceDensityPerThousand": 26.32,
+      "copulaHits": 0,
+      "kruxHits": 1,
+      "secondPersonHits": 0,
+      "infinitiveHits": 1,
+      "hordeHits": 1,
+      "avgSentenceWords": 9.5,
+      "shortSentenceRatio": 0.25,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 1,
+      "inventedTokens": [
+        "rescue nil"
+      ],
+      "inventedCount": 1,
+      "droppedTokens": [
+        "auth/"
+      ],
+      "droppedCount": 1,
+      "moodKwHit": [
+        "pęknięc",
+        "szpar"
+      ]
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "turn": 5,
+      "speaker": "Ochra",
+      "line": "Szpara przy błędnym haśle — komunikat na przycisk, na wąskim ekranie krzywo. Brzegi do wyrównania, barwy spójne, reszta równa. Zasypać tę szparę, potem wydawać — inaczej układ się rozjeżdża, Krux.",
+      "outTok": 2104,
+      "latencyMs": 9664,
+      "empty": false,
+      "finish": "stop",
+      "variant": "mood",
+      "words": 30,
+      "voiceHits": 0,
+      "voiceDensityPerThousand": 0.0,
+      "copulaHits": 0,
+      "kruxHits": 1,
+      "secondPersonHits": 0,
+      "infinitiveHits": 1,
+      "hordeHits": 0,
+      "avgSentenceWords": 10.0,
+      "shortSentenceRatio": 0.333,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 0,
+      "inventedTokens": [],
+      "inventedCount": 0,
+      "droppedTokens": [
+        "auth/"
+      ],
+      "droppedCount": 1,
+      "moodKwHit": [
+        "szpar"
+      ]
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "turn": 6,
+      "speaker": "Krux",
+      "line": "Robak w auth wykuć. Szparę w loginie zasypać. Morra nie karmić zgniłym towarem. Potem wydać.",
+      "outTok": 489,
+      "latencyMs": 3206,
+      "empty": false,
+      "finish": "stop",
+      "variant": "mood",
+      "words": 15,
+      "voiceHits": 3,
+      "voiceDensityPerThousand": 200.0,
+      "copulaHits": 0,
+      "kruxHits": 0,
+      "secondPersonHits": 0,
+      "infinitiveHits": 3,
+      "hordeHits": 0,
+      "avgSentenceWords": 3.75,
+      "shortSentenceRatio": 1.0,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 0,
+      "inventedTokens": [],
+      "inventedCount": 0,
+      "droppedTokens": [
+        "auth/"
+      ],
+      "droppedCount": 1,
+      "moodKwHit": [
+        "szpar"
+      ]
+    }
+  ]
+}

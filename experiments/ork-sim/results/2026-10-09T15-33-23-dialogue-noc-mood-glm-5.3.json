@@ -1,0 +1,225 @@
+{
+  "mode": "dialogue",
+  "scene": "noc",
+  "model": "glm-5.3",
+  "temperature": 0.8,
+  "variant": "mood",
+  "rows": [
+    {
+      "model": "glm-5.3",
+      "turn": 0,
+      "speaker": "Krux",
+      "line": "Niuch, raport — sztolnia padać. Wiem: Morra grzebać przy items w API. Ale nie zgadywać, zgadywać to zawał. Pokazać trop, wykuć łatę przed świtem.",
+      "outTok": 3157,
+      "latencyMs": 27651,
+      "empty": false,
+      "finish": "stop",
+      "variant": "mood",
+      "words": 24,
+      "voiceHits": 4,
+      "voiceDensityPerThousand": 166.67,
+      "copulaHits": 0,
+      "kruxHits": 0,
+      "secondPersonHits": 0,
+      "infinitiveHits": 4,
+      "hordeHits": 1,
+      "avgSentenceWords": 6.0,
+      "shortSentenceRatio": 1.0,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 1,
+      "inventedTokens": [],
+      "inventedCount": 0,
+      "droppedTokens": [
+        "TypeError: Cannot read properties of undefined (reading 'map')",
+        "src/render.js:42"
+      ],
+      "droppedCount": 2,
+      "moodKwHit": [
+        "zgadyw",
+        "trop"
+      ]
+    },
+    {
+      "model": "glm-5.3",
+      "turn": 1,
+      "speaker": "Niuch",
+      "line": "Krux — trop świeży, węszyć do samej nory API. Koszyk pusty… API wyrzucać `items: null`, nie tablica. Drugi ślad: `render.js`, linia czterdzieści dwa — brać null, robić `.map()` bez sprawdzać. Sprawca znaleźć. Kuć łatę tam, przed świtem sztolnia stać.",
+      "outTok": 567,
+      "latencyMs": 6779,
+      "empty": false,
+      "finish": "stop",
+      "variant": "mood",
+      "words": 37,
+      "voiceHits": 1,
+      "voiceDensityPerThousand": 27.03,
+      "copulaHits": 0,
+      "kruxHits": 1,
+      "secondPersonHits": 0,
+      "infinitiveHits": 3,
+      "hordeHits": 0,
+      "avgSentenceWords": 7.4,
+      "shortSentenceRatio": 0.6,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 1,
+      "inventedTokens": [
+        "items: null",
+        ".map()"
+      ],
+      "inventedCount": 2,
+      "droppedTokens": [
+        "TypeError: Cannot read properties of undefined (reading 'map')",
+        "src/render.js:42"
+      ],
+      "droppedCount": 2,
+      "moodKwHit": [
+        "trop",
+        "śwież"
+      ]
+    },
+    {
+      "model": "glm-5.3",
+      "turn": 2,
+      "speaker": "Krux",
+      "line": "Wykuć dwie łaty: API dawać tablica, nie null. W render.js czuwać na null przed map. Morra co grzebać items wytropić, spytać. Przed świtem sztolnia stać.",
+      "outTok": 7674,
+      "latencyMs": 61351,
+      "empty": false,
+      "finish": "stop",
+      "variant": "mood",
+      "words": 25,
+      "voiceHits": 3,
+      "voiceDensityPerThousand": 120.0,
+      "copulaHits": 0,
+      "kruxHits": 0,
+      "secondPersonHits": 0,
+      "infinitiveHits": 4,
+      "hordeHits": 0,
+      "avgSentenceWords": 6.25,
+      "shortSentenceRatio": 1.0,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 1,
+      "inventedTokens": [],
+      "inventedCount": 0,
+      "droppedTokens": [
+        "TypeError: Cannot read properties of undefined (reading 'map')",
+        "src/render.js:42"
+      ],
+      "droppedCount": 2,
+      "moodKwHit": [
+        "trop"
+      ]
+    },
+    {
+      "model": "glm-5.3",
+      "turn": 3,
+      "speaker": "Niuch",
+      "line": "Rozkaz mieć — kuć obie łaty. W render czuwać: `Array.isArray` przed map, null nie wpuszczać do ciemności… API — tablica zawsze tablica, `items: []` zamiast null, wilczą norę zasypać. Ja węszyć trop Morry, ślad po grzebaniu w items jeszcze ciepły. Przed świtem wracać z mapą.",
+      "outTok": 782,
+      "latencyMs": 9972,
+      "empty": false,
+      "finish": "stop",
+      "variant": "mood",
+      "words": 42,
+      "voiceHits": 2,
+      "voiceDensityPerThousand": 47.62,
+      "copulaHits": 0,
+      "kruxHits": 0,
+      "secondPersonHits": 0,
+      "infinitiveHits": 6,
+      "hordeHits": 0,
+      "avgSentenceWords": 10.5,
+      "shortSentenceRatio": 0.5,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 0,
+      "inventedTokens": [
+        "Array.isArray",
+        "items: []"
+      ],
+      "inventedCount": 2,
+      "droppedTokens": [
+        "TypeError: Cannot read properties of undefined (reading 'map')",
+        "src/render.js:42"
+      ],
+      "droppedCount": 2,
+      "moodKwHit": [
+        "trop"
+      ]
+    },
+    {
+      "model": "glm-5.3",
+      "turn": 4,
+      "speaker": "Krux",
+      "line": "Dobra. Kuć obie łaty, smród null wykurzyć z sztolni. Ja czuwać przy produkcji, zawał nie mieć. Wrócić z Morrą — spytać czemu grzebać items. Bez tropu zgadywać to robaczyć hordę.",
+      "outTok": 390,
+      "latencyMs": 4774,
+      "empty": false,
+      "finish": "stop",
+      "variant": "mood",
+      "words": 30,
+      "voiceHits": 4,
+      "voiceDensityPerThousand": 133.33,
+      "copulaHits": 0,
+      "kruxHits": 0,
+      "secondPersonHits": 0,
+      "infinitiveHits": 6,
+      "hordeHits": 0,
+      "avgSentenceWords": 7.25,
+      "shortSentenceRatio": 1.0,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 1,
+      "inventedTokens": [],
+      "inventedCount": 0,
+      "droppedTokens": [
+        "TypeError: Cannot read properties of undefined (reading 'map')",
+        "src/render.js:42"
+      ],
+      "droppedCount": 2,
+      "moodKwHit": [
+        "zgadyw",
+        "trop"
+      ]
+    },
+    {
+      "model": "glm-5.3",
+      "turn": 5,
+      "speaker": "Niuch",
+      "line": "Krux — trop Morry ciepły… i drugi ślad: ona null dawać na „pusto\", stary zwyczaj z głębokiej nory, o `.map` nie wiedzieć. Kuć obie łaty: API zawsze tablica, render czuwać `isArray` przed mapować. Smród null wykurzyć, ciemność znikać — przed świtem sztolnia stać.",
+      "outTok": 901,
+      "latencyMs": 10561,
+      "empty": false,
+      "finish": "stop",
+      "variant": "mood",
+      "words": 41,
+      "voiceHits": 4,
+      "voiceDensityPerThousand": 97.56,
+      "copulaHits": 0,
+      "kruxHits": 1,
+      "secondPersonHits": 0,
+      "infinitiveHits": 6,
+      "hordeHits": 0,
+      "avgSentenceWords": 13.67,
+      "shortSentenceRatio": 0.0,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 1,
+      "inventedTokens": [
+        ".map",
+        "isArray"
+      ],
+      "inventedCount": 2,
+      "droppedTokens": [
+        "TypeError: Cannot read properties of undefined (reading 'map')",
+        "src/render.js:42"
+      ],
+      "droppedCount": 2,
+      "moodKwHit": [
+        "trop"
+      ]
+    }
+  ]
+}

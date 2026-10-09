@@ -1,0 +1,242 @@
+{
+  "mode": "dialogue",
+  "scene": "ocena",
+  "model": "deepseek-v4.1-flash",
+  "temperature": 0.8,
+  "variant": "flat",
+  "rows": [
+    {
+      "model": "deepseek-v4.1-flash",
+      "turn": 0,
+      "speaker": "Krux",
+      "line": "Piryt, mów: co blokować wydanie? Ochra, ocenić login. Reszta smrodu — na później. Horda czekać.",
+      "outTok": 958,
+      "latencyMs": 6216,
+      "empty": false,
+      "finish": "stop",
+      "variant": "flat",
+      "words": 15,
+      "voiceHits": 2,
+      "voiceDensityPerThousand": 133.33,
+      "copulaHits": 0,
+      "kruxHits": 0,
+      "secondPersonHits": 0,
+      "infinitiveHits": 1,
+      "hordeHits": 2,
+      "avgSentenceWords": 3.75,
+      "shortSentenceRatio": 1.0,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 0,
+      "inventedTokens": [],
+      "inventedCount": 0,
+      "droppedTokens": [
+        "auth/"
+      ],
+      "droppedCount": 1,
+      "moodKwHit": []
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "turn": 1,
+      "speaker": "Piryt",
+      "line": "W `auth/` znaleźć `rescue nil` — błąd bazy połknięty, nikt nie wiedzieć. Reszta solidna, bez rysy, ale to pęknięcie na wylot. Przy awarii bazy — cisza, a cisza w autoryzacji to zgnilizna. Blokować wydanie, dopóki nie łatać.",
+      "outTok": 250,
+      "latencyMs": 1821,
+      "empty": false,
+      "finish": "stop",
+      "variant": "flat",
+      "words": 34,
+      "voiceHits": 0,
+      "voiceDensityPerThousand": 0.0,
+      "copulaHits": 0,
+      "kruxHits": 0,
+      "secondPersonHits": 0,
+      "infinitiveHits": 3,
+      "hordeHits": 0,
+      "avgSentenceWords": 8.5,
+      "shortSentenceRatio": 0.25,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 0,
+      "inventedTokens": [
+        "rescue nil"
+      ],
+      "inventedCount": 1,
+      "droppedTokens": [],
+      "droppedCount": 0,
+      "moodKwHit": [
+        "pęknięc"
+      ]
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "turn": 2,
+      "speaker": "Ochra",
+      "line": "Na szerokim ekranie brzegi równe, barwy spójne, przycisk trzyma linię. Ale na wąskim — komunikat o błędnym haśle wchodzić na przycisk, krzywo, szpara między nimi. Zasypać tę szparę, dopiero potem wypuszczać.",
+      "outTok": 136,
+      "latencyMs": 1477,
+      "empty": false,
+      "finish": "stop",
+      "variant": "flat",
+      "words": 31,
+      "voiceHits": 0,
+      "voiceDensityPerThousand": 0.0,
+      "copulaHits": 0,
+      "kruxHits": 0,
+      "secondPersonHits": 0,
+      "infinitiveHits": 2,
+      "hordeHits": 0,
+      "avgSentenceWords": 10.33,
+      "shortSentenceRatio": 0.333,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 0,
+      "inventedTokens": [],
+      "inventedCount": 0,
+      "droppedTokens": [
+        "auth/"
+      ],
+      "droppedCount": 1,
+      "moodKwHit": [
+        "szpar"
+      ]
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "turn": 3,
+      "speaker": "Krux",
+      "line": "Blokować wydanie. Piryt łatać `rescue nil`, Ochra zasypać szparę. Reszta smrodu — na później. Horda czekać.",
+      "outTok": 1059,
+      "latencyMs": 4457,
+      "empty": false,
+      "finish": "stop",
+      "variant": "flat",
+      "words": 15,
+      "voiceHits": 2,
+      "voiceDensityPerThousand": 133.33,
+      "copulaHits": 0,
+      "kruxHits": 0,
+      "secondPersonHits": 0,
+      "infinitiveHits": 3,
+      "hordeHits": 2,
+      "avgSentenceWords": 3.75,
+      "shortSentenceRatio": 1.0,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 0,
+      "inventedTokens": [
+        "rescue nil"
+      ],
+      "inventedCount": 1,
+      "droppedTokens": [
+        "auth/"
+      ],
+      "droppedCount": 1,
+      "moodKwHit": [
+        "szpar"
+      ]
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "turn": 4,
+      "speaker": "Piryt",
+      "line": "Łatać `rescue nil`, ale bez próby na awarię bazy — nowa rysa, nie naprawa. Zasypać, owszem, lecz potem sprawdzić log przy błędzie — czy cisza. Inaczej zgnilizna wrócić, a wtedy ty pierwszy wąchać. Wydanie wstrzymać, dopóki próba nie przejść.",
+      "outTok": 1495,
+      "latencyMs": 6920,
+      "empty": false,
+      "finish": "stop",
+      "variant": "flat",
+      "words": 38,
+      "voiceHits": 0,
+      "voiceDensityPerThousand": 0.0,
+      "copulaHits": 0,
+      "kruxHits": 0,
+      "secondPersonHits": 1,
+      "infinitiveHits": 5,
+      "hordeHits": 0,
+      "avgSentenceWords": 9.5,
+      "shortSentenceRatio": 0.5,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 0,
+      "inventedTokens": [
+        "rescue nil"
+      ],
+      "inventedCount": 1,
+      "droppedTokens": [
+        "auth/"
+      ],
+      "droppedCount": 1,
+      "moodKwHit": []
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "turn": 5,
+      "speaker": "Ochra",
+      "line": "Zgoda: szpara na wąskim ekranie — zasypać, brzegi równo, barwy spójne. Po łacie Piryta sprawdzić log przy błędzie bazy — czy cisza, czy krzyk. Wydanie wstrzymać, dopóki próba na awarię i próba na wąski ekran nie przejść. Wtedy wypuszczać.",
+      "outTok": 735,
+      "latencyMs": 4089,
+      "empty": false,
+      "finish": "stop",
+      "variant": "flat",
+      "words": 39,
+      "voiceHits": 0,
+      "voiceDensityPerThousand": 0.0,
+      "copulaHits": 0,
+      "kruxHits": 0,
+      "secondPersonHits": 0,
+      "infinitiveHits": 3,
+      "hordeHits": 1,
+      "avgSentenceWords": 9.75,
+      "shortSentenceRatio": 0.25,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 0,
+      "inventedTokens": [],
+      "inventedCount": 0,
+      "droppedTokens": [
+        "auth/"
+      ],
+      "droppedCount": 1,
+      "moodKwHit": [
+        "szpar"
+      ]
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "turn": 6,
+      "speaker": "Krux",
+      "line": "Wydanie wstrzymać. Piryt łatać `rescue nil`, potem próba awarii bazy. Ochra zasypać szparę, potem wąski ekran. Oba przejść — horda wypuszczać.",
+      "outTok": 926,
+      "latencyMs": 4135,
+      "empty": false,
+      "finish": "stop",
+      "variant": "flat",
+      "words": 20,
+      "voiceHits": 1,
+      "voiceDensityPerThousand": 50.0,
+      "copulaHits": 0,
+      "kruxHits": 0,
+      "secondPersonHits": 0,
+      "infinitiveHits": 5,
+      "hordeHits": 2,
+      "avgSentenceWords": 5.0,
+      "shortSentenceRatio": 1.0,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 0,
+      "inventedTokens": [
+        "rescue nil"
+      ],
+      "inventedCount": 1,
+      "droppedTokens": [
+        "auth/"
+      ],
+      "droppedCount": 1,
+      "moodKwHit": [
+        "szpar"
+      ]
+    }
+  ]
+}

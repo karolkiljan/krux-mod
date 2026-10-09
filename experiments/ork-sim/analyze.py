@@ -36,8 +36,8 @@ def cell_key(kind, row):
     if kind == "matrix":
         return (row["model"], row["instruction"], row["promptType"], row["run"])
     if kind == "dialogue":
-        # Scena jest jedna na plik — klucz: model + scena + tura.
-        return (row["model"], row.get("scene"), row["turn"])
+        # Scena jest jedna na plik — klucz: model + scena + wariant + tura.
+        return (row["model"], row.get("scene"), row.get("variant", "flat"), row["turn"])
     if kind == "barks":
         return (row["model"], row["barks"], row["situation"], row["run"])
     if kind == "session":
@@ -65,6 +65,8 @@ def collect(kind):
             r = {**r, "model": model}
             if kind == "dialogue" and "scene" not in r:
                 r["scene"] = d.get("scene")
+            if kind == "dialogue" and "variant" not in r:
+                r["variant"] = d.get("variant", "flat")
             if kind == "session" and "variant" not in r:
                 r["variant"] = d.get("variant")
             key = cell_key(kind, r)
@@ -354,6 +356,26 @@ def analyze_dialogues():
                 sig = [w for w, n in per_speaker[who].most_common(40) if common[w] == len(speakers) or n >= 2][:6]
                 print(f"- **{who}**: {', '.join(sig) if sig else '—'}")
             print()
+    # --- porównanie wariantów: flat vs mood (czy nastrój z kodu przecieka do rozmowy) ---
+    # Uwaga: moodKwHit miesza słownik rzemiosła (smród/lont/trop) ze stanem — liczymy też
+    # CZYSTE markery stanu, żeby oddzielić nastrój od słownika orków.
+    CLEAN_MOOD = ["wściek", "złość", "gniew", "triumf", "duma", "zmęcz", "oczy ciężk",
+                  "czujn", "podniec", "skupion", "zrzędl", "niespokojn", "ostrożn",
+                  "zapal", "sceptyc", "podekscyt"]
+    print("### Porównanie wariantów (flat vs mood) — obecność nastroju\n")
+    print("| model | scena | wariant | tur | stan/tur | (moodKw) | głos/odp | sł/odp |")
+    print("|---|---|---|---:|---:|---:|---:|---:|")
+    for model in sorted(per_model):
+        for scene in sorted({r.get("scene") for r in per_model[model] if r.get("scene")}):
+            for variant in ("flat", "mood"):
+                sel = [r for r in per_model[model] if r.get("scene") == scene and r.get("variant") == variant]
+                if not sel:
+                    continue
+                clean = sum(1 for r in sel if any(k in (r["line"] or "").lower() for k in CLEAN_MOOD))
+                mk = sum(len(r.get("moodKwHit", [])) for r in sel)
+                print(f"| {model} | {scene} | {variant} | {len(sel)} | {clean/len(sel):.2f} | {mk/len(sel):.2f} | "
+                      f"{sum(r['voiceHits'] for r in sel)/len(sel):.1f} | {sum(r['words'] for r in sel)/len(sel):.1f} |")
+    print()
     for model in sorted(files):
         print(f"pliki {model}: " + ", ".join(files[model]))
     print()

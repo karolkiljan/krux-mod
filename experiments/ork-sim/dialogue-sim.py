@@ -125,6 +125,39 @@ SCENES = {
 }
 
 
+# --- Nastrój z kodu: deterministyczna funkcja sytuacja -> stan postaci (jak eksperyment E) ---
+# Kod wyprowadza stan z sytuacji sceny; model ponosi go dalej. Test w rozmowie wielopodmiotowej.
+
+MOODS = {
+    "kuźnia": {
+        "Krux": "Nastrój Kruxa: wściekły — trzeci raz ten sam robak w cache.",
+        "Grom": "Nastrój Groma: zapalony — widzi nowe kowadło, stary cache do przepalenia.",
+        "Młot": "Nastrój Młota: sceptyczny — 52 testy przechodzą, żaden nie łapie robaka.",
+    },
+    "noc": {
+        "Krux": "Nastrój Kruxa: czujny — noc, produkcja pada, nie chce zgadywać.",
+        "Niuch": "Nastrój Niucha: podniecony — trop świeży, ślad prowadzi do API.",
+    },
+    "ocena": {
+        "Krux": "Nastrój Kruxa: skupiony — decyzja o wydaniu, liczy każde pęknięcie.",
+        "Piryt": "Nastrój Piryta: zrzędliwy — znalazł pęknięcie, reszta go nie widzi.",
+        "Ochra": "Nastrój Ochry: niespokojna — szpara na ekranie, brzegi nie równe.",
+    },
+    "rozbiórka": {
+        "Krux": "Nastrój Kruxa: ostrożny — chce burzyć, ale boi się, że coś używa.",
+        "Lont": "Nastrój Lonta: podekscytowany — miara w ręku, lont gotowy.",
+    },
+}
+
+# słowa-klucze nastroju per scena (do pomiaru obecności stanu w dialogu)
+MOOD_KW = {
+    "kuźnia": ["wściek", "złość", "trzeci", "zapal", "kowad", "sceptyc", "dowód", "przepal"],
+    "noc": ["czujn", "zgadyw", "podniec", "trop", "śwież"],
+    "ocena": ["skupion", "pęknięc", "zrzędl", "niespokojn", "szpar"],
+    "rozbiórka": ["ostrożn", "burzyć", "podekscyt", "lont", "miara"],
+}
+
+
 def persona_system(who):
     """System prompt jednego orka: tożsamość + sposób mówienia + zakazy."""
     if who == "Krux":
@@ -140,11 +173,13 @@ def persona_system(who):
             "nie piszesz cudzych kwestii.")
 
 
-def scene_prompt(scene, who, history):
-    """Prompt gracza: sytuacja + akcja + historia rozmowy."""
+def scene_prompt(scene, who, history, mood_line=None):
+    """Prompt gracza: sytuacja + akcja + historia rozmowy (+ linia nastroju z kodu)."""
     parts = [f"Sytuacja w sztolni: {scene['situation']}",
-             f"Twoja wiedza: {scene['knowledge'][who]}",
-             ""]
+             f"Twoja wiedza: {scene['knowledge'][who]}"]
+    if mood_line:
+        parts.append(mood_line)
+    parts.append("")
     if history:
         parts.append("Dotychczasowa rozmowa:")
         for speaker, line in history:
@@ -154,16 +189,17 @@ def scene_prompt(scene, who, history):
     return "\n".join(parts)
 
 
-def run_scene(name, model, turns, temperature=0.8):
+def run_scene(name, model, turns, temperature=0.8, variant="flat"):
     scene = SCENES[name]
     order = scene["order"][:turns]
     history = []
     rows = []
-    print(f"=== SCENA: {name} | model: {model} | tur: {len(order)} ===", file=sys.stderr)
+    print(f"=== SCENA: {name} | model: {model} | wariant: {variant} | tur: {len(order)} ===", file=sys.stderr)
     for i, who in enumerate(order):
+        mood_line = MOODS.get(name, {}).get(who) if variant == "mood" else None
         messages = [
             {"role": "system", "content": persona_system(who)},
-            {"role": "user", "content": scene_prompt(scene, who, history)},
+            {"role": "user", "content": scene_prompt(scene, who, history, mood_line=mood_line)},
         ]
         res = orksim.chat(None, messages, temperature=temperature, max_tokens=8000, model=model)
         line = (res["text"] or "").strip()
@@ -172,10 +208,13 @@ def run_scene(name, model, turns, temperature=0.8):
             if line.startswith(prefix):
                 line = line[len(prefix):].strip()
         history.append((who, line))
-        rows.append({"model": model, "turn": i, "speaker": who, "line": line, "outTok": res["outTok"],
-                     "latencyMs": res["latencyMs"], "empty": res.get("empty", False),
-                     "finish": res.get("finish"),
-                     **orksim.metrics_for(line, source=scene["situation"])})
+        low = line.lower()
+        row = {"model": model, "turn": i, "speaker": who, "line": line, "outTok": res["outTok"],
+               "latencyMs": res["latencyMs"], "empty": res.get("empty", False),
+               "finish": res.get("finish"), "variant": variant,
+               **orksim.metrics_for(line, source=scene["situation"])}
+        row["moodKwHit"] = [k for k in MOOD_KW.get(name, []) if k in low]
+        rows.append(row)
         print(f"  [{who}] {line[:160]}", file=sys.stderr, flush=True)
     return rows, scene
 
@@ -186,11 +225,14 @@ def main():
     p.add_argument("--model", default="deepseek-v4.1-flash", choices=orksim.MODELS)
     p.add_argument("--turns", type=int, default=99, help="limit tur (domyślnie cała scena)")
     p.add_argument("--temperature", type=float, default=0.8)
+    p.add_argument("--variant", choices=["flat", "mood"], default="flat",
+                   help="flat: bez nastroju | mood: linia stanu z kodu per postać")
     args = p.parse_args()
 
     stamp = orksim._stamp()
-    _, note = orksim.partial_writer(stamp, f"dialogue-{args.scene}-{args.model}")
-    rows, scene = run_scene(args.scene, args.model, args.turns, args.temperature)
+    tag = f"dialogue-{args.scene}-{args.variant}-{args.model}"
+    _, note = orksim.partial_writer(stamp, tag)
+    rows, scene = run_scene(args.scene, args.model, args.turns, args.temperature, args.variant)
     for r in rows:
         note(r)
 
@@ -199,13 +241,13 @@ def main():
     for r in rows:
         transcript.append(f"**{r['speaker']}:** {r['line']}")
         transcript.append("")
-    tpath = RESULTS / f"{stamp}-transcript-{args.scene}-{args.model}.md"
+    tpath = RESULTS / f"{stamp}-transcript-{args.scene}-{args.variant}-{args.model}.md"
     RESULTS.mkdir(parents=True, exist_ok=True)
     tpath.write_text("\n".join(transcript), encoding="utf-8")
 
-    out = orksim.save(f"dialogue-{args.scene}-{args.model}",
+    out = orksim.save(tag,
                       {"mode": "dialogue", "scene": args.scene, "model": args.model,
-                       "temperature": args.temperature, "rows": rows},
+                       "temperature": args.temperature, "variant": args.variant, "rows": rows},
                       stamp=stamp)
     print(f"OK {out}")
     print(f"TRANSCRIPT {tpath}")

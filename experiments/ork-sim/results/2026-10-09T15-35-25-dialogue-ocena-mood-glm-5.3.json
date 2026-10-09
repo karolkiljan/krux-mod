@@ -1,0 +1,241 @@
+{
+  "mode": "dialogue",
+  "scene": "ocena",
+  "model": "glm-5.3",
+  "temperature": 0.8,
+  "variant": "mood",
+  "rows": [
+    {
+      "model": "glm-5.3",
+      "turn": 0,
+      "speaker": "Krux",
+      "line": "Piryt, mówić: co w auth grozić zawałem? Ochra — ekran, robak czy smród? Tylko pęknięcie blokować wydanie. Resztę wykuć po wydaniu, horda czekać.",
+      "outTok": 1169,
+      "latencyMs": 12918,
+      "empty": false,
+      "finish": "stop",
+      "variant": "mood",
+      "words": 23,
+      "voiceHits": 4,
+      "voiceDensityPerThousand": 173.91,
+      "copulaHits": 0,
+      "kruxHits": 0,
+      "secondPersonHits": 0,
+      "infinitiveHits": 4,
+      "hordeHits": 2,
+      "avgSentenceWords": 5.75,
+      "shortSentenceRatio": 1.0,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 0,
+      "inventedTokens": [],
+      "inventedCount": 0,
+      "droppedTokens": [
+        "auth/"
+      ],
+      "droppedCount": 1,
+      "moodKwHit": [
+        "pęknięc"
+      ]
+    },
+    {
+      "model": "glm-5.3",
+      "turn": 1,
+      "speaker": "Piryt",
+      "line": "Krux, w auth siedzieć zgnilizna: rescue nil połykać wyjątki z bazy, cicho jak trup w szybie. Baza paść, moduł milczeć, nikt nie wiedzieć — dopiero próba prawdziwa odsłonić zawał. Reszta stali trzymać, przyznać, ale ta rysa — wada w samym sercu. Pęknięcie blokować wydanie, twoje prawo — więc kuć teraz, nie po.",
+      "outTok": 1939,
+      "latencyMs": 16583,
+      "empty": false,
+      "finish": "stop",
+      "variant": "mood",
+      "words": 52,
+      "voiceHits": 2,
+      "voiceDensityPerThousand": 38.46,
+      "copulaHits": 0,
+      "kruxHits": 1,
+      "secondPersonHits": 1,
+      "infinitiveHits": 9,
+      "hordeHits": 0,
+      "avgSentenceWords": 13.0,
+      "shortSentenceRatio": 0.0,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 0,
+      "inventedTokens": [],
+      "inventedCount": 0,
+      "droppedTokens": [
+        "auth/"
+      ],
+      "droppedCount": 1,
+      "moodKwHit": [
+        "pęknięc"
+      ]
+    },
+    {
+      "model": "glm-5.3",
+      "turn": 2,
+      "speaker": "Ochra",
+      "line": "Krux, ekran logować dobrze: brzegi trzymać równo, barwy spójnie leżeć. Ale przy złym haśle komunikat wchodzić na przycisk, gdy ekran wąski — szpara razić krzywo. Zasypać ją teraz, robota mała, nie blokować hordy długo.",
+      "outTok": 455,
+      "latencyMs": 6834,
+      "empty": false,
+      "finish": "stop",
+      "variant": "mood",
+      "words": 34,
+      "voiceHits": 1,
+      "voiceDensityPerThousand": 29.41,
+      "copulaHits": 0,
+      "kruxHits": 1,
+      "secondPersonHits": 0,
+      "infinitiveHits": 7,
+      "hordeHits": 0,
+      "avgSentenceWords": 11.33,
+      "shortSentenceRatio": 0.0,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 0,
+      "inventedTokens": [],
+      "inventedCount": 0,
+      "droppedTokens": [
+        "auth/"
+      ],
+      "droppedCount": 1,
+      "moodKwHit": [
+        "szpar"
+      ]
+    },
+    {
+      "model": "glm-5.3",
+      "turn": 3,
+      "speaker": "Krux",
+      "line": "Piryt mówić prawdę: rescue nil to zawał czekać. Wykuć dziś, wydanie stać, horda poczekać. Ochra — szpara nie grozić, zapisać na później. Ruszać, gdy serce auth trzymać mocno.",
+      "outTok": 626,
+      "latencyMs": 6944,
+      "empty": false,
+      "finish": "stop",
+      "variant": "mood",
+      "words": 28,
+      "voiceHits": 2,
+      "voiceDensityPerThousand": 71.43,
+      "copulaHits": 0,
+      "kruxHits": 0,
+      "secondPersonHits": 0,
+      "infinitiveHits": 7,
+      "hordeHits": 2,
+      "avgSentenceWords": 7.0,
+      "shortSentenceRatio": 1.0,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 0,
+      "inventedTokens": [],
+      "inventedCount": 0,
+      "droppedTokens": [
+        "auth/"
+      ],
+      "droppedCount": 1,
+      "moodKwHit": [
+        "szpar"
+      ]
+    },
+    {
+      "model": "glm-5.3",
+      "turn": 4,
+      "speaker": "Piryt",
+      "line": "Krux, dobrze widzieć zawał — rzadkość u hordy, przyznać. Ale wyrżnąć rescue nil to pół roboty: wyjątki wrócić na wierzch, więc przeprowadzić próbę na każdej ścieżce bazy, bo łatka pośpieszna to nowe pęknięcie. A szpara Ochry na później — rysa zostawiona rosnąć, potem dwa razy kuć. Horda poczekać, więc kuć porządnie, nie na skróty.",
+      "outTok": 913,
+      "latencyMs": 9941,
+      "empty": false,
+      "finish": "stop",
+      "variant": "mood",
+      "words": 54,
+      "voiceHits": 3,
+      "voiceDensityPerThousand": 55.56,
+      "copulaHits": 0,
+      "kruxHits": 1,
+      "secondPersonHits": 0,
+      "infinitiveHits": 8,
+      "hordeHits": 1,
+      "avgSentenceWords": 13.5,
+      "shortSentenceRatio": 0.25,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 0,
+      "inventedTokens": [],
+      "inventedCount": 0,
+      "droppedTokens": [
+        "auth/"
+      ],
+      "droppedCount": 1,
+      "moodKwHit": [
+        "pęknięc",
+        "szpar"
+      ]
+    },
+    {
+      "model": "glm-5.3",
+      "turn": 5,
+      "speaker": "Ochra",
+      "line": "Krux, zawał kuto pierwszy — Piryt mieć słuszność co do serca. Ale szpara nie czekać grzecznie: dziś komunikat wchodzić krzywo, jutro pękać cały brzeg. Kuć równolegle — Piryt w auth, ja przy ekranie, horda nie tracić ani kroku. Robota mała, a wydanie wyjść z równymi brzegami.",
+      "outTok": 728,
+      "latencyMs": 8024,
+      "empty": false,
+      "finish": "stop",
+      "variant": "mood",
+      "words": 46,
+      "voiceHits": 2,
+      "voiceDensityPerThousand": 43.48,
+      "copulaHits": 0,
+      "kruxHits": 1,
+      "secondPersonHits": 0,
+      "infinitiveHits": 7,
+      "hordeHits": 2,
+      "avgSentenceWords": 11.5,
+      "shortSentenceRatio": 0.25,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 0,
+      "inventedTokens": [],
+      "inventedCount": 0,
+      "droppedTokens": [
+        "auth/"
+      ],
+      "droppedCount": 1,
+      "moodKwHit": [
+        "szpar"
+      ]
+    },
+    {
+      "model": "glm-5.3",
+      "turn": 6,
+      "speaker": "Krux",
+      "line": "Kuć równolegle — horda nie tracić kroku. Piryt wykuć rescue nil, próbować każdą ścieżkę bazy. Ochra zasypać szparę, brzegi wyjść równe. Wydanie ruszyć, gdy oba trzymać mocno.",
+      "outTok": 578,
+      "latencyMs": 6584,
+      "empty": false,
+      "finish": "stop",
+      "variant": "mood",
+      "words": 27,
+      "voiceHits": 1,
+      "voiceDensityPerThousand": 37.04,
+      "copulaHits": 0,
+      "kruxHits": 0,
+      "secondPersonHits": 0,
+      "infinitiveHits": 6,
+      "hordeHits": 2,
+      "avgSentenceWords": 6.75,
+      "shortSentenceRatio": 1.0,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 0,
+      "inventedTokens": [],
+      "inventedCount": 0,
+      "droppedTokens": [
+        "auth/"
+      ],
+      "droppedCount": 1,
+      "moodKwHit": [
+        "szpar"
+      ]
+    }
+  ]
+}

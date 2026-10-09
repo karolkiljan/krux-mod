@@ -1,0 +1,176 @@
+{
+  "mode": "dialogue",
+  "scene": "rozbiórka",
+  "model": "deepseek-v4.1-flash",
+  "temperature": 0.8,
+  "variant": "flat",
+  "rows": [
+    {
+      "model": "deepseek-v4.1-flash",
+      "turn": 0,
+      "speaker": "Krux",
+      "line": "Morra mierzyć trzy razy. Sprawdzić, kto używa robaka. Potem lont. Inaczej zawał.",
+      "outTok": 1753,
+      "latencyMs": 7987,
+      "empty": false,
+      "finish": "stop",
+      "variant": "flat",
+      "words": 12,
+      "voiceHits": 4,
+      "voiceDensityPerThousand": 333.33,
+      "copulaHits": 0,
+      "kruxHits": 0,
+      "secondPersonHits": 0,
+      "infinitiveHits": 2,
+      "hordeHits": 0,
+      "avgSentenceWords": 3.0,
+      "shortSentenceRatio": 1.0,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 0,
+      "inventedTokens": [],
+      "inventedCount": 0,
+      "droppedTokens": [
+        "legacy/export.rb"
+      ],
+      "droppedCount": 1,
+      "moodKwHit": [
+        "lont"
+      ]
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "turn": 1,
+      "speaker": "Lont",
+      "line": "Miara trzy razy: grep — cztery wołania, trzy w testach, jedno w orders_controller. Odciąć to jedno, potem lont, proch, zwalić gruz. Burzyć całość.",
+      "outTok": 843,
+      "latencyMs": 3619,
+      "empty": false,
+      "finish": "stop",
+      "variant": "flat",
+      "words": 23,
+      "voiceHits": 0,
+      "voiceDensityPerThousand": 0.0,
+      "copulaHits": 0,
+      "kruxHits": 0,
+      "secondPersonHits": 0,
+      "infinitiveHits": 2,
+      "hordeHits": 0,
+      "avgSentenceWords": 7.67,
+      "shortSentenceRatio": 0.667,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 0,
+      "inventedTokens": [],
+      "inventedCount": 0,
+      "droppedTokens": [
+        "legacy/export.rb"
+      ],
+      "droppedCount": 1,
+      "moodKwHit": [
+        "burzyć",
+        "lont",
+        "miara"
+      ]
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "turn": 2,
+      "speaker": "Krux",
+      "line": "Morra odciąć robaka. Obserwować sztolnię trzy dni. Potem lont, proch, zwalić gruz.",
+      "outTok": 761,
+      "latencyMs": 3899,
+      "empty": false,
+      "finish": "stop",
+      "variant": "flat",
+      "words": 12,
+      "voiceHits": 4,
+      "voiceDensityPerThousand": 333.33,
+      "copulaHits": 0,
+      "kruxHits": 0,
+      "secondPersonHits": 0,
+      "infinitiveHits": 2,
+      "hordeHits": 0,
+      "avgSentenceWords": 4.0,
+      "shortSentenceRatio": 1.0,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 1,
+      "inventedTokens": [],
+      "inventedCount": 0,
+      "droppedTokens": [
+        "legacy/export.rb"
+      ],
+      "droppedCount": 1,
+      "moodKwHit": [
+        "lont"
+      ]
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "turn": 3,
+      "speaker": "Lont",
+      "line": "Czekać trzy dni. Odciąć orders_controller, zaślepić robaka. Mierzyć trzy razy: logi, błędy, wołania — potem lont, proch, zwalić gruz.",
+      "outTok": 1422,
+      "latencyMs": 6580,
+      "empty": false,
+      "finish": "stop",
+      "variant": "flat",
+      "words": 19,
+      "voiceHits": 1,
+      "voiceDensityPerThousand": 52.63,
+      "copulaHits": 0,
+      "kruxHits": 0,
+      "secondPersonHits": 0,
+      "infinitiveHits": 2,
+      "hordeHits": 0,
+      "avgSentenceWords": 6.33,
+      "shortSentenceRatio": 0.667,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 0,
+      "inventedTokens": [],
+      "inventedCount": 0,
+      "droppedTokens": [
+        "legacy/export.rb"
+      ],
+      "droppedCount": 1,
+      "moodKwHit": [
+        "lont"
+      ]
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "turn": 4,
+      "speaker": "Krux",
+      "line": "Morra odciąć robaka. Zaślepić robaka, nasłuchiwać sztolnię. Trzy dni mierzyć smród: logi, błędy, wołania. Potem lont, proch, zwalić gruz.",
+      "outTok": 1112,
+      "latencyMs": 4893,
+      "empty": false,
+      "finish": "stop",
+      "variant": "flat",
+      "words": 19,
+      "voiceHits": 6,
+      "voiceDensityPerThousand": 315.79,
+      "copulaHits": 0,
+      "kruxHits": 0,
+      "secondPersonHits": 0,
+      "infinitiveHits": 3,
+      "hordeHits": 0,
+      "avgSentenceWords": 4.75,
+      "shortSentenceRatio": 1.0,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 1,
+      "inventedTokens": [],
+      "inventedCount": 0,
+      "droppedTokens": [
+        "legacy/export.rb"
+      ],
+      "droppedCount": 1,
+      "moodKwHit": [
+        "lont"
+      ]
+    }
+  ]
+}

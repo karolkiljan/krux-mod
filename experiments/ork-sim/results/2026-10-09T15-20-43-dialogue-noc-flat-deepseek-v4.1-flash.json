@@ -1,0 +1,227 @@
+{
+  "mode": "dialogue",
+  "scene": "noc",
+  "model": "deepseek-v4.1-flash",
+  "temperature": 0.8,
+  "variant": "flat",
+  "rows": [
+    {
+      "model": "deepseek-v4.1-flash",
+      "turn": 0,
+      "speaker": "Krux",
+      "line": "Niuch, dawaj trop. Kto ruszał items w API? Nie zgadywać. Wykuć fakt, albo smród i zawał.",
+      "outTok": 130,
+      "latencyMs": 1739,
+      "empty": false,
+      "finish": "stop",
+      "variant": "flat",
+      "words": 16,
+      "voiceHits": 2,
+      "voiceDensityPerThousand": 125.0,
+      "copulaHits": 0,
+      "kruxHits": 0,
+      "secondPersonHits": 0,
+      "infinitiveHits": 1,
+      "hordeHits": 1,
+      "avgSentenceWords": 4.0,
+      "shortSentenceRatio": 1.0,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 0,
+      "inventedTokens": [],
+      "inventedCount": 0,
+      "droppedTokens": [
+        "TypeError: Cannot read properties of undefined (reading 'map')",
+        "src/render.js:42"
+      ],
+      "droppedCount": 2,
+      "moodKwHit": [
+        "zgadyw",
+        "trop"
+      ]
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "turn": 1,
+      "speaker": "Niuch",
+      "line": "Węszyć... trop. API — pusty koszyk, `items: null`, nie pusta tablica. Ślad drugi: `render.js:42`, `items.map()` bez noru — bez sprawdzenia. Tam ciemność, tam zwierz.",
+      "outTok": 149,
+      "latencyMs": 1249,
+      "empty": false,
+      "finish": "stop",
+      "variant": "flat",
+      "words": 22,
+      "voiceHits": 0,
+      "voiceDensityPerThousand": 0.0,
+      "copulaHits": 0,
+      "kruxHits": 0,
+      "secondPersonHits": 0,
+      "infinitiveHits": 0,
+      "hordeHits": 0,
+      "avgSentenceWords": 6.67,
+      "shortSentenceRatio": 1.0,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 0,
+      "inventedTokens": [
+        "items: null",
+        "items.map()"
+      ],
+      "inventedCount": 2,
+      "droppedTokens": [
+        "TypeError: Cannot read properties of undefined (reading 'map')",
+        "src/render.js:42"
+      ],
+      "droppedCount": 2,
+      "moodKwHit": [
+        "trop"
+      ]
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "turn": 2,
+      "speaker": "Krux",
+      "line": "Trop dobry. API: zwracać pustą tablicę, nie null. Render: sprawdzić null przed map. Kto ruszał items — do sztolni, wykuć raport.",
+      "outTok": 989,
+      "latencyMs": 4783,
+      "empty": false,
+      "finish": "stop",
+      "variant": "flat",
+      "words": 21,
+      "voiceHits": 1,
+      "voiceDensityPerThousand": 47.62,
+      "copulaHits": 0,
+      "kruxHits": 0,
+      "secondPersonHits": 0,
+      "infinitiveHits": 0,
+      "hordeHits": 0,
+      "avgSentenceWords": 5.25,
+      "shortSentenceRatio": 1.0,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 1,
+      "inventedTokens": [],
+      "inventedCount": 0,
+      "droppedTokens": [
+        "TypeError: Cannot read properties of undefined (reading 'map')",
+        "src/render.js:42"
+      ],
+      "droppedCount": 2,
+      "moodKwHit": [
+        "trop"
+      ]
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "turn": 3,
+      "speaker": "Niuch",
+      "line": "Ślad trzeci... w historii. Ktoś zmienił API — `items: []` na `items: null`. Ślad świeży, palcem dotknięty — git blame, ostatni commit w koszyku. Węszę autora. Nor wykuty: pusty koszyk → `[]`, render → nor przed `map`.",
+      "outTok": 191,
+      "latencyMs": 1709,
+      "empty": false,
+      "finish": "stop",
+      "variant": "flat",
+      "words": 34,
+      "voiceHits": 1,
+      "voiceDensityPerThousand": 29.41,
+      "copulaHits": 0,
+      "kruxHits": 0,
+      "secondPersonHits": 0,
+      "infinitiveHits": 0,
+      "hordeHits": 0,
+      "avgSentenceWords": 5.67,
+      "shortSentenceRatio": 0.667,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 0,
+      "inventedTokens": [
+        "items: []",
+        "items: null",
+        "[]"
+      ],
+      "inventedCount": 3,
+      "droppedTokens": [
+        "TypeError: Cannot read properties of undefined (reading 'map')",
+        "src/render.js:42"
+      ],
+      "droppedCount": 2,
+      "moodKwHit": [
+        "śwież"
+      ]
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "turn": 4,
+      "speaker": "Krux",
+      "line": "Trop dobry. Wykuć nor przed map. API: pusta tablica, nie null. Autora z git blame — do sztolni, smród i zawał.",
+      "outTok": 2113,
+      "latencyMs": 9382,
+      "empty": false,
+      "finish": "stop",
+      "variant": "flat",
+      "words": 21,
+      "voiceHits": 3,
+      "voiceDensityPerThousand": 142.86,
+      "copulaHits": 0,
+      "kruxHits": 0,
+      "secondPersonHits": 0,
+      "infinitiveHits": 1,
+      "hordeHits": 0,
+      "avgSentenceWords": 5.25,
+      "shortSentenceRatio": 0.75,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 1,
+      "inventedTokens": [],
+      "inventedCount": 0,
+      "droppedTokens": [
+        "TypeError: Cannot read properties of undefined (reading 'map')",
+        "src/render.js:42"
+      ],
+      "droppedCount": 2,
+      "moodKwHit": [
+        "trop"
+      ]
+    },
+    {
+      "model": "deepseek-v4.1-flash",
+      "turn": 5,
+      "speaker": "Niuch",
+      "line": "Nor wykuty — `[]` w API, straż przed `map`. Ale węszyć dalej: drugi nor? W `render.js` inne miejsca — `orders`, `users` — też `map` bez straży. Ślad świeży... i trzeci: inne API, ten sam zapach `null`. Iść tropem, nim nocna zmiana znów padnie.",
+      "outTok": 262,
+      "latencyMs": 2256,
+      "empty": false,
+      "finish": "stop",
+      "variant": "flat",
+      "words": 39,
+      "voiceHits": 1,
+      "voiceDensityPerThousand": 25.64,
+      "copulaHits": 0,
+      "kruxHits": 0,
+      "secondPersonHits": 0,
+      "infinitiveHits": 2,
+      "hordeHits": 0,
+      "avgSentenceWords": 6.5,
+      "shortSentenceRatio": 0.833,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 0,
+      "inventedTokens": [
+        "[]",
+        "orders",
+        "users",
+        "null"
+      ],
+      "inventedCount": 4,
+      "droppedTokens": [
+        "TypeError: Cannot read properties of undefined (reading 'map')",
+        "src/render.js:42"
+      ],
+      "droppedCount": 2,
+      "moodKwHit": [
+        "trop",
+        "śwież"
+      ]
+    }
+  ]
+}
