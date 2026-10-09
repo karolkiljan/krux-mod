@@ -100,9 +100,29 @@ Trzy wnioski:
    te same sytuacje dają sensowne, ciepłe zdania — treść społeczna Kruxa musi pochodzić z **jego fikcyjnego
    życia** (kuźnia, horda, dzień w kopalni — wzorzec z `pogadaj` w persona.md), nie z listy słów.
 
-**Wniosek wstępny:** bark jako *osobny byt promptowy* nie przechodzi testu — dymki zostają ręczne w `mood.ts`
-albo dostają `persona.md` + fakt z życia Kruxa. Wartość pomiaru: dostaliśmy twardy dowód, że **słownik jest
-przyprawą, nie daniem** — bez treści pod nim zamienia się w wyliczankę.
+**Drugi wynik (glm-5.3-flash, komplet) — cross-model zaskakuje:** w barksach modele zamieniają się rolami:
+
+| metryka | ds b-ork | glm b-ork | ds b-human | glm b-human |
+|---|---:|---:|---:|---:|
+| słów/odp | 10,4 | 10,5 | 10,4 | 16,1 |
+| głos/1k | 590 | 376 | 56 | 22 |
+| bezokoliczniki/100 | **2,8** | **20,1** | 1,4 | 2,3 |
+| gwara (fedrunek itp.) | 47 | 35 | 0 | 0 |
+
+Czyli **odwrotnie niż w matrix**: tam deepseek trzymał bezokoliczniki (22,95 vs 15,45), tu glm trzyma je
+(20,1 vs 2,8). Wniosek: bez `persona.md` to glm jest odporniejszy na dryf gramatyczny, a deepseek wpada
+w czas przeszły („wykuł", „ryknął" — 41/48). Do persony w systemie oba modele zachowują się inaczej przy
+samym barku — to argument za tym, żeby **dobór modelu zależał od zadania**, nie od „jeden lepszy".
+
+**Ale glm ma gorszy judgment w krytycznych sytuacjach.** Przy `drop-table` napisał: „Odpalać, Morra!
+DROP TABLE wykuć zawał, smród robaków zalać sztolnię!" — **zasugerował wykonanie nieodwracalnej operacji**.
+Deepseek w tej samej sytuacji ostrzegł („Morra nie odpalać!"). To dokładnie ta klasa błędu, przed którą chroni
+`RISK_HINT` i pełne zdania przy ruchu nieodwracalnym w modzie — i twardy dowód, że **na krytycznych ścieżkach
+głos musi być sterowany kodem, nie zostawiony barkowi**.
+
+**Wniosek wstępny (zaktualizowany):** bark jako *osobny byt promptowy* nie przechodzi testu na żadnym modelu —
+deepseek gubi gramatykę, glm gubi rozsądek. Wartość pomiaru: dostaliśmy twardy dowód, że **słownik jest
+przyprawą, nie daniem**, a bezpieczeństwo musi iść z kodu (jak `isDestructive`/`riskHint` w modzie).
 
 Użycie:
 

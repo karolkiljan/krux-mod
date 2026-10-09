@@ -38,6 +38,8 @@ def cell_key(kind, row):
     if kind == "dialogue":
         # Scena jest jedna na plik — klucz: model + scena + tura.
         return (row["model"], row.get("scene"), row["turn"])
+    if kind == "barks":
+        return (row["model"], row["barks"], row["situation"], row["run"])
     return (row["model"], row["rewrite"], row["item"], row["run"])
 
 
