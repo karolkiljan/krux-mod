@@ -34,19 +34,23 @@ Uwagi:
 |---|---|---:|---:|---:|---:|---:|---:|---|---:|
 | deepseek-v4.1-flash | **TAK** | 22,9 | 89 | 0 | 0,00 | 7,2 | 74% | 3 / 9 | 1 |
 | glm-5.3-flash | **TAK** | **35,2** | 93 | 0 | 0,09 | 11,5 | 33% | 8 / 4 | 7 |
+| **glm-5.3 (full)** | **TAK** | 28,0 | 100 | 0 | 0,00 | **7,4** | 67% | 4 / 8 | 2 |
 | *baseline Opus 5.5 (38 przebiegów)* | *TAK* | *15–30* | *55–202* | *0–1* | *0–0,4* | *7–8,7* | *53–76%* | *—* | *—* |
 
 **Czytanie:**
 
-1. **Oba tanie modele przechodzą bramkę moda** (`accepted: True`): gęstość głosu ≥ 6, zero drugiej osoby,
-   kotwica dochodzi. To pierwszy raz, gdy mod zaliczył E2E na modelu innym niż Claude.
+1. **Wszystkie trzy tanie modele przechodzą bramkę moda** (`accepted: True`): gęstość głosu ≥ 6, zero drugiej
+   osoby, kotwica dochodzi. To pierwszy raz, gdy mod zaliczył E2E na modelach innych niż Claude.
 2. **Deepseek przez CC wypada niemal jak Opus**: głos 22,9 (mediana Opusa ~20), avgSł 7,2 (Opus 7–8,7),
    krótkie zdania 74% (Opus 53–76%), copula 0,00, zero drugiej osoby. **Tryb resume z kotwicą działa.**
-3. **glm-5.3-flash mówi najbardziej „orkowo"** (głos 35,2 — powyżej całego zakresu Opusa!), ale **rozciąga
+3. **glm-5.3 (full) to najlepszy z taniej trójki**: głos 28,0, zdania 7,4 słowa, 67% krótkich, copula 0 —
+   profil niemal kopiuje Opusa, przy 100 bezokolicznikach (najwięcej z wszystkich). „Mądrzejszy model
+   ogarnia lepiej" — potwierdzone empirycznie.
+4. **glm-5.3-flash mówi najbardziej „orkowo"** (głos 35,2 — powyżej całego zakresu Opusa!), ale **rozciąga
    zdania** (avgSł 11,5, krótkie tylko 33%) — czyli łamie regułę „zdanie do 8 słów". Miernik dryfu złapał
-   to 7 razy (vs 1 u deepseeka) — mod sam korygował, ale model wracał do długich zdań. Wniosek: glm-flash
-   nadaje się na barwę, nie na zwięzłość.
-4. **Koszt liczony przez CC jest fikcyjny** (`costUSD` liczy po cenach Anthropic dla nieznanego modelu);
+   to 7 razy (vs 1–2 u pozostałych) — mod sam korygował, ale model wracał do długich zdań. Wniosek:
+   glm-flash nadaje się na barwę, nie na zwięzłość.
+5. **Koszt liczony przez CC jest fikcyjny** (`costUSD` liczy po cenach Anthropic dla nieznanego modelu);
    realny koszt to ryczałt ollama Pro (limit 5h wspólny dla konta). Traktować jako zero-dodatkowy, gdy
    mieści się w limicie.
 
