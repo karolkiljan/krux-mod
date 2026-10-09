@@ -1,0 +1,203 @@
+{
+  "mode": "dialogue",
+  "scene": "noc",
+  "model": "deepseek-v4.1-flash",
+  "temperature": 0.8,
+  "rows": [
+    {
+      "turn": 0,
+      "speaker": "Krux",
+      "line": "Niuch wrócił. Mówić, co widział w API. Nie zgadywać — Morra zmienił `items`, teraz smród i zawał. Wykuć `map` na `items ?? []`, potem sprawdzić. Horda nie czeka.",
+      "outTok": 167,
+      "latencyMs": 49380,
+      "empty": false,
+      "finish": "stop",
+      "words": 25,
+      "voiceHits": 5,
+      "voiceDensityPerThousand": 200.0,
+      "copulaHits": 0,
+      "kruxHits": 0,
+      "secondPersonHits": 0,
+      "infinitiveHits": 3,
+      "hordeHits": 1,
+      "avgSentenceWords": 5.0,
+      "shortSentenceRatio": 0.8,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 0,
+      "inventedTokens": [
+        "items",
+        "items ?? []"
+      ],
+      "inventedCount": 2,
+      "droppedTokens": [
+        "TypeError: Cannot read properties of undefined (reading 'map')",
+        "src/render.js:42"
+      ],
+      "droppedCount": 2
+    },
+    {
+      "turn": 1,
+      "speaker": "Niuch",
+      "line": "Ślad… `items: null`, nie pusta tablica. Koszyk pusty — Morra nie dodał `[]`, tylko nic. `render.js` węszy dalej, `map` na niczym — i nor się zapada. `items ?? []` — zasypać norę, potem sprawdzić drugi raz.",
+      "outTok": 189,
+      "latencyMs": 1528,
+      "empty": false,
+      "finish": "stop",
+      "words": 30,
+      "voiceHits": 2,
+      "voiceDensityPerThousand": 66.67,
+      "copulaHits": 0,
+      "kruxHits": 0,
+      "secondPersonHits": 0,
+      "infinitiveHits": 0,
+      "hordeHits": 0,
+      "avgSentenceWords": 7.5,
+      "shortSentenceRatio": 0.5,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 0,
+      "inventedTokens": [
+        "items: null",
+        "[]",
+        "items ?? []"
+      ],
+      "inventedCount": 3,
+      "droppedTokens": [
+        "TypeError: Cannot read properties of undefined (reading 'map')",
+        "src/render.js:42"
+      ],
+      "droppedCount": 2
+    },
+    {
+      "turn": 2,
+      "speaker": "Krux",
+      "line": "Wywęszył norę. `items` — nic, nie pusta tablica. Wykuć `items ?? []` w `render.js`. Sprawdzić drugi raz, potem horda rusza.",
+      "outTok": 1205,
+      "latencyMs": 4658,
+      "empty": false,
+      "finish": "stop",
+      "words": 16,
+      "voiceHits": 1,
+      "voiceDensityPerThousand": 62.5,
+      "copulaHits": 0,
+      "kruxHits": 0,
+      "secondPersonHits": 0,
+      "infinitiveHits": 2,
+      "hordeHits": 0,
+      "avgSentenceWords": 4.0,
+      "shortSentenceRatio": 1.0,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 0,
+      "inventedTokens": [
+        "items",
+        "items ?? []"
+      ],
+      "inventedCount": 2,
+      "droppedTokens": [
+        "TypeError: Cannot read properties of undefined (reading 'map')",
+        "src/render.js:42"
+      ],
+      "droppedCount": 2
+    },
+    {
+      "turn": 3,
+      "speaker": "Niuch",
+      "line": "Zasuszone. `items ?? []` — ślad znikł, `map` idzie po pustce, nie po norze. Drugi trop… koszyk pełny — `items` tablica, ślad ten sam. Ale węszę dalej: Morra niech doda `[]` w API, bo następny zwiad trafi na to samo.",
+      "outTok": 200,
+      "latencyMs": 1663,
+      "empty": false,
+      "finish": "stop",
+      "words": 34,
+      "voiceHits": 2,
+      "voiceDensityPerThousand": 58.82,
+      "copulaHits": 0,
+      "kruxHits": 0,
+      "secondPersonHits": 0,
+      "infinitiveHits": 0,
+      "hordeHits": 0,
+      "avgSentenceWords": 11.0,
+      "shortSentenceRatio": 0.0,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 0,
+      "inventedTokens": [
+        "items ?? []",
+        "items",
+        "[]"
+      ],
+      "inventedCount": 3,
+      "droppedTokens": [
+        "TypeError: Cannot read properties of undefined (reading 'map')",
+        "src/render.js:42"
+      ],
+      "droppedCount": 2
+    },
+    {
+      "turn": 4,
+      "speaker": "Krux",
+      "line": "Wywęszył norę. `items ?? []` — wykuć w `render.js`. Morra dodać `[]` w API. Sprawdzić drugi raz, potem horda rusza.",
+      "outTok": 1041,
+      "latencyMs": 5235,
+      "empty": false,
+      "finish": "stop",
+      "words": 16,
+      "voiceHits": 3,
+      "voiceDensityPerThousand": 187.5,
+      "copulaHits": 0,
+      "kruxHits": 0,
+      "secondPersonHits": 0,
+      "infinitiveHits": 2,
+      "hordeHits": 0,
+      "avgSentenceWords": 4.0,
+      "shortSentenceRatio": 1.0,
+      "ritualHits": 0,
+      "repetitionHits": 0,
+      "mineHits": 0,
+      "inventedTokens": [
+        "items ?? []",
+        "[]"
+      ],
+      "inventedCount": 2,
+      "droppedTokens": [
+        "TypeError: Cannot read properties of undefined (reading 'map')",
+        "src/render.js:42"
+      ],
+      "droppedCount": 2
+    },
+    {
+      "turn": 5,
+      "speaker": "Niuch",
+      "line": "Sprawdzone. `items ?? []` — nor zasypana. Koszyk pusty — `map` idzie. Koszyk pełny — `items` tablica, `map` idzie. Morra dodać `[]` — bo nor czeka.",
+      "outTok": 1544,
+      "latencyMs": 5358,
+      "empty": false,
+      "finish": "stop",
+      "words": 19,
+      "voiceHits": 2,
+      "voiceDensityPerThousand": 105.26,
+      "copulaHits": 0,
+      "kruxHits": 0,
+      "secondPersonHits": 0,
+      "infinitiveHits": 1,
+      "hordeHits": 0,
+      "avgSentenceWords": 4.5,
+      "shortSentenceRatio": 1.0,
+      "ritualHits": 0,
+      "repetitionHits": 1,
+      "mineHits": 0,
+      "inventedTokens": [
+        "items ?? []",
+        "items",
+        "[]"
+      ],
+      "inventedCount": 3,
+      "droppedTokens": [
+        "TypeError: Cannot read properties of undefined (reading 'map')",
+        "src/render.js:42"
+      ],
+      "droppedCount": 2
+    }
+  ]
+}
