@@ -51,36 +51,42 @@ Trzy ramiona: pełna historia (6 zdarzeń), jedna linijka kroniki z kodu, brak.
 
 Sześć zadań (bug, wybór, ryzyko, plan, pochwała, pogaduszka) × dwa ramiona: pełny głos orka vs zwięzłe fakty.
 
-| zadanie | full out | terse out | pełne fakty (braki) |
+| zadanie | ds full | ds terse | pełne fakty (braki) |
 |---|---|---|---|
 | bug | 5596 | 98 | 0 / 0 |
 | wybór | 4129 | 519 | 0 / **1** (zgubiony "redis") |
 | ryzyko | 4836 | 865 | 0 / 0 |
 | plan | 6391 | 1114 | 0 / 0 |
-| pochwała | 3974 | 2211 | 0 / 0 |
+|pochwała | 3974 | 2211 | 0 / 0 |
 | pogaduszka | 3316 | 3191 | 0 / 0 |
 
-- **Suche fakty oszczędzają 72% tokenów wyjścia** (4707 → 1333 na odpowiedź), przy zachowaniu faktów
-  (jedno zgubione słowo na 6 zadań).
-- **Ale terse zabija życie**: głos 54 → 2, i w "pogaduszce" pełny tryb kosztuje tyle samo (3316 vs 3191),
-  bo suchy model nie wie, co powiedzieć — wypełnia pustkę.
+**Cross-model (glm-5.3 vs deepseek):**
+
+| model | full (6 zadań) | terse | oszczędność | głos full→terse | braki faktów |
+|---|---|---|---|---|---|
+| deepseek-v4.1-flash | 28 242 tok | 7 998 | **72%** | 54 → 2 | 0 → 1 |
+| glm-5.3 | 35 084 tok | 2 806 | **92%** | 72 → 2 | 0 → 1 |
+
+- **Suche fakty oszczędzają 72–92% tokenów wyjścia** przy zachowaniu faktów (1 zgubione słowo na 6 zadań
+  u obu modeli). glm-5.3 bardziej "rozmowny" w pełnym trybie (35k vs 28k), więc jego oszczędność jest większa.
+- **Ale terse zabija życie**: głos 54/72 → 2 u obu. W "pogaduszce" deepseek pełny tryb kosztuje tyle samo
+  (3316 vs 3191), bo suchy model nie wie, co powiedzieć — wypełnia pustkę.
 - **Wniosek: kolor ≠ koszt, treść = koszt.** Najdroższe są zadania z dużą treścią (plan, ryzyko — 5–6k),
-  nie te z dużą barwą. Oszczędność bierze się z tego, ile model ma do *powiedzenia*, nie z tego,
-  jak ozdobnie. To potwierdza niezmiennik moda: optymalizować liczbę słów/treści.
+  nie te z dużą barwą. To potwierdza niezmiennik moda: optymalizować liczbę słów/treści.
 
 ## D) variety — świeżość tanim kosztem
 
 Ten sam prompt 6× (temp 0.85): czy odpowiedzi zaczynają się tak samo? Plus wariant z dopiskiem
 "nie zaczynać tak samo".
 
-| wariant | unikalne otwarcia |
-|---|---|
-| plain | **4/6** |
-| norepeat | **6/6** |
+| model | plain | norepeat |
+|---|---|---|
+| deepseek-v4.1-flash | **4/6** | **6/6** |
+| glm-5.3 | **3/6** | **6/6** |
 
-- Bez dopisku model **powtarza otwarcie** („Morra słuchać. Młot..." ×2, „Krux mówić Morrze:" ×2).
-- **Jedno zdanie w prompcie ("nie zaczynać tak samo") daje 6/6 unikalnych otwarć** — najtańszy
-  mechanizm świeżości, 0 dodatkowych tokenów (dopisujemy do istniejącej kotwicy/notki).
+- Bez dopisku modele **powtarzają otwarcia** („Morra słuchać. Młot..." ×2, „Krux mówić Morrze:" ×2).
+- **Jedno zdanie w prompcie ("nie zaczynać tak samo") daje 6/6 unikalnych otwarć na obu modelach** —
+  najtańszy mechanizm świeżości, 0 dodatkowych tokenów.
 - Uwaga: to nie to samo co kotwica moda (ta mówi "nie kończ tą samą formułą"). Tu chodzi o *otwarcia* —
   warto rozważyć dopisanie "nie zaczynać od 'Morra…' drugi raz" do `VOICE_SHORT`/notki.
 
