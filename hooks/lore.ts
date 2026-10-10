@@ -105,8 +105,10 @@ const FORMS = [
 ] as const
 
 // Miejsce też z kodu: notka bez miejsca kończyła 31 z 32 odpowiedzi benchu, czyli
-// kumpel zajął slot dawnego „Morra powie…” jako stałe zamknięcie.
-const PLACES = ['w środku, przy punkcie, do którego pasuje', 'na końcu'] as const
+// kumpel zajął slot dawnego „Morra powie…” jako stałe zamknięcie. Środek mówi
+// wprost „nie na końcu”: przy samym „w środku” Haiku i tak stawiał kumpla w ostatnim
+// zdaniu w 2–4 z 10 tur, a po turach z linią nastroju częściej.
+const PLACES = ['w środku, przy punkcie, do którego pasuje, nie na końcu odpowiedzi', 'na końcu'] as const
 
 // Notka dla modelu albo nic. Neutralna polszczyzna, bo to instrukcja. O tym, czy
 // wstawka ma sens w tej turze, decyduje wołający (prośba o ruch nieodwracalny
