@@ -87,28 +87,30 @@ export function formatHint(text: string): string | null {
 // Prośba z nimi dostaje linię o ruchu nieodwracalnym, a odpowiedzi z nimi miernik
 // nie sądzi: ostrzeżenie idzie pełnymi zdaniami, tak każe kontrakt persony.
 // Flagi szukamy najwyżej kilka słów za komendą, żeby nie skleić dwóch zdań prośby.
+// Słowo okna (`ARG`) nie zawiera `&&`, `;` ani `|`: za nimi stoi następna komenda łańcucha.
+const ARG = String.raw`[^\s;&|]+`
 const DESTRUCTIVE = new RegExp(
   `(?<![\\p{L}\\d-])(?:${[
     // Git: historia zdalna i lokalna, schowki i zmiany w drzewie roboczym (te bez reflogu).
     String.raw`force[- ]push`,
-    String.raw`push\s+(?:\S+\s+){0,4}?(?:-f|--force(?:-with-lease)?|--mirror|--delete|-d)(?![\p{L}\d-])`,
-    String.raw`push\s+\S+\s+[:+][\p{L}\d]`,
+    String.raw`push\s+(?:${ARG}\s+){0,4}?(?:-f|--force(?:-with-lease)?|--mirror|--delete|-d)(?![\p{L}\d-])`,
+    String.raw`push\s+${ARG}\s+[:+][\p{L}\d]`,
     String.raw`reset\s+--hard`,
     String.raw`clean\s+-[a-z]*f`,
     String.raw`filter-(?:branch|repo)`,
-    String.raw`git\s+checkout\s+(?:\S+\s+)?--\s+\S`,
+    String.raw`git\s+checkout\s+(?:${ARG}\s+)?--\s+\S`,
     String.raw`git\s+checkout\s+\.(?:/\S*)?(?!\S)`,
     String.raw`stash\s+(?:clear|drop)(?![\p{L}\d-])`,
     String.raw`reflog\s+(?:expire|delete)`,
-    String.raw`gc\s+(?:\S+\s+){0,3}?--prune=now`,
+    String.raw`gc\s+(?:${ARG}\s+){0,3}?--prune=now`,
     // Pliki i dyski.
     String.raw`rm\s+-[a-z]*(?:r[a-z]*f|f[a-z]*r)`,
-    String.raw`find\s+(?:\S+\s+){0,8}?(?:-delete|-exec\s+rm)(?![\p{L}\d-])`,
-    String.raw`(?:rsync|sync)\s+(?:\S+\s+){0,6}?--delete(?![\p{L}\d])`,
-    String.raw`shred\s+-`,
-    String.raw`mkfs`,
-    String.raw`wipefs`,
-    String.raw`dd\s+(?:\S+\s+){0,4}?of=/dev/`,
+    String.raw`find\s+(?:${ARG}\s+){0,8}?(?:-delete|-exec\s+rm)(?![\p{L}\d-])`,
+    String.raw`(?:rsync|sync)\s+(?:${ARG}\s+){0,6}?--delete(?![\p{L}\d])`,
+    // `--help` i `--version` tylko piszą; każdy inny argument to plik albo dysk do zniszczenia.
+    String.raw`shred\s+(?!--(?:help|version)(?!\S))\S`,
+    String.raw`mkfs(?:\.[\p{L}\d]+)?\s+(?!--(?:help|version)(?!\S))\S`,
+    String.raw`dd\s+(?:${ARG}\s+){0,4}?of=/dev/`,
     // SQL i narzędzia baz: reset schematu zabiera dane razem z nim.
     String.raw`drop\s+(?:table|database|schema|column)(?!\p{L})`,
     String.raw`truncate\s+table(?!\p{L})`,
@@ -119,17 +121,17 @@ const DESTRUCTIVE = new RegExp(
     String.raw`migrate\s+reset`,
     String.raw`--force-reset`,
     String.raw`db\s+reset`,
-    String.raw`db:(?:drop|reset|purge|schema:load)`,
+    String.raw`db:(?:drop|reset|purge|schema:load|migrate:reset)`,
     String.raw`ecto\.(?:drop|reset)`,
     String.raw`manage\.py\s+flush`,
     // Infrastruktura, kontenery i kubełki w chmurze.
-    String.raw`terraform\s+(?:destroy|apply\s+(?:\S+\s+){0,6}?-destroy)`,
+    String.raw`terraform\s+(?:-${ARG}\s+){0,3}(?:destroy|apply\s+(?:${ARG}\s+){0,6}?-destroy)`,
     String.raw`pulumi\s+destroy`,
-    String.raw`kubectl\s+(?:\S+\s+){0,4}?delete(?![\p{L}\d-])`,
+    String.raw`kubectl\s+(?:${ARG}\s+){0,4}?delete(?![\p{L}\d-])`,
     String.raw`helm\s+(?:uninstall|delete)`,
     String.raw`volume\s+(?:rm|prune)`,
-    String.raw`compose\s+down\s+(?:\S+\s+){0,4}?(?:-v|--volumes)(?![\p{L}\d-])`,
-    String.raw`system\s+prune\s+(?:\S+\s+){0,4}?--volumes`,
+    String.raw`(?:docker-)?compose\s+down\s+(?:${ARG}\s+){0,4}?(?:-v|--volumes)(?![\p{L}\d-])`,
+    String.raw`system\s+prune\s+(?:${ARG}\s+){0,4}?--volumes`,
     String.raw`s3\s+(?:rm|rb)(?![\p{L}\d-])`,
     String.raw`gsutil\s+(?:-\S+\s+){0,2}rm(?![\p{L}\d-])`,
     String.raw`gh\s+(?:repo|release)\s+delete`,
@@ -139,11 +141,16 @@ const DESTRUCTIVE = new RegExp(
 )
 
 // Wielkość liter niesie sens: `branch -D` kasuje niescaloną gałąź, `-d` tylko scaloną;
-// `TRUNCATE users` to SQL, „truncate the text” to proza.
-const DESTRUCTIVE_CASED = /(?<![\p{L}\d-])(?:branch\s+-[a-zA-Z]*D|TRUNCATE\s)/u
+// `TRUNCATE users` to SQL, „truncate the text” to proza; `wipefs -a` i `-o` kasują
+// sygnatury dysku, a samo `wipefs` albo `-O` (kolumny) tylko je wypisuje.
+const DESTRUCTIVE_CASED = new RegExp(
+  String.raw`(?<![\p{L}\d-])(?:branch\s+-[a-zA-Z]*D|TRUNCATE\s|wipefs\s+(?:${ARG}\s+){0,3}?(?:-[a-zA-Z]*[ao][a-zA-Z]*|--all|--offset)(?![\p{L}\d-]))`,
+  'u',
+)
 
 // `git restore` nadpisuje zmiany w drzewie roboczym, chyba że cofa tylko indeks (`--staged`).
-const RESTORE = /(?<![\p{L}\d-])git[ \t]+restore((?:[ \t]+\S+)+)/giu
+// Argumenty kończą się na `&&`, `;` albo `|`: dalej stoi osobna komenda, sądzona osobno.
+const RESTORE = new RegExp(String.raw`(?<![\p{L}\d-])git[ \t]+restore((?:[ \t]+${ARG})+)`, 'giu')
 
 function restoresWorktree(text: string): boolean {
   for (const match of text.matchAll(RESTORE)) {
@@ -156,7 +163,10 @@ function restoresWorktree(text: string): boolean {
 }
 
 // `UPDATE … SET` bez `WHERE` nadpisuje całą tabelę; z `WHERE` to zwykła robota.
-const UPDATE_SET = /(?<![\p{L}\d-])update\s+[\p{L}\d_."`]+\s+set\s+[^;\n]*?=[^;\n]*/giu
+// Zdanie SQL ciągnie się przez następny wiersz, gdy ten jest wcięty albo zaczyna się od
+// `WHERE`, `AND`, `OR`, `SET`, `FROM` lub `RETURNING`; `;` i każdy inny wiersz je kończą.
+const SQL_TEXT = String.raw`(?:[^;\n]|\n(?=[ \t]|(?:where|and|or|set|from|returning)(?!\p{L})))`
+const UPDATE_SET = new RegExp(String.raw`(?<![\p{L}\d-])update\s+[\p{L}\d_."\x60]+\s+set\s+${SQL_TEXT}*?=${SQL_TEXT}*`, 'giu')
 
 function updatesAll(text: string): boolean {
   for (const match of text.matchAll(UPDATE_SET)) if (!/(?<!\p{L})where(?!\p{L})/iu.test(match[0])) return true

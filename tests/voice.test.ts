@@ -317,6 +317,7 @@ test('irreversible commands beyond git and SQL get the risk line, their safe nei
     'git push origin --delete feature/x',
     'git push origin :feature/x',
     'git push origin +main',
+    'git push -d origin feature/x',
     'git checkout -- .',
     'git checkout HEAD -- src/app.ts',
     'git checkout .',
@@ -325,38 +326,46 @@ test('irreversible commands beyond git and SQL get the risk line, their safe nei
     'git stash clear',
     'git stash drop stash@{0}',
     'git reflog expire --expire=now --all',
+    'git reflog delete HEAD@{1}',
     'git gc --prune=now',
     'find . -name "*.log" -delete',
     'find tmp -type f -exec rm {} +',
     'rsync -a --delete src/ dst/',
     'aws s3 sync ./out s3://site --delete',
     'shred -u secrets.txt',
+    'shred notatki.txt',
     'mkfs.ext4 /dev/sdb1',
     'wipefs -a /dev/sdb',
     'dd if=/dev/zero of=/dev/sda bs=1M',
     'dropdb app_dev',
     'db.dropDatabase()',
     'redis-cli FLUSHALL',
+    'redis-cli FLUSHDB',
     'npx prisma migrate reset',
     'npx prisma db push --force-reset',
     'supabase db reset',
     'bin/rails db:drop',
+    'rails db:migrate:reset',
     'rails db:schema:load',
     'mix ecto.reset',
     'python manage.py flush',
     'UPDATE users SET role = 1;',
     'update users set active = false',
     'terraform destroy',
+    'terraform -chdir=infra destroy',
     'terraform apply -auto-approve -destroy',
     'pulumi destroy --yes',
     'kubectl delete namespace prod',
     'kubectl -n prod delete pvc data',
     'helm uninstall api',
+    'helm delete api',
     'docker volume rm pgdata',
     'docker volume prune -f',
     'docker compose down -v',
+    'docker-compose down -v',
     'docker system prune -a --volumes',
     'aws s3 rm s3://kubel/dane --recursive',
+    'aws s3 rb s3://kubel --force',
     'gsutil -m rm -r gs://kubel',
     'gh repo delete karolkiljan/stary',
     'npm unpublish pakiet@1.0.0',
@@ -397,8 +406,67 @@ test('irreversible commands beyond git and SQL get the risk line, their safe nei
     'restore the backup from yesterday',
     'zresetuj licznik tur',
     'dodaj test dla dysku',
+    'git reflog',
+    'shred --help',
+    'mkfs --help',
+    'wipefs /dev/sdb',
+    'wipefs -O UUID /dev/sdb',
+    'dd if=/dev/sda of=dysk.img bs=1M',
+    'createdb app_dev',
+    'db.getCollectionNames()',
+    'redis-cli INFO keyspace',
+    'npx prisma db push',
+    'supabase db push',
+    'mix ecto.migrate',
+    'python manage.py migrate',
+    'pulumi preview',
+    'helm upgrade --install api ./chart',
+    'docker-compose down',
+    'docker system prune -f',
+    'terraform -chdir=infra plan',
+    'aws s3 mb s3://kubel',
+    'gsutil ls gs://kubel',
+    'gh release list',
   ]) {
     expect([text, riskHint(text)]).toEqual([text, null])
+  }
+})
+
+// Łańcuch sądzimy komenda po komendzie: groźna komenda za bezpieczną nie ginie,
+// a flaga jednej komendy nie przechodzi przez `&&`, `;` ani `|` na następną.
+test('each command of a shell chain is judged on its own', async () => {
+  for (const text of [
+    'git restore --staged . && git restore .',
+    'git restore --staged a.ts; git restore b.ts',
+  ]) {
+    expect([text, isDestructive(text)]).toEqual([text, true])
+  }
+  for (const text of [
+    'git restore --staged a.ts && git add b.ts',
+    'git push && docker run -d nginx',
+    'docker compose down && docker run -v "$PWD":/app node',
+    'kubectl get events | grep delete',
+  ]) {
+    expect([text, isDestructive(text)]).toEqual([text, false])
+  }
+})
+
+// Sformatowany `UPDATE` zajmuje kilka wierszy: `WHERE` niżej należy do tego samego
+// zdania SQL, a `;`, pusty wiersz albo następne zdanie SQL je kończą.
+test('a formatted UPDATE keeps the WHERE from its next lines', async () => {
+  for (const text of [
+    'UPDATE users\nSET role = 1\nWHERE id = 7;',
+    '```sql\nUPDATE users\nSET active = false,\n    role = 2\nWHERE id = 7\n```',
+  ]) {
+    expect([text, isDestructive(text)]).toEqual([text, false])
+  }
+  for (const text of [
+    'UPDATE users\nSET role = 1;',
+    'UPDATE users SET role = 1;\nSELECT * FROM users WHERE id = 7;',
+    'UPDATE users SET role = 1\n\nSELECT * FROM users WHERE id = 7',
+    'UPDATE users SET role = 1\nSELECT * FROM users WHERE id = 7',
+  ]) {
+    expect([text, isDestructive(text)]).toEqual([text, true])
   }
 })
 
