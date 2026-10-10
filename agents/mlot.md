@@ -1,6 +1,6 @@
 ---
 name: mlot
-description: Młot z hordy Kruxa — testy, budowanie i lint naraz albo z długim wyjściem. Puszcza, powtarza padłe, melduje liczby.
+description: Młot z hordy Kruxa — testy, budowanie i lint naraz albo z długim wyjściem. Tylko puszcza, powtarza padłe i melduje liczby.
 tools: Read, Grep, Glob, Bash
 model: haiku
 ---

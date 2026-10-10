@@ -291,6 +291,14 @@ test('a request to destroy data or history gets the risk line, ordinary work doe
     'nadpisz historię gita',
     'git branch -D stara',
     'git clean -fdx',
+    'git filter-branch --index-filter "git rm --cached secrets.txt" HEAD',
+    'git filter-repo --path secrets.txt --invert-paths',
+    'TRUNCATE users;',
+    'truncate table users',
+    'DELETE FROM users;',
+    'DROP DATABASE app;',
+    'drop schema public cascade',
+    'ALTER TABLE users DROP COLUMN email;',
   ]) {
     expect([text, riskHint(text)]).toEqual([text, RISK_HINT])
   }
@@ -304,6 +312,10 @@ test('a request to destroy data or history gets the risk line, ordinary work doe
     'git branch -d scalona',
     'ustaw wrap truncate-end',
     'truncate the text to 40 chars',
+    'SELECT * FROM users;',
+    'CREATE DATABASE app;',
+    'ALTER TABLE users ADD COLUMN email text;',
+    'git log --diff-filter=D',
     '/krux status',
   ]) {
     expect([text, riskHint(text)]).toEqual([text, null])
@@ -321,6 +333,8 @@ test('irreversible commands beyond git and SQL get the risk line, their safe nei
     'git checkout -- .',
     'git checkout HEAD -- src/app.ts',
     'git checkout .',
+    'git -C repo checkout -- .',
+    'git -C repo restore .',
     'git restore .',
     'git restore --staged --worktree src/',
     'git stash clear',
@@ -335,6 +349,7 @@ test('irreversible commands beyond git and SQL get the risk line, their safe nei
     'shred -u secrets.txt',
     'shred notatki.txt',
     'mkfs.ext4 /dev/sdb1',
+    'sformatuj /dev/sdb1 przez mkfs.ext4',
     'wipefs -a /dev/sdb',
     'dd if=/dev/zero of=/dev/sda bs=1M',
     'dropdb app_dev',
@@ -359,10 +374,12 @@ test('irreversible commands beyond git and SQL get the risk line, their safe nei
     'kubectl -n prod delete pvc data',
     'helm uninstall api',
     'helm delete api',
+    'helm -n prod uninstall api',
     'docker volume rm pgdata',
     'docker volume prune -f',
     'docker compose down -v',
     'docker-compose down -v',
+    'docker compose -f prod.yml down -v',
     'docker system prune -a --volumes',
     'aws s3 rm s3://kubel/dane --recursive',
     'aws s3 rb s3://kubel --force',
@@ -409,6 +426,7 @@ test('irreversible commands beyond git and SQL get the risk line, their safe nei
     'git reflog',
     'shred --help',
     'mkfs --help',
+    'mkfs.ext4 --help',
     'wipefs /dev/sdb',
     'wipefs -O UUID /dev/sdb',
     'dd if=/dev/sda of=dysk.img bs=1M',
@@ -422,6 +440,10 @@ test('irreversible commands beyond git and SQL get the risk line, their safe nei
     'pulumi preview',
     'helm upgrade --install api ./chart',
     'docker-compose down',
+    'docker compose -f prod.yml down',
+    'helm -n prod list',
+    'git -C repo checkout main',
+    'git -C repo restore --staged .',
     'docker system prune -f',
     'terraform -chdir=infra plan',
     'aws s3 mb s3://kubel',
@@ -433,11 +455,14 @@ test('irreversible commands beyond git and SQL get the risk line, their safe nei
 })
 
 // Łańcuch sądzimy komenda po komendzie: groźna komenda za bezpieczną nie ginie,
-// a flaga jednej komendy nie przechodzi przez `&&`, `;` ani `|` na następną.
+// a flaga jednej komendy nie przechodzi przez `&&`, `;` ani `|` na następną. W cudzysłowie
+// i po `\` te znaki należą do argumentu (`-regex '(a|b)'`, `-exec … \;`).
 test('each command of a shell chain is judged on its own', async () => {
   for (const text of [
     'git restore --staged . && git restore .',
     'git restore --staged a.ts; git restore b.ts',
+    "find . -name '*.log' -exec gzip {} \\; -exec rm {} \\;",
+    "find . -regextype posix-extended -regex '.*\\.(pyc|pyo)' -delete",
   ]) {
     expect([text, isDestructive(text)]).toEqual([text, true])
   }
@@ -452,7 +477,7 @@ test('each command of a shell chain is judged on its own', async () => {
 })
 
 // Sformatowany `UPDATE` zajmuje kilka wierszy: `WHERE` niżej należy do tego samego
-// zdania SQL, a `;`, pusty wiersz albo następne zdanie SQL je kończą.
+// zdania SQL, a `;`, pusty wiersz, następne zdanie SQL albo zwykły wcięty kod je kończą.
 test('a formatted UPDATE keeps the WHERE from its next lines', async () => {
   for (const text of [
     'UPDATE users\nSET role = 1\nWHERE id = 7;',
@@ -465,6 +490,8 @@ test('a formatted UPDATE keeps the WHERE from its next lines', async () => {
     'UPDATE users SET role = 1;\nSELECT * FROM users WHERE id = 7;',
     'UPDATE users SET role = 1\n\nSELECT * FROM users WHERE id = 7',
     'UPDATE users SET role = 1\nSELECT * FROM users WHERE id = 7',
+    '    cur.execute("UPDATE users SET active = false")\n    cur.execute("SELECT * FROM users WHERE id = 7")',
+    '  UPDATE a SET x = 1 WHERE id = 2\n  UPDATE b SET y = 2',
   ]) {
     expect([text, isDestructive(text)]).toEqual([text, true])
   }

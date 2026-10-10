@@ -15,9 +15,15 @@ przeoczenie `git restore --staged . && git restore .` (argumenty pierwszego `res
 resztę linii), flagę na sformatowanym `UPDATE … SET` z `WHERE` w następnym wierszu, przeoczone
 `docker-compose down -v`, `terraform -chdir=infra destroy`, `rails db:migrate:reset` i `shred plik`
 oraz fałszywe alarmy `shred --help`, `mkfs --help`, `wipefs /dev/sdb` (sam odczyt sygnatur)
-i `git push && docker run -d` (okno flagi przechodziło przez `&&`). Po poprawkach testy w
-`tests/voice.test.ts` trzymają 62 groźne komendy (main łapał z nich 0), 5 polskich próśb z linią
-ryzyka i 51 bezpiecznych sąsiadów bez flagi; każda komenda ma przykład i sąsiada.
+i `git push && docker run -d` (okno flagi przechodziło przez `&&`). Drugi przegląd, już samych
+poprawek, złapał w nich regresje: wcięty kod przedłużał zdanie SQL (Python z `UPDATE` bez `WHERE`
+tracił flagę), `ARG` brał cytowane `|` i `\;` za separator (`find … -regex '(pyc|pyo)' -delete`
+bez flagi), a `mkfs` w samej prośbie przestał dawać linię ryzyka; dorzucił też opcje globalne
+(`git -C`, `compose -f`, `helm -n`). Porównanie wersji przed i po poprawkach na 1317 napisach
+z testów: 10 zmian w każdą stronę, wszystkie zamierzone. Testy w `tests/voice.test.ts` trzymają
+teraz 71 nowych groźnych komend (`main` łapał z nich 0), 5 polskich próśb z linią ryzyka i
+56 bezpiecznych sąsiadów, a do tego przykłady i sąsiadów dawnych wzorców (`filter-branch`,
+`TRUNCATE`, `DELETE FROM`, `DROP …`): każda komenda ma przykład i sąsiada.
 
 ## 2. Kumple jako typy subagentów
 

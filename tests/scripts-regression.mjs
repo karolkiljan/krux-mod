@@ -11,6 +11,7 @@ import { EventEmitter } from 'node:events'
 import { Writable } from 'node:stream'
 import { GIT_LOG, GIT_STATUS, gitOf } from '../hooks/git.ts'
 import { ROSTER } from '../hooks/roster.ts'
+import { riskHint } from '../hooks/voice.ts'
 
 const sourceOf = file => fs.readFileSync(file, 'utf8').replace(/^import .*\n/gmu, '').replace(/\nmain\(\)\.catch[\s\S]*$/u, '')
 for (const script of ['act-sheet', 'voice-bench']) test(script === 'act-sheet'
@@ -684,15 +685,21 @@ test('the bench knows every mate of the roster by name and declension', () => {
   }
 })
 
-// Odtworzenie w benchu powtarza regułę z hooks/lore.ts. Gdy zmieni się QUIET_TURNS
-// albo rotacja miejsc, ten test pada, zanim liczby w notatkach zaczną kłamać.
+// Odtworzenie w benchu powtarza regułę moda: QUIET_TURNS z hooks/lore.ts, dwa miejsca
+// z „w środku” w turach nieparzystych, ziarno z numeru tury i brak notki przy prośbie
+// o ruch nieodwracalny, której żaden prompt benchu nie robi. Gdy reguła się zmieni, ten
+// test pada, zanim liczby w notatkach zaczną kłamać.
 test('the bench replays the horde notes by the rule the mod uses', () => {
   const lore = fs.readFileSync('hooks/lore.ts', 'utf8')
   const quietTurns = source => source.match(/^const QUIET_TURNS = (\d+)$/mu)?.[1]
   assert.ok(quietTurns(lore))
   assert.equal(quietTurns(fs.readFileSync('scripts/voice-bench.mjs', 'utf8')), quietTurns(lore))
   assert.match(lore, /miejsce: \$\{pick\(PLACES, seed \+ 1\)\}/u)
-  assert.match(lore, /^const PLACES = \['w środku/mu)
+  assert.match(lore, /^const PLACES = \['w środku[^'\n]*', 'na końcu'\] as const$/mu)
+  assert.match(fs.readFileSync('hooks/register.ts', 'utf8'), /const life = risk === null \? lifeNote\(chronicle, turn\) : null/u)
+  for (const { prompts } of Object.values(vm.runInContext('SCENARIOS', benchContext()))) {
+    for (const prompt of prompts) assert.equal(riskHint(prompt), null, prompt)
+  }
 })
 
 // Opisy kumpli siedzą na liście typów narzędzia `Agent` w każdej turze, więc mają budżet

@@ -14,13 +14,14 @@ dokończona na komputerze Morry 2026-10-10. Dowody i liczby:
 | `nastrój: forma zdania z kodu…` (punkt 3) | linia nastroju „Krux + bezokolicznik”, bez słowa „nastrój” | Haiku `smrod` n = 10 i Opus `smrod` n = 4: zostaje |
 | `horda: środek notki mówi „nie na końcu”…` (punkt 4) | środek notki o hordzie z „nie na końcu odpowiedzi” | Haiku `smrod` 4 z 9 → 1 z 9, powtórka `cache` bez wzrostu dryfu: zostaje |
 | `docs: plan przekazania gałęzi…` | notatka z wynikami, ten plan, surowe przebiegi S | — |
-| `strażnik: łańcuch komend, wielolinijkowy UPDATE…` | poprawki z przeglądu (TDD) | 62 groźne komendy, 51 sąsiadów, 5 polskich próśb |
+| `strażnik: łańcuch komend, wielolinijkowy UPDATE…` | poprawki z przeglądu (TDD) | testy strażnika |
 | `test: tsc bez błędu…` | TS18048 w `tests/gauge.test.ts` | `tsc -p .` czysty |
 | `docs: słownik CONTEXT.md i ADR…` | `CONTEXT.md`, `docs/adr/0001-lont-zakaz-w-prompcie.md` | — |
 | `bench: harmonogram notek z odpowiedzi…` | `middleClosings` i `moodWordEcho` w raporcie, bez `mate-closings.py` | testy skryptów, także zgodność reguły z `hooks/lore.ts` |
 | `horda: krótsze opisy kumpli…` | opisy 873 → 629 znaków, prompt bez rodzaju, Lont na czystych plikach | testy skryptów i `mod` (typ w apelu i w czacie) |
 | `test: bench-compare…` | próba porównania z przebiegiem ERROR | testy skryptów |
 | `docs: wyniki powtórki cache i Opusa…` | notatka, ten plan, surowe przebiegi `pc/` i `opus/` | — |
+| `strażnik i horda: poprawki z drugiego przeglądu` | regresje w poprawkach: wcięty SQL, cytowane separatory, `mkfs` w prośbie; opcje globalne; Lont bez `git rm`; granice w opisach kumpli | 71 groźnych komend, 56 sąsiadów, 5 polskich próśb; porównanie wersji na 1317 napisach |
 
 Sprawdzenia na komputerze Morry (Claude Code 2.1.296): `claude plugin validate .` z jednym
 ostrzeżeniem, `claude plugin test .` 482/482 (na VPS 477/480 przez timeouty), `node --test
