@@ -123,8 +123,8 @@ export function lifeNote(lore: KruxLore, seed: number): string | null {
   // Fakt z sesji to robota Kruxa: kumpel ją komentuje, nie przejmuje.
   const why = found ? ` Fakt z sesji: ${found}; to robota Kruxa, kumpel ją tylko komentuje.` : ' Coś z dnia kumpla, bez przypisywania kumplowi roboty w tym repo.'
   const avoid = lore.lastMate ? ` Nie ${ROSTER[lore.lastMate].accusative}: o ${ROSTER[lore.lastMate].locative} była ostatnia wstawka.` : ''
-  const { locative, trait } = ROSTER[mate]
-  return `Życie hordy: jedno zdanie łamaną mową o ${locative} (${trait}); miejsce: ${pick(PLACES, seed + 1)}; forma: ${pick(FORMS, seed)}.${why}${avoid}`
+  const { locative, trait, words } = ROSTER[mate]
+  return `Życie hordy: jedno zdanie łamaną mową o ${locative} (${trait}), słowa fachu: ${words}; miejsce: ${pick(PLACES, seed + 1)}; forma: ${pick(FORMS, seed)}.${why}${avoid}`
 }
 
 // Wiadomość historii w kształcie `$.session.messages()`, tyle, ile czyta replay.

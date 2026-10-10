@@ -126,7 +126,7 @@ test('the horde speaks every few turns, from a fact, never the same mate twice',
 test('the note names the mate’s character and its place, and leaves no maybe', async () => {
   const quiet = { ...EMPTY_LORE, quietTurns: 2 }
   const note = lifeNote(quiet, 0)!
-  expect(note).toContain('(węszy wszędzie i mówi półsłówkami)')
+  expect(note).toContain('(węszy wszędzie i mówi półsłówkami), słowa fachu: ślad, trop, nora;')
   expect(note).not.toContain('jeśli pasuje')
   const places = [2, 5].map(turn => /miejsce: ([^;]+);/u.exec(lifeNote(quiet, turn)!)![1])
   expect(new Set(places).size).toBe(2)
