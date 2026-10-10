@@ -33,6 +33,8 @@ hooks/report.ts                               czysty raport dnia do wklejenia (`
 hooks/shaft.ts                                czyste drzewo panelu Sztolni (`shaftTree`, `shaftTabs`): karty Stan/Dziennik, z `Box`/`Text` i danych (tablica, wiersze apelu, zużycie, zegar, szerokość); kolory iskry i skóry orka dla paneli
 voice/{persona,konkret,flow}.md               jedyne źródło tekstów trafiających do promptu
 docs/research/                                notatki ze źródeł naukowych do zmian głosu
+docs/adr/                                     decyzje trudne do cofnięcia, z odrzuconymi opcjami
+CONTEXT.md                                    słownik głosu, hordy i strażnika (bez szczegółów implementacji)
 skills/krux-horda/SKILL.md                    horda na żądanie: kiedy wołać kumpla i którym typem
 agents/*.md                                   kumple jako typy subagentów `krux-mod:<ROSTER.agent>`: fach, narzędzia, model i raport
 types/index.d.ts                              kontrakt `$.state` (`krux-mod.*`)
@@ -196,4 +198,4 @@ Pięć kanonicznych ról, napis etykiety = nazwa roli, zapisany w linii `Status:
 
 Single-context: `CONTEXT.md` i `docs/adr/` w korzeniu repo. See `docs/agents/domain.md`.
 
-`CONTEXT.md`, `docs/adr/` i `.scratch/` powstają leniwie, gdy skill pierwszy raz ich potrzebuje. Ich brak to stan zamierzony, nie błąd do zgłoszenia.
+Nowy termin trafia do `CONTEXT.md`, gdy się ustali; ADR powstaje tylko dla decyzji trudnej do cofnięcia, zaskakującej bez kontekstu i wybranej spośród realnych opcji. `.scratch/` powstaje leniwie, gdy skill pierwszy raz go potrzebuje; jego brak to stan zamierzony, nie błąd do zgłoszenia.
