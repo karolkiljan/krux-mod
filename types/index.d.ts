@@ -185,6 +185,8 @@ declare module 'claude-code' {
       turns: number
       drift: KruxDrift | null
       lore: KruxLore
+      // Klucz zdarzenia kroniki, którego nastrój model już dostał (`moodNote`).
+      moodSeen: string | null
       replayed: boolean
       mood: KruxMoods
       crew: KruxCrew

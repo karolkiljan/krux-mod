@@ -127,6 +127,28 @@ export function lifeNote(lore: KruxLore, seed: number): string | null {
   return `Życie hordy: jedno zdanie łamaną mową o ${locative} (${trait}), słowa fachu: ${words}; miejsce: ${pick(PLACES, seed + 1)}; forma: ${pick(FORMS, seed)}.${why}${avoid}`
 }
 
+// Nastrój Kruxa z ostatniego zdarzenia kroniki: jedna linia dla modelu, a `key`
+// pozwala wołającemu podać ją raz na zdarzenie. Zielone bez wcześniejszego
+// smrodu to spokój, nie powód do nastroju. Neutralna polszczyzna, bo to instrukcja;
+// linia sama mówi, że nastrój nie rusza ocen, bo w symulacji triumf przechylał decyzje.
+export function moodNote(lore: KruxLore): { key: string; text: string } | null {
+  if (lore.last === null) return null
+  const key = `${lore.last}:${lore.testRuns}:${lore.builds}:${lore.commits}:${lore.tears}:${lore.edits}`
+  const mood = (() => {
+    switch (lore.last) {
+      case 'test-fail': return `zadziorny (padłe przebiegi testów: ${lore.testFails} z ${lore.testRuns})`
+      case 'build-fail': return `zadziorny (padłe budowania: ${lore.buildFails} z ${lore.builds})`
+      case 'test-pass': return lore.testFails > 0 ? `dumny (testy zielone po padłych przebiegach: ${lore.testFails})` : null
+      case 'build-pass': return lore.buildFails > 0 ? `dumny (budowanie zielone po padłych: ${lore.buildFails})` : null
+      case 'commit': return `zadowolony (commity w tej sesji: ${lore.commits})`
+      case 'tear': return `skupiony (rozbiórki w tej sesji: ${lore.tears})`
+      case 'zawał': return 'czujny (ostatnia komenda padła z błędem)'
+    }
+  })()
+  if (mood === null) return null
+  return { key, text: `Nastrój Kruxa: ${mood}. Jedno krótkie zdanie o tym nastroju, wplecione w odpowiedź; nastrój barwi ton, nie zmienia ocen, ryzyka ani decyzji.` }
+}
+
 // Wiadomość historii w kształcie `$.session.messages()`, tyle, ile czyta replay.
 export type HistoryMessage = {
   role: 'user' | 'assistant'

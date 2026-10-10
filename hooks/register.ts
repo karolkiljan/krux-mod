@@ -7,7 +7,7 @@ import type { BandInput } from './band'
 import { EMPTY_CREW, crewAfter } from './crew'
 import type { CrewEvent } from './crew'
 import { gauge, matesNamed } from './gauge'
-import { EMPTY_LORE, lifeNote, recordAnswer, recordTool, replay, turnsAfter } from './lore'
+import { EMPTY_LORE, lifeNote, moodNote, recordAnswer, recordTool, replay, turnsAfter } from './lore'
 import { CALM, EVENT_HOLD_MS, eventOf, mateIn, mateMoodAfter, moodsAfter, moodsTick } from './mood'
 import { MATES, ROSTER } from './roster'
 import type { BoardCall } from './board'
@@ -29,6 +29,7 @@ import {
   COMPACT_NOTE,
   anchorFor,
   applyToggle,
+  asksRelease,
   describeTool,
   describeToolAhead,
   describePhase,
@@ -38,6 +39,7 @@ import {
   parseCommand,
   parsePhrase,
   personaSections,
+  promptKind,
   riskHint,
   spinnerWord,
   statusLine,
@@ -73,6 +75,8 @@ const still = atom({ plugin: 'krux-mod', key: 'still' } as const, false)
 const turns = atom({ plugin: 'krux-mod', key: 'turns' } as const, 0)
 const drift = atom({ plugin: 'krux-mod', key: 'drift' } as const, null)
 const lore = atom({ plugin: 'krux-mod', key: 'lore' } as const, EMPTY_LORE)
+// Zdarzenie kroniki, o którego nastroju model już słyszał: linia nastroju raz na zdarzenie.
+const moodSeen = atom({ plugin: 'krux-mod', key: 'moodSeen' } as const, null)
 const replayed = atom({ plugin: 'krux-mod', key: 'replayed' } as const, false)
 const moods = atom({ plugin: 'krux-mod', key: 'mood' } as const, CALM)
 const crew = atom({ plugin: 'krux-mod', key: 'crew' } as const, EMPTY_CREW)
@@ -639,8 +643,17 @@ export const register: Register = on => {
       if (fromPerson(e.origin)) {
         // Prośba o ruch nieodwracalny: zamiast wstawki o hordzie linia o ostrzeżeniu, na końcu.
         const risk = riskHint(e.text)
-        const life = risk === null ? lifeNote(await read($, lore), turn) : null
+        const chronicle = await read($, lore)
+        const life = risk === null ? lifeNote(chronicle, turn) : null
         if (life) extra.push(life)
+        // Nastrój z ostatniego zdarzenia, raz na zdarzenie. Decyzja o wydaniu, plan i ruch
+        // nieodwracalny idą samymi faktami: tam nastrój przechylał wybór, więc przepada.
+        const mood = moodNote(chronicle)
+        if (mood) {
+          let fresh = false
+          await update($, moodSeen, seen => { fresh = seen !== mood.key; return mood.key })
+          if (fresh && risk === null && promptKind(e.text) !== 'plan' && !asksRelease(e.text)) extra.push(mood.text)
+        }
         const hint = formatHint(e.text)
         if (hint) extra.push(hint)
         if (risk) extra.push(risk)

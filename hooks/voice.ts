@@ -120,6 +120,15 @@ const RISK_WORDS = new RegExp(
   'iu',
 )
 
+// Prośba o decyzję wydania: tu nastrój nie może przechylać szali. W symulacji
+// (docs/research/2026-10-09-mood-decisions-experiment.md) triumf zmienił
+// „wstrzymać” na „wypuszczać” bez nowej informacji. „Wydajność” to nie wydanie.
+const RELEASE_WORDS = /(?<!\p{L})(?:wypu[sś]\p{L}*|produkcj\p{L}*|deploy\p{L}*|wdr[oa]ż\p{L}*|release\p{L}*|wydani\p{L}*|wyda(?:ć|j(?!n)|m)\p{L}*|scal\p{L}*|merg\p{L}*)(?!\p{L})/iu
+
+export function asksRelease(text: string): boolean {
+  return RELEASE_WORDS.test(text.normalize('NFC'))
+}
+
 // Kontrakt persony wraca w chwili, gdy jest potrzebny: kotwica co turę pilnuje
 // gramatyki, a ta linia przypomina, że ostrzeżenie idzie bez głosu.
 export const RISK_HINT = 'Ruch nieodwracalny: skutek i drogę odwrotu podaj pełnymi zdaniami, bez głosu; głos wraca po ostrzeżeniu.'
