@@ -418,6 +418,34 @@ function mateIdiolect(responses) {
   return { mateSentences: sentences, mateSentencesWithTrade: withTrade }
 }
 
+// Tury notek o hordzie odtworzone z odpowiedzi regułą moda (`lifeNote` i `recordAnswer`
+// w hooks/lore.ts): notka przychodzi po QUIET_TURNS turach bez kumpla, a miejsce rotuje
+// z numerem tury (`pick(PLACES, tura + 1)`), więc „w środku” wypada w turach nieparzystych.
+// Transkrypt podaje tylko liczbę notek; zgodność reguły pilnuje test skryptów.
+const QUIET_TURNS = 2
+function middleNoteTurns(responses) {
+  const turns = []
+  let quiet = 0
+  responses.forEach((response, turn) => {
+    if (quiet >= QUIET_TURNS && turn % 2 === 1) turns.push(turn)
+    quiet = hordeHits(response) > 0 ? 0 : quiet + 1
+  })
+  return turns
+}
+
+// Kumpel w ostatnim zdaniu tury, w której notka każe „w środku”: wstawka uciekła na
+// koniec. `hordeClosings` liczy ostatni akapit we wszystkich turach z hordą, także tam,
+// gdzie notka sama każe „na końcu”, a odpowiedź z jednego akapitu zawsze się tam łapie.
+function middleClosings(responses) {
+  const middle = middleNoteTurns(responses)
+  const withMate = middle.filter(turn => hordeHits(responses[turn]) > 0)
+  const closing = withMate.filter(turn => new RegExp(hordePattern.source, 'u').test(proseSentences(responses[turn]).at(-1) ?? ''))
+  return { middleNotes: middle.length, middleMates: withMate.length, middleClosings: closing.length }
+}
+
+// Słowo „nastrój” z linii nastroju powtórzone w prozie odpowiedzi.
+const moodWordHits = text => (plainProse(String(text || '')).match(/(?<!\p{L})nastr[oó]\p{L}*/giu) ?? []).length
+
 const SHORT_SENTENCE_WORDS = 8
 
 function sentenceLengths(text) {
@@ -560,7 +588,6 @@ function invocation(index, model, sessionId, pluginDir, scenario = SCENARIOS.cac
 // `result` poprzedniej tury, więc tury nie zlewają się w jedną.
 function converse({ model, sessionId, pluginDir, cwd, env, onResult, scenario = SCENARIOS.cache }) {
   const TURNS = scenario.prompts.length
-  const PROMPTS = scenario.prompts
   const args = [
     '-p',
     '--input-format', 'stream-json',
@@ -587,7 +614,7 @@ function converse({ model, sessionId, pluginDir, cwd, env, onResult, scenario = 
     }
     const timer = setTimeout(() => fail(new Error(`Przekroczony czas po ${results.length} turach`)), 300_000 * TURNS)
     const send = index => {
-      const message = { type: 'user', message: { role: 'user', content: PROMPTS[index] } }
+      const message = { type: 'user', message: { role: 'user', content: scenario.prompts[index] } }
       try {
         child.stdin.write(`${JSON.stringify(message)}\n`)
       } catch (error) {
@@ -735,6 +762,8 @@ function buildReport({ model, mode, pluginDir, responses, stats, costUsd, costUs
     moodHitsPerTurn: responses.map(moodHits),
     foreignPathsPerTurn: responses.map(response => foreignPaths(response, scenario.files)),
     ...mateIdiolect(responses),
+    ...middleClosings(responses),
+    moodWordEcho: responses.reduce((sum, response) => sum + moodWordHits(response), 0),
     // Bramka głosu pluginu, bez warunku na emisję persony (mod trzyma ją w
     // prompcie systemowym); w zamian kotwica musi dojść co najmniej raz.
     accepted:

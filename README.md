@@ -109,15 +109,18 @@ tsc -p .
 git diff --check
 ```
 
-Sprawdzone na Claude Code 2.1.293. API modów jest we wczesnym dostępie i może się zmienić między wersjami.
+Sprawdzone na Claude Code 2.1.296. API modów jest we wczesnym dostępie i może się zmienić między wersjami.
 
 ## Pomiar głosu
 
 ```bash
-node scripts/voice-bench.mjs --model claude-opus-5-5 [--mode stream|resume] [--plugin-dir <katalog>]
+node scripts/voice-bench.mjs --model claude-opus-5-5 [--scenario cache|smrod] [--mode stream|resume] [--plugin-dir <katalog>]
+node scripts/bench-compare.mjs baza=<katalog> wariant=<katalog> [--model <id>] [--scenario cache|smrod] [--turn N]
 ```
 
-12 tur jednej sesji. `--mode stream` (domyślnie) prowadzi rozmowę w jednym procesie `claude -p --input-format stream-json`, tak jak sesja interaktywna, więc mierzy krótką kotwicę i życie hordy. `--mode resume` odpala osobny proces na turę z `--resume` i sprawdza, czy mod odtwarza stan z historii. Scenariusz `cache` z pluginu Krux 3.8.0 (te same prompty, fixture i metryki co `scripts/context-smoke.js`, więc liczby stają obok serii pluginu). Ustawienia użytkownika, jego pluginy, hooki i MCP są odcięte (`--setting-sources local`, `--strict-mcp-config`); mod wchodzi wyłącznie przez `--plugin-dir`. Raport i surowe odpowiedzi lądują w `benchmarks/voice-bench/<czas>/`. Poza metrykami pluginu raport liczy kotwice z transkryptu: pełne (`fullAnchors`, w tym `driftFixes` z poprawką), krótkie (`shortAnchors`), notki o hordzie i łączną długość kontekstu hooka (`hookContextChars`), a do tego szablony: powtórzone zamknięcia odpowiedzi (`repeatedClosings`), prośby o zgodę na końcu (`consentClosings`), powtórzone otwarcia wstawek o hordzie (`repeatedHordeOpenings`) i wstawki w ostatnim akapicie (`hordeClosings`). Notatka ze źródłami i wynikami A/B: `docs/research/2026-10-04-komunikacja.md`. Wymaga Node ≥ 22.18 (wczytuje `hooks/voice.ts` bez budowania). Jeden przebieg to 12 płatnych tur, około $0,45 na Opusie.
+Jeden przebieg to jedna sesja. Scenariusz `cache` (domyślny, 12 tur, sam odczyt plików) pochodzi z pluginu Krux 3.8.0: te same prompty, fixture i metryki co `scripts/context-smoke.js`, więc liczby stają obok serii pluginu. Scenariusz `smrod` (7 tur) daje modelowi `Bash` do testów i `Edit`: model puszcza testy, naprawia robaka i odpowiada na pytanie o wydanie, więc kronika dostaje smród i zielone, a model linię nastroju. `--mode stream` (domyślnie) prowadzi rozmowę w jednym procesie `claude -p --input-format stream-json`, tak jak sesja interaktywna, więc mierzy krótką kotwicę i życie hordy. `--mode resume` odpala osobny proces na turę z `--resume` i sprawdza, czy mod odtwarza stan z historii. Ustawienia użytkownika, jego pluginy, hooki i MCP są odcięte (`--setting-sources local`, `--strict-mcp-config`); mod wchodzi wyłącznie przez `--plugin-dir`. Raport i surowe odpowiedzi lądują w `benchmarks/voice-bench/<czas>/`.
+
+Poza metrykami pluginu raport liczy kotwice z transkryptu: pełne (`fullAnchors`, w tym `driftFixes` z poprawką), krótkie (`shortAnchors`), notki o hordzie i o nastroju (`hordeNotes`, `moodNotes`) i łączną długość kontekstu hooka (`hookContextChars`), a do tego szablony: powtórzone zamknięcia i otwarcia odpowiedzi (`repeatedClosings`, `repeatedOpenings`), prośby o zgodę na końcu (`consentClosings`), powtórzone otwarcia wstawek o hordzie (`repeatedHordeOpenings`), wstawki w ostatnim akapicie (`hordeClosings`), kumpla w ostatnim zdaniu tury, w której notka kazała „w środku” (`middleClosings`; tury notek bench odtwarza z odpowiedzi regułą moda) i słowo „nastrój” powtórzone za linią nastroju (`moodWordEcho`). `bench-compare.mjs` liczy metryki od nowa z `responses.json` każdej serii, więc stare przebiegi liczą się tak samo jak nowe, i podaje różnicę z testem permutacyjnym; `--turn N` wypisuje odpowiedzi z tury N do czytania oczami. Notatki z wynikami A/B: `docs/research/`. Wymaga Node ≥ 22.18 (wczytuje `hooks/voice.ts` bez budowania). Przebieg `cache` to 12 płatnych tur: około $0,45 na Opusie i $0,014 na Haiku; `smrod` na Opusie kosztuje około $0,25.
 
 ## Licencja
 

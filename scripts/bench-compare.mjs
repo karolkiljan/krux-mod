@@ -25,7 +25,7 @@ function benchMetrics() {
     .replaceAll('import.meta.url', "'file:///voice-bench.mjs'")
   const context = vm.createContext({ fs, path, process: { argv: [], env: {} }, fileURLToPath: () => path.join(here, 'voice-bench.mjs') })
   vm.runInContext(source, context)
-  return vm.runInContext('({ buildReport, SCENARIOS })', context)
+  return vm.runInContext('({ buildReport })', context)
 }
 
 function parseArgs(argv) {
@@ -115,10 +115,14 @@ const METRICS = [
   ['powtórzenie dla nacisku', r => r.emphasisTotal],
   ['ścieżki spoza fixture', r => sum(r.foreignPathsPerTurn.map(paths => paths.length))],
   ['nastrój w odpowiedziach', r => sum(r.moodHitsPerTurn)],
+  ['echo „nastrój”', r => r.moodWordEcho],
   ['tury z hordą', r => r.turnsWithHorde],
   ['zdania o kumplu', r => r.mateSentences],
   ['…z słowem fachu', r => r.mateSentencesWithTrade],
-  ['kumpel na końcu', r => r.hordeClosings],
+  ['kumpel w ostatnim akapicie', r => r.hordeClosings],
+  ['notki „w środku”', r => r.middleNotes],
+  ['…kumpel w tej turze', r => r.middleMates],
+  ['…w ostatnim zdaniu', r => r.middleClosings],
   ['notki o hordzie', r => r.hordeNotes],
   ['notki o nastroju', r => r.moodNotes ?? 0],
   ['poprawki dryfu', r => r.driftFixes],

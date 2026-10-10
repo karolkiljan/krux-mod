@@ -621,6 +621,41 @@ for (const [name, steps, exit, interrupt] of [
   })
 }
 
+function benchContext() {
+  const context = vm.createContext({ fs, path, process: { argv: [], env: {} }, fileURLToPath: () => path.resolve('scripts/voice-bench.mjs'), pathToFileURL: file => ({ href: file }) })
+  vm.runInContext(sourceOf('scripts/voice-bench.mjs').replaceAll('import.meta.url', "'file:///scripts/voice-bench.mjs'"), context)
+  return context
+}
+
+// Transkrypt podaje tylko liczbę notek o hordzie, więc tury notek bench odtwarza z
+// odpowiedzi: kumpel wymieniony bez notki przesuwa całą resztę harmonogramu.
+test('voice bench replays the horde notes from the answers and counts a mate closing a middle turn', () => {
+  const context = benchContext()
+  const quiet = 'Krux czytać kod.'
+  // Notki w turach 2, 5, 8 i 11; „w środku” w 5 i 11.
+  const regular = [quiet, quiet, 'Niuch węszyć.', quiet, quiet, 'Grom kuć. Krux kończyć.', quiet, quiet, 'Lont mierzyć.', quiet, quiet, 'Krux zaczynać. Piryt zrzędzić.']
+  assert.deepEqual({ ...context.middleClosings(regular) }, { middleNotes: 2, middleMates: 2, middleClosings: 1 })
+  // Młot bez notki w turze 1 przesuwa notki na 4, 7 i 10; „w środku” tylko w 7.
+  const shifted = [quiet, 'Młot liczyć.', quiet, quiet, 'Ochra malować.', quiet, quiet, 'Krux sprawdzać. Lont mierzyć.', quiet, quiet, 'Piryt zrzędzić.', quiet]
+  assert.deepEqual({ ...context.middleClosings(shifted) }, { middleNotes: 1, middleMates: 1, middleClosings: 1 })
+})
+
+test('voice bench counts the mood word echoed in prose, not in code', () => {
+  const moodWordHits = vm.runInContext('moodWordHits', benchContext())
+  assert.equal(moodWordHits('Nastrój Kruxa dobry, bez nastroju. `nastrój` w kodzie.'), 2)
+})
+
+// Odtworzenie w benchu powtarza regułę z hooks/lore.ts. Gdy zmieni się QUIET_TURNS
+// albo rotacja miejsc, ten test pada, zanim liczby w notatkach zaczną kłamać.
+test('the bench replays the horde notes by the rule the mod uses', () => {
+  const lore = fs.readFileSync('hooks/lore.ts', 'utf8')
+  const quietTurns = source => source.match(/^const QUIET_TURNS = (\d+)$/mu)?.[1]
+  assert.ok(quietTurns(lore))
+  assert.equal(quietTurns(fs.readFileSync('scripts/voice-bench.mjs', 'utf8')), quietTurns(lore))
+  assert.match(lore, /miejsce: \$\{pick\(PLACES, seed \+ 1\)\}/u)
+  assert.match(lore, /^const PLACES = \['w środku/mu)
+})
+
 test('every mate has an agent definition under his type, and the scouts and the tester cannot edit', () => {
   const skill = fs.readFileSync(new URL('../skills/krux-horda/SKILL.md', import.meta.url), 'utf8')
   for (const [mate, { agent }] of Object.entries(ROSTER)) {
