@@ -325,6 +325,8 @@ test('the mood line comes from the last chronicle event, with its fact, and calm
   const failing = recordTool(EMPTY_LORE, 'Bash', { command: 'npm test' }, true)
   const angry = moodNote(failing)!
   expect(angry.text).toContain('Nastrój Kruxa: zadziorny (padłe przebiegi testów: 1 z 1)')
+  // Forma z kodu: bezokolicznik przy Kruxie i bez słowa z instrukcji, które model powtarzał.
+  expect(angry.text).toContain('jednym krótkim zdaniem „Krux + bezokolicznik”, bez słowa „nastrój”')
   // Linia sama pilnuje, że nastrój nie rusza ocen ani decyzji.
   expect(angry.text).toContain('nie zmienia ocen, ryzyka ani decyzji')
   const green = recordTool(failing, 'Bash', { command: 'npm test' }, false, '3 passed')

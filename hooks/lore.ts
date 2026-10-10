@@ -131,6 +131,9 @@ export function lifeNote(lore: KruxLore, seed: number): string | null {
 // pozwala wołającemu podać ją raz na zdarzenie. Zielone bez wcześniejszego
 // smrodu to spokój, nie powód do nastroju. Neutralna polszczyzna, bo to instrukcja;
 // linia sama mówi, że nastrój nie rusza ocen, bo w symulacji triumf przechylał decyzje.
+// Forma zdania z kodu, „Krux + bezokolicznik”, bez słowa „nastrój”: przy „jednym
+// zdaniu o tym nastroju” Haiku pisał formy osobowe („zniknął”, „nastrój jest”), poprawek
+// dryfu było 2,70 zamiast 1,73 na przebieg, a w 4 z 19 zdań wracało samo słowo z linii.
 export function moodNote(lore: KruxLore): { key: string; text: string } | null {
   if (lore.last === null) return null
   const key = `${lore.last}:${lore.testRuns}:${lore.builds}:${lore.commits}:${lore.tears}:${lore.edits}`
@@ -146,7 +149,7 @@ export function moodNote(lore: KruxLore): { key: string; text: string } | null {
     }
   })()
   if (mood === null) return null
-  return { key, text: `Nastrój Kruxa: ${mood}. Jedno krótkie zdanie o tym nastroju, wplecione w odpowiedź; nastrój barwi ton, nie zmienia ocen, ryzyka ani decyzji.` }
+  return { key, text: `Nastrój Kruxa: ${mood}. Pokaż go jednym krótkim zdaniem „Krux + bezokolicznik”, bez słowa „nastrój”; nastrój barwi ton, nie zmienia ocen, ryzyka ani decyzji.` }
 }
 
 // Wiadomość historii w kształcie `$.session.messages()`, tyle, ile czyta replay.
