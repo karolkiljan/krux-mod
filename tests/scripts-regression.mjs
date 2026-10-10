@@ -525,6 +525,16 @@ test('voice bench completes twelve valid turns and removes only its temporary se
   assert.equal(records.length, 12)
   assert.equal(fs.existsSync(records[0].cwd), false)
   assert.deepEqual(fs.readdirSync(path.join(scratch, 'config', 'projects')), [])
+  // Dwanaście tych samych odpowiedzi: każda po pierwszej powtarza otwarcie.
+  assert.deepEqual({ scenario: report.scenario, repeatedOpenings: report.repeatedOpenings, emphasisTotal: report.emphasisTotal, moodNotes: report.moodNotes },
+    { scenario: 'cache', repeatedOpenings: 11, emphasisTotal: 0, moodNotes: 0 })
+})
+
+test('voice bench rejects an unknown scenario before spawning claude', () => {
+  const run = scriptRun('scripts/voice-bench.mjs', ['--model', 'fixture-model', '--scenario', 'kopalnia'])
+  assert.equal(run.status, 1)
+  assert.match(run.stderr, /--scenario cache\|smrod, nie kopalnia/u)
+  assert.equal(run.stdout, '')
 })
 
 function tuiShotFixture(t, steps, interrupt = false) {
