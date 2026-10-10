@@ -40,7 +40,11 @@ tests/{voice,gauge,mood,sprites,canary,band,forge,chat,journal,board,muster,shaf
 tests/report.test.ts                          raport dnia: brak danych, komplet danych, limity i neutralna polszczyzna
 tests/scripts-regression.mjs                  testy skryptów i plików `agents/`: `node --test tests/scripts-regression.mjs`
 scripts/act-sheet.ts                          arkusz PNG i walidacja klatek: `npx tsx scripts/act-sheet.ts <scena|plik.ts:EKSPORT|gesty> <plik.png> [czynność|gest]`; czynność z `who` w fartuchu pierwszego orka z `who`
-scripts/voice-bench.mjs                       pomiar głosu na modelu (A/B kotwicy)
+scripts/voice-bench.mjs                       pomiar głosu na modelu (A/B kotwicy), scenariusze `cache` (12 tur, sam odczyt) i `smrod` (7 tur: testy, naprawa, decyzja o wydaniu)
+scripts/bench-compare.mjs                     porównanie ramion: metryki od nowa z `responses.json`, test permutacyjny, odpowiedzi z wybranej tury
+scripts/mate-closings.py                      kumpel w ostatnim zdaniu przy notce „w środku” i echo słowa „nastrój”
+benchmarks/                                   surowe przebiegi benchu: `voice-bench/<czas>/`, ramiona A/B w `haiku-ab/` i `straznik/`
+docs/plans/                                   plan roboty gałęzi do przekazania
 scripts/tui-shot.py                           zrzut prawdziwego ekranu: `claude` w pty, emulator `pyte`, kroki i tekst ekranu
 ```
 
