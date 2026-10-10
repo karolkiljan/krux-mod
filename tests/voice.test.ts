@@ -291,6 +291,14 @@ test('a request to destroy data or history gets the risk line, ordinary work doe
     'nadpisz historię gita',
     'git branch -D stara',
     'git clean -fdx',
+    'git filter-branch --index-filter "git rm --cached secrets.txt" HEAD',
+    'git filter-repo --path secrets.txt --invert-paths',
+    'TRUNCATE users;',
+    'truncate table users',
+    'DELETE FROM users;',
+    'DROP DATABASE app;',
+    'drop schema public cascade',
+    'ALTER TABLE users DROP COLUMN email;',
   ]) {
     expect([text, riskHint(text)]).toEqual([text, RISK_HINT])
   }
@@ -304,11 +312,189 @@ test('a request to destroy data or history gets the risk line, ordinary work doe
     'git branch -d scalona',
     'ustaw wrap truncate-end',
     'truncate the text to 40 chars',
+    'SELECT * FROM users;',
+    'CREATE DATABASE app;',
+    'ALTER TABLE users ADD COLUMN email text;',
+    'git log --diff-filter=D',
     '/krux status',
   ]) {
     expect([text, riskHint(text)]).toEqual([text, null])
   }
   expect(isDestructive('```sh\ngit push --force-with-lease\n```')).toBe(true)
+})
+
+test('irreversible commands beyond git and SQL get the risk line, their safe neighbours do not', async () => {
+  for (const text of [
+    'git push --mirror origin',
+    'git push origin --delete feature/x',
+    'git push origin :feature/x',
+    'git push origin +main',
+    'git push -d origin feature/x',
+    'git checkout -- .',
+    'git checkout HEAD -- src/app.ts',
+    'git checkout .',
+    'git -C repo checkout -- .',
+    'git -C repo restore .',
+    'git restore .',
+    'git restore --staged --worktree src/',
+    'git stash clear',
+    'git stash drop stash@{0}',
+    'git reflog expire --expire=now --all',
+    'git reflog delete HEAD@{1}',
+    'git gc --prune=now',
+    'find . -name "*.log" -delete',
+    'find tmp -type f -exec rm {} +',
+    'rsync -a --delete src/ dst/',
+    'aws s3 sync ./out s3://site --delete',
+    'shred -u secrets.txt',
+    'shred notatki.txt',
+    'mkfs.ext4 /dev/sdb1',
+    'sformatuj /dev/sdb1 przez mkfs.ext4',
+    'wipefs -a /dev/sdb',
+    'dd if=/dev/zero of=/dev/sda bs=1M',
+    'dropdb app_dev',
+    'db.dropDatabase()',
+    'redis-cli FLUSHALL',
+    'redis-cli FLUSHDB',
+    'npx prisma migrate reset',
+    'npx prisma db push --force-reset',
+    'supabase db reset',
+    'bin/rails db:drop',
+    'rails db:migrate:reset',
+    'rails db:schema:load',
+    'mix ecto.reset',
+    'python manage.py flush',
+    'UPDATE users SET role = 1;',
+    'update users set active = false',
+    'terraform destroy',
+    'terraform -chdir=infra destroy',
+    'terraform apply -auto-approve -destroy',
+    'pulumi destroy --yes',
+    'kubectl delete namespace prod',
+    'kubectl -n prod delete pvc data',
+    'helm uninstall api',
+    'helm delete api',
+    'helm -n prod uninstall api',
+    'docker volume rm pgdata',
+    'docker volume prune -f',
+    'docker compose down -v',
+    'docker-compose down -v',
+    'docker compose -f prod.yml down -v',
+    'docker system prune -a --volumes',
+    'aws s3 rm s3://kubel/dane --recursive',
+    'aws s3 rb s3://kubel --force',
+    'gsutil -m rm -r gs://kubel',
+    'gh repo delete karolkiljan/stary',
+    'npm unpublish pakiet@1.0.0',
+  ]) {
+    expect([text, isDestructive(text), riskHint(text)]).toEqual([text, true, RISK_HINT])
+  }
+  for (const text of [
+    'zresetuj bazę na stagingu',
+    'usuń wolumen z bazą',
+    'zniszcz infrastrukturę testową',
+    'usuń namespace prod',
+    'wyczyść stash',
+  ]) {
+    expect([text, riskHint(text)]).toEqual([text, RISK_HINT])
+  }
+  for (const text of [
+    'git checkout main',
+    'git checkout -b feature/x',
+    'git restore --staged src/app.ts',
+    'git restore -S src/app.ts',
+    'git stash',
+    'git stash pop',
+    'git push -u origin feature/x',
+    'git gc',
+    'find . -name "*.ts"',
+    'rsync -a src/ dst/',
+    'aws s3 cp raport.pdf s3://kubel/',
+    'aws s3 ls',
+    'rails db:migrate',
+    'UPDATE users SET role = 1 WHERE id = 7;',
+    'update the set of tests',
+    'terraform plan',
+    'kubectl get pods',
+    'kubectl apply -f deploy.yaml',
+    'docker compose down',
+    'docker volume ls',
+    'npm publish',
+    'restore the backup from yesterday',
+    'zresetuj licznik tur',
+    'dodaj test dla dysku',
+    'git reflog',
+    'shred --help',
+    'mkfs --help',
+    'mkfs.ext4 --help',
+    'wipefs /dev/sdb',
+    'wipefs -O UUID /dev/sdb',
+    'dd if=/dev/sda of=dysk.img bs=1M',
+    'createdb app_dev',
+    'db.getCollectionNames()',
+    'redis-cli INFO keyspace',
+    'npx prisma db push',
+    'supabase db push',
+    'mix ecto.migrate',
+    'python manage.py migrate',
+    'pulumi preview',
+    'helm upgrade --install api ./chart',
+    'docker-compose down',
+    'docker compose -f prod.yml down',
+    'helm -n prod list',
+    'git -C repo checkout main',
+    'git -C repo restore --staged .',
+    'docker system prune -f',
+    'terraform -chdir=infra plan',
+    'aws s3 mb s3://kubel',
+    'gsutil ls gs://kubel',
+    'gh release list',
+  ]) {
+    expect([text, riskHint(text)]).toEqual([text, null])
+  }
+})
+
+// Łańcuch sądzimy komenda po komendzie: groźna komenda za bezpieczną nie ginie,
+// a flaga jednej komendy nie przechodzi przez `&&`, `;` ani `|` na następną. W cudzysłowie
+// i po `\` te znaki należą do argumentu (`-regex '(a|b)'`, `-exec … \;`).
+test('each command of a shell chain is judged on its own', async () => {
+  for (const text of [
+    'git restore --staged . && git restore .',
+    'git restore --staged a.ts; git restore b.ts',
+    "find . -name '*.log' -exec gzip {} \\; -exec rm {} \\;",
+    "find . -regextype posix-extended -regex '.*\\.(pyc|pyo)' -delete",
+  ]) {
+    expect([text, isDestructive(text)]).toEqual([text, true])
+  }
+  for (const text of [
+    'git restore --staged a.ts && git add b.ts',
+    'git push && docker run -d nginx',
+    'docker compose down && docker run -v "$PWD":/app node',
+    'kubectl get events | grep delete',
+  ]) {
+    expect([text, isDestructive(text)]).toEqual([text, false])
+  }
+})
+
+// Sformatowany `UPDATE` zajmuje kilka wierszy: `WHERE` niżej należy do tego samego
+// zdania SQL, a `;`, pusty wiersz, następne zdanie SQL albo zwykły wcięty kod je kończą.
+test('a formatted UPDATE keeps the WHERE from its next lines', async () => {
+  for (const text of [
+    'UPDATE users\nSET role = 1\nWHERE id = 7;',
+    '```sql\nUPDATE users\nSET active = false,\n    role = 2\nWHERE id = 7\n```',
+  ]) {
+    expect([text, isDestructive(text)]).toEqual([text, false])
+  }
+  for (const text of [
+    'UPDATE users\nSET role = 1;',
+    'UPDATE users SET role = 1;\nSELECT * FROM users WHERE id = 7;',
+    'UPDATE users SET role = 1\n\nSELECT * FROM users WHERE id = 7',
+    'UPDATE users SET role = 1\nSELECT * FROM users WHERE id = 7',
+    '    cur.execute("UPDATE users SET active = false")\n    cur.execute("SELECT * FROM users WHERE id = 7")',
+    '  UPDATE a SET x = 1 WHERE id = 2\n  UPDATE b SET y = 2',
+  ]) {
+    expect([text, isDestructive(text)]).toEqual([text, true])
+  }
 })
 
 test('every prompt but a command gets a format line with a length budget', async () => {

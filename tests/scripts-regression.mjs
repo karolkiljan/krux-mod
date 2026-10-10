@@ -10,6 +10,8 @@ import { builtinModules, createRequire, stripTypeScriptTypes } from 'node:module
 import { EventEmitter } from 'node:events'
 import { Writable } from 'node:stream'
 import { GIT_LOG, GIT_STATUS, gitOf } from '../hooks/git.ts'
+import { ROSTER } from '../hooks/roster.ts'
+import { riskHint } from '../hooks/voice.ts'
 
 const sourceOf = file => fs.readFileSync(file, 'utf8').replace(/^import .*\n/gmu, '').replace(/\nmain\(\)\.catch[\s\S]*$/u, '')
 for (const script of ['act-sheet', 'voice-bench']) test(script === 'act-sheet'
@@ -314,6 +316,7 @@ test('gating observers recover failures without repeating downstream actions', a
   const logs = []
   const context = registerContext({
     mateIn: () => null,
+    mateOfType: () => null,
     applyToggle: () => ({}),
     read: async () => ({ persona: true, sztolnia: true }),
     update: async () => { throw new Error('state unavailable') },
@@ -523,6 +526,16 @@ test('voice bench completes twelve valid turns and removes only its temporary se
   assert.equal(records.length, 12)
   assert.equal(fs.existsSync(records[0].cwd), false)
   assert.deepEqual(fs.readdirSync(path.join(scratch, 'config', 'projects')), [])
+  // Dwanaście tych samych odpowiedzi: każda po pierwszej powtarza otwarcie.
+  assert.deepEqual({ scenario: report.scenario, repeatedOpenings: report.repeatedOpenings, emphasisTotal: report.emphasisTotal, moodNotes: report.moodNotes },
+    { scenario: 'cache', repeatedOpenings: 11, emphasisTotal: 0, moodNotes: 0 })
+})
+
+test('voice bench rejects an unknown scenario before spawning claude', () => {
+  const run = scriptRun('scripts/voice-bench.mjs', ['--model', 'fixture-model', '--scenario', 'kopalnia'])
+  assert.equal(run.status, 1)
+  assert.match(run.stderr, /--scenario cache\|smrod, nie kopalnia/u)
+  assert.equal(run.stdout, '')
 })
 
 function tuiShotFixture(t, steps, interrupt = false) {
@@ -608,3 +621,113 @@ for (const [name, steps, exit, interrupt] of [
     assert.equal(result.unrelatedAlive, true, 'cleanup must leave an unrelated process alone')
   })
 }
+
+function benchContext() {
+  const context = vm.createContext({ fs, path, process: { argv: [], env: {} }, fileURLToPath: () => path.resolve('scripts/voice-bench.mjs'), pathToFileURL: file => ({ href: file }) })
+  vm.runInContext(sourceOf('scripts/voice-bench.mjs').replaceAll('import.meta.url', "'file:///scripts/voice-bench.mjs'"), context)
+  return context
+}
+
+// Transkrypt podaje tylko liczbę notek o hordzie, więc tury notek bench odtwarza z
+// odpowiedzi: kumpel wymieniony bez notki przesuwa całą resztę harmonogramu.
+test('voice bench replays the horde notes from the answers and counts a mate closing a middle turn', () => {
+  const context = benchContext()
+  const quiet = 'Krux czytać kod.'
+  // Notki w turach 2, 5, 8 i 11; „w środku” w 5 i 11.
+  const regular = [quiet, quiet, 'Niuch węszyć.', quiet, quiet, 'Grom kuć. Krux kończyć.', quiet, quiet, 'Lont mierzyć.', quiet, quiet, 'Krux zaczynać. Piryt zrzędzić.']
+  assert.deepEqual({ ...context.middleClosings(regular) }, { middleNotes: 2, middleMates: 2, middleClosings: 1 })
+  // Młot bez notki w turze 1 przesuwa notki na 4, 7 i 10; „w środku” tylko w 7.
+  const shifted = [quiet, 'Młot liczyć.', quiet, quiet, 'Ochra malować.', quiet, quiet, 'Krux sprawdzać. Lont mierzyć.', quiet, quiet, 'Piryt zrzędzić.', quiet]
+  assert.deepEqual({ ...context.middleClosings(shifted) }, { middleNotes: 1, middleMates: 1, middleClosings: 1 })
+})
+
+test('voice bench counts the mood word echoed in prose, not in code', () => {
+  const moodWordHits = vm.runInContext('moodWordHits', benchContext())
+  assert.equal(moodWordHits('Nastrój Kruxa dobry, bez nastroju. `nastrój` w kodzie.'), 2)
+})
+
+// bench-compare liczy metryki od nowa z `responses.json`, więc stara seria liczy się jak
+// nowa; przebieg ERROR z częściowym `responses.json` wypada, zamiast zwalić porównanie.
+test('bench compare skips error runs and recomputes every series from its responses', t => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'krux-compare-'))
+  t.after(() => fs.rmSync(scratch, { recursive: true, force: true }))
+  const run = (series, id, status, responses) => {
+    const dir = path.join(scratch, series, id)
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, 'report.json'), JSON.stringify({ status, model: 'm', mode: 'stream', scenario: 'smrod', fullAnchors: 1, shortAnchors: 6, driftFixes: 0, hordeNotes: 2, moodNotes: 0, hookContextChars: 0 }))
+    fs.writeFileSync(path.join(dir, 'responses.json'), JSON.stringify(responses))
+  }
+  const quiet = 'Krux czytać kod.'
+  const answers = middle => [quiet, quiet, 'Niuch węszyć.', quiet, quiet, middle, quiet]
+  run('A', 'r1', 'COMPLETE', answers('Krux kuć. Grom patrzeć.'))
+  run('A', 'r2', 'COMPLETE', answers('Grom patrzeć. Krux kuć.'))
+  run('A', 'r3', 'ERROR', [quiet])
+  run('B', 'r1', 'COMPLETE', answers('Grom patrzeć. Krux kuć.'))
+  const result = spawnSync(process.execPath, ['scripts/bench-compare.mjs', `A=${path.join(scratch, 'A')}`, `B=${path.join(scratch, 'B')}`, '--scenario', 'smrod'], { encoding: 'utf8', timeout: 30_000 })
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /^\| metryka \| A \(n=2\) \| B \(n=1\) \| Δ B \| p B \|$/mu)
+  assert.match(result.stdout, /^\| …w ostatnim zdaniu \| 0\.50 ± 0\.71 \| 0\.00 ± — \| -0\.50 \| [\d.]+ \|$/mu)
+})
+
+// Bench liczy kumpli własnymi wzorcami: przyrząd pomiaru stoi poza modem i nie zmienia się
+// między ramionami A/B. Nowy kumpel w `ROSTER` musi trafić także tam.
+test('the bench knows every mate of the roster by name and declension', () => {
+  const context = benchContext()
+  const names = vm.runInContext('MATE_NAMES', context)
+  const horde = new RegExp(vm.runInContext('hordePattern', context).source, 'u')
+  assert.deepEqual(Object.keys(names).sort(), Object.keys(ROSTER).sort())
+  assert.deepEqual(Object.keys(vm.runInContext('MATE_WORDS', context)).sort(), Object.keys(ROSTER).sort())
+  for (const [mate, { locative, accusative }] of Object.entries(ROSTER)) {
+    for (const form of [mate, locative, accusative]) {
+      assert.ok(names[mate].test(form), `${mate}: ${form}`)
+      assert.ok(horde.test(form), `${mate}: ${form}`)
+    }
+  }
+})
+
+// Odtworzenie w benchu powtarza regułę moda: QUIET_TURNS z hooks/lore.ts, dwa miejsca
+// z „w środku” w turach nieparzystych, ziarno z numeru tury i brak notki przy prośbie
+// o ruch nieodwracalny, której żaden prompt benchu nie robi. Gdy reguła się zmieni, ten
+// test pada, zanim liczby w notatkach zaczną kłamać.
+test('the bench replays the horde notes by the rule the mod uses', () => {
+  const lore = fs.readFileSync('hooks/lore.ts', 'utf8')
+  const quietTurns = source => source.match(/^const QUIET_TURNS = (\d+)$/mu)?.[1]
+  assert.ok(quietTurns(lore))
+  assert.equal(quietTurns(fs.readFileSync('scripts/voice-bench.mjs', 'utf8')), quietTurns(lore))
+  assert.match(lore, /miejsce: \$\{pick\(PLACES, seed \+ 1\)\}/u)
+  assert.match(lore, /^const PLACES = \['w środku[^'\n]*', 'na końcu'\] as const$/mu)
+  assert.match(fs.readFileSync('hooks/register.ts', 'utf8'), /const life = risk === null \? lifeNote\(chronicle, turn\) : null/u)
+  for (const { prompts } of Object.values(vm.runInContext('SCENARIOS', benchContext()))) {
+    for (const prompt of prompts) assert.equal(riskHint(prompt), null, prompt)
+  }
+})
+
+// Opisy kumpli siedzą na liście typów narzędzia `Agent` w każdej turze, więc mają budżet
+// jak kotwica. Treść pliku to prompt kumpla: bez rodzaju, jak notki o hordzie.
+test('mate definitions keep the agent listing short and address the mate without gender', () => {
+  let listing = 0
+  for (const { agent } of Object.values(ROSTER)) {
+    const text = fs.readFileSync(new URL(`../agents/${agent}.md`, import.meta.url), 'utf8')
+    listing += text.match(/^description: (.+)$/mu)[1].length
+    assert.doesNotMatch(text, /\p{L}(?:łeś|łaś)(?!\p{L})/u, `${agent}.md: forma z rodzajem`)
+  }
+  assert.ok(listing <= 700, `opisy kumpli: ${listing} znaków`)
+})
+
+test('every mate has an agent definition under his type, and the scouts and the tester cannot edit', () => {
+  const skill = fs.readFileSync(new URL('../skills/krux-horda/SKILL.md', import.meta.url), 'utf8')
+  for (const [mate, { agent }] of Object.entries(ROSTER)) {
+    const text = fs.readFileSync(new URL(`../agents/${agent}.md`, import.meta.url), 'utf8')
+    const front = text.match(/^---\n([\s\S]*?)\n---\n/u)?.[1]
+    assert.ok(front, `${agent}.md bez frontmattera`)
+    assert.match(front, new RegExp(`^name: ${agent}$`, 'mu'))
+    assert.match(front, new RegExp(`^description: ${mate} z hordy Kruxa`, 'mu'))
+    assert.match(text, new RegExp(`^Jesteś ${mate},`, 'mu'))
+    assert.ok(skill.includes(`\`krux-mod:${agent}\``), `skill bez krux-mod:${agent}`)
+    const tools = front.match(/^tools: (.+)$/mu)?.[1].split(/,\s*/u)
+    if (['niuch', 'piryt', 'mlot'].includes(agent)) {
+      assert.ok(tools, `${agent}.md bez listy narzędzi`)
+      for (const edit of ['Edit', 'Write', 'NotebookEdit', 'MultiEdit']) assert.ok(!tools.includes(edit), `${agent}: ${edit}`)
+    }
+  }
+})

@@ -8,7 +8,7 @@ import { EMPTY_CREW, crewAfter } from './crew'
 import type { CrewEvent } from './crew'
 import { gauge, matesNamed } from './gauge'
 import { EMPTY_LORE, lifeNote, moodNote, recordAnswer, recordTool, replay, turnsAfter } from './lore'
-import { CALM, EVENT_HOLD_MS, eventOf, mateIn, mateMoodAfter, moodsAfter, moodsTick } from './mood'
+import { CALM, EVENT_HOLD_MS, eventOf, mateIn, mateMoodAfter, mateOfType, moodsAfter, moodsTick } from './mood'
 import { MATES, ROSTER } from './roster'
 import type { BoardCall } from './board'
 import { EMPTY_BOARD, boardAfter, replayBoard, returnNote, usageOf } from './board'
@@ -399,7 +399,7 @@ async function reportMate($: EngineInterface, agentId: string): Promise<AvatarSp
   if (run !== undefined) return run.mate
   try {
     const agent = (await $.agent.list()).find(one => one.id === agentId)
-    return agent === undefined ? undefined : mateIn(agent.description, '')
+    return agent === undefined ? undefined : mateOfType(agent.type) ?? mateIn(agent.description, '')
   } catch {
     return undefined
   }
@@ -712,11 +712,11 @@ export const register: Register = on => {
     return { text: `${statusLine(await read($, modes), await read($, autoKonkret))}\n${HELP}` }
   })
 
-  // Subagent z głównej pętli wbiega na scenę; imię bierze z opisu zadania.
+  // Subagent z głównej pętli wbiega na scenę; kumpla bierze z typu, potem z opisu zadania.
   on('agent.spawn', async ($, e, next) => {
     const result = await next(e)
     if (e.parentAgentId !== undefined || result.agentId === undefined) return result
-    const mate = mateIn(e.description, e.prompt)
+    const mate = mateOfType(e.subagentType) ?? mateIn(e.description, e.prompt)
     await crewStep($, { kind: 'spawn', member: { agentId: result.agentId, mate, scene: 'hammer', target: '' } })
     const agentId = result.agentId
     const now = await $.clock.now()

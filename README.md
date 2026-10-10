@@ -14,7 +14,7 @@ Tylko Claude Code (CLI i zakładka Code w aplikacji Desktop), od wersji 2.1.287.
 | Pomiar głosu | tylko benchmark offline | miernik po każdej odpowiedzi: druga osoba, gładka pierwsza osoba, brak bezokolicznika, długie zdania; ostrzeżenia przed ruchem nieodwracalnym i tekstu do wklejenia w cytacie `>` nie sądzi |
 | Życie hordy | model wymyśla sam | fakty z sesji (testy, budowanie, commity, rozbiórka, edycje interfejsu), każdy kumpel z własnym charakterem; turę, kumpla, formę i miejsce wstawki wybiera kod, nie model; przy prośbie o ruch nieodwracalny horda milczy |
 | Kompakcja | streszczenie jak leci | neutralne streszczenie z faktami dosłownie, potem pełna kotwica |
-| Format odpowiedzi | brak | jedna linia formatu według rodzaju prośby (debug, review, plan, wyjaśnienie, pogawędka), rozpoznanej regexem bez wywołania modelu, z limitem słów; bez rozpoznania sam budżet: do 150 słów; prośba o ruch nieodwracalny (`DROP TABLE`, force push, „usuń tabelę”) dostaje linię: skutek i droga odwrotu pełnymi zdaniami |
+| Format odpowiedzi | brak | jedna linia formatu według rodzaju prośby (debug, review, plan, wyjaśnienie, pogawędka), rozpoznanej regexem bez wywołania modelu, z limitem słów; bez rozpoznania sam budżet: do 150 słów; prośba o ruch nieodwracalny (`DROP TABLE`, force push, `git checkout -- .`, `terraform destroy`, `kubectl delete`, „usuń tabelę”) dostaje linię: skutek i droga odwrotu pełnymi zdaniami |
 | Tabliczki | brak | `⚒ Krux` nad odpowiedzią, `Morra` nad promptem; sam rysunek, 0 tokenów |
 | Przełączniki | frazy `włącz krux` itd. | frazy dalej działają, do tego `/krux` bez tury modelu |
 | Interfejs | brak | panel kuźni, kowal nad promptem, słowa spinnera, etykiety w stopce |
@@ -66,7 +66,7 @@ claude plugin disable krux@krux-marketplace
 
 Bez `on`/`off` komenda przełącza tryb na przeciwny. `/krux` działa także w trakcie tury i nie kosztuje wywołania modelu. Stare frazy z pluginu (`włącz krux`, `wyłącz konkret`, …) dalej działają, gdy stanowią całą wiadomość. Stan trybów jest trwały i przeżywa restart sesji.
 
-Mapa hordy ładuje się na żądanie: `/krux-mod:krux-horda`.
+Mapa hordy ładuje się na żądanie: `/krux-mod:krux-horda`. Kumple to typy subagentów z `agents/`: `krux-mod:niuch`, `krux-mod:grom`, `krux-mod:piryt`, `krux-mod:ochra`, `krux-mod:mlot`, `krux-mod:lont`. Każdy ma fach, narzędzia, model i format raportu: Niuch, Piryt i Młot nie mają narzędzi edycji, a Bash dostają do odczytu i testów; Lont rusza tylko czyste pliki śledzone przez git. Te granice stoją w prompcie kumpla, a zgody na każde wywołanie daje silnik, jak w głównej pętli (`docs/adr/0001-lont-zakaz-w-prompcie.md`). Niuch i Młot chodzą na Haiku. Wysłany typem kumpel wbiega na scenę we własnym fartuchu, także gdy opis zadania nie ma jego imienia.
 
 ## Animacje
 
@@ -97,7 +97,7 @@ Okna zgody na narzędzia obsługuje silnik Claude Code. Mod nie podłącza `tool
 
 Poprawność, bezpieczeństwo i wymagany format wyprzedzają głos. Liczby, wersje, ścieżki, komendy i komunikaty błędów idą dosłownie. Kod, JSON, commit messages i opisy PR pozostają neutralne. Przed ruchem nieodwracalnym Krux przechodzi na pełne zdania: warunek, skutek, droga odwrotu.
 
-Mod to kod uruchamiany z uprawnieniami użytkownika. Ten czyta trzy pliki z `voice/`, ustawienia (`prefersReducedMotion`), listę komend, historię sesji (`$.session.messages`, do odtworzenia kroniki i tablicy po wznowieniu), zużycie kontekstu i limitów (`$.session.usage`) oraz listę agentów (`$.agent.list`). Uruchamia do pięciu komend, wszystkich tylko do odczytu: `git status` (stan repo), `git log -n 10` (ostatnie commity), `git diff --check` i `git diff --cached --check` (białe znaki w drzewie roboczym i indeksie) oraz `git rev-list @{upstream}..HEAD` (niewypchnięte commity, gdy repo ma upstream). Rejestruje jedno narzędzie dla modelu, `mcp__krux-mod__watki`: otwarte wątki tablicy, trzymane w stanie sesji. Pisze wyłącznie do własnego magazynu `$.store` (tryby) i stanu sesji. Nie wysyła niczego poza sesję. Persona i kotwica głosu trafiają do promptu modelu, tak jak reszta sesji, więc każda tura kosztuje trochę więcej tokenów. Pełna lista: `claude plugin validate .`.
+Mod to kod uruchamiany z uprawnieniami użytkownika. Ten czyta trzy pliki z `voice/`, ustawienia (`prefersReducedMotion`), listę komend, historię sesji (`$.session.messages`, do odtworzenia kroniki i tablicy po wznowieniu), zużycie kontekstu i limitów (`$.session.usage`) oraz listę agentów (`$.agent.list`). Uruchamia do pięciu komend, wszystkich tylko do odczytu: `git status` (stan repo), `git log -n 10` (ostatnie commity), `git diff --check` i `git diff --cached --check` (białe znaki w drzewie roboczym i indeksie) oraz `git rev-list @{upstream}..HEAD` (niewypchnięte commity, gdy repo ma upstream). Rejestruje jedno narzędzie dla modelu, `mcp__krux-mod__watki`: otwarte wątki tablicy, trzymane w stanie sesji. Dostarcza 6 typów subagentów (`agents/*.md`); uruchamia je model, gdy wyśle kumpla, z narzędziami z ich definicji i zgodami silnika, a ich opisy (razem do 700 znaków) stoją na liście typów narzędzia `Agent`. Pisze wyłącznie do własnego magazynu `$.store` (tryby) i stanu sesji. Nie wysyła niczego poza sesję. Persona i kotwica głosu trafiają do promptu modelu, tak jak reszta sesji, więc każda tura kosztuje trochę więcej tokenów. Pełna lista: `claude plugin validate .`.
 
 ## Rozwój
 
@@ -109,15 +109,18 @@ tsc -p .
 git diff --check
 ```
 
-Sprawdzone na Claude Code 2.1.293. API modów jest we wczesnym dostępie i może się zmienić między wersjami.
+Sprawdzone na Claude Code 2.1.296. API modów jest we wczesnym dostępie i może się zmienić między wersjami.
 
 ## Pomiar głosu
 
 ```bash
-node scripts/voice-bench.mjs --model claude-opus-5-5 [--mode stream|resume] [--plugin-dir <katalog>]
+node scripts/voice-bench.mjs --model claude-opus-5-5 [--scenario cache|smrod] [--mode stream|resume] [--plugin-dir <katalog>]
+node scripts/bench-compare.mjs baza=<katalog> wariant=<katalog> [--model <id>] [--scenario cache|smrod] [--turn N]
 ```
 
-12 tur jednej sesji. `--mode stream` (domyślnie) prowadzi rozmowę w jednym procesie `claude -p --input-format stream-json`, tak jak sesja interaktywna, więc mierzy krótką kotwicę i życie hordy. `--mode resume` odpala osobny proces na turę z `--resume` i sprawdza, czy mod odtwarza stan z historii. Scenariusz `cache` z pluginu Krux 3.8.0 (te same prompty, fixture i metryki co `scripts/context-smoke.js`, więc liczby stają obok serii pluginu). Ustawienia użytkownika, jego pluginy, hooki i MCP są odcięte (`--setting-sources local`, `--strict-mcp-config`); mod wchodzi wyłącznie przez `--plugin-dir`. Raport i surowe odpowiedzi lądują w `benchmarks/voice-bench/<czas>/`. Poza metrykami pluginu raport liczy kotwice z transkryptu: pełne (`fullAnchors`, w tym `driftFixes` z poprawką), krótkie (`shortAnchors`), notki o hordzie i łączną długość kontekstu hooka (`hookContextChars`), a do tego szablony: powtórzone zamknięcia odpowiedzi (`repeatedClosings`), prośby o zgodę na końcu (`consentClosings`), powtórzone otwarcia wstawek o hordzie (`repeatedHordeOpenings`) i wstawki w ostatnim akapicie (`hordeClosings`). Notatka ze źródłami i wynikami A/B: `docs/research/2026-10-04-komunikacja.md`. Wymaga Node ≥ 22.18 (wczytuje `hooks/voice.ts` bez budowania). Jeden przebieg to 12 płatnych tur, około $0,45 na Opusie.
+Jeden przebieg to jedna sesja. Scenariusz `cache` (domyślny, 12 tur, sam odczyt plików) pochodzi z pluginu Krux 3.8.0: te same prompty, fixture i metryki co `scripts/context-smoke.js`, więc liczby stają obok serii pluginu. Scenariusz `smrod` (7 tur) daje modelowi `Bash` do testów i `Edit`: model puszcza testy, naprawia robaka i odpowiada na pytanie o wydanie, więc kronika dostaje smród i zielone, a model linię nastroju. `--mode stream` (domyślnie) prowadzi rozmowę w jednym procesie `claude -p --input-format stream-json`, tak jak sesja interaktywna, więc mierzy krótką kotwicę i życie hordy. `--mode resume` odpala osobny proces na turę z `--resume` i sprawdza, czy mod odtwarza stan z historii. Ustawienia użytkownika, jego pluginy, hooki i MCP są odcięte (`--setting-sources local`, `--strict-mcp-config`); mod wchodzi wyłącznie przez `--plugin-dir`. Raport i surowe odpowiedzi lądują w `benchmarks/voice-bench/<czas>/`.
+
+Poza metrykami pluginu raport liczy kotwice z transkryptu: pełne (`fullAnchors`, w tym `driftFixes` z poprawką), krótkie (`shortAnchors`), notki o hordzie i o nastroju (`hordeNotes`, `moodNotes`) i łączną długość kontekstu hooka (`hookContextChars`), a do tego szablony: powtórzone zamknięcia i otwarcia odpowiedzi (`repeatedClosings`, `repeatedOpenings`), prośby o zgodę na końcu (`consentClosings`), powtórzone otwarcia wstawek o hordzie (`repeatedHordeOpenings`), wstawki w ostatnim akapicie (`hordeClosings`), kumpla w ostatnim zdaniu tury, w której notka kazała „w środku” (`middleClosings`; tury notek bench odtwarza z odpowiedzi regułą moda) i słowo „nastrój” powtórzone za linią nastroju (`moodWordEcho`). `bench-compare.mjs` liczy metryki od nowa z `responses.json` każdej serii, więc stare przebiegi liczą się tak samo jak nowe, i podaje różnicę z testem permutacyjnym; `--turn N` wypisuje odpowiedzi z tury N do czytania oczami. Notatki z wynikami A/B: `docs/research/`. Wymaga Node ≥ 22.18 (wczytuje `hooks/voice.ts` bez budowania). Przebieg `cache` to 12 płatnych tur: około $0,45 na Opusie i $0,014 na Haiku; `smrod` na Opusie kosztuje około $0,25.
 
 ## Licencja
 

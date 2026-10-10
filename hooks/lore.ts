@@ -105,8 +105,10 @@ const FORMS = [
 ] as const
 
 // Miejsce też z kodu: notka bez miejsca kończyła 31 z 32 odpowiedzi benchu, czyli
-// kumpel zajął slot dawnego „Morra powie…” jako stałe zamknięcie.
-const PLACES = ['w środku, przy punkcie, do którego pasuje', 'na końcu'] as const
+// kumpel zajął slot dawnego „Morra powie…” jako stałe zamknięcie. Środek mówi
+// wprost „nie na końcu”: przy samym „w środku” Haiku i tak stawiał kumpla w ostatnim
+// zdaniu w 2 z 11 do 4 z 9 takich tur, a po turach z linią nastroju częściej.
+const PLACES = ['w środku, przy punkcie, do którego pasuje, nie na końcu odpowiedzi', 'na końcu'] as const
 
 // Notka dla modelu albo nic. Neutralna polszczyzna, bo to instrukcja. O tym, czy
 // wstawka ma sens w tej turze, decyduje wołający (prośba o ruch nieodwracalny
@@ -131,6 +133,9 @@ export function lifeNote(lore: KruxLore, seed: number): string | null {
 // pozwala wołającemu podać ją raz na zdarzenie. Zielone bez wcześniejszego
 // smrodu to spokój, nie powód do nastroju. Neutralna polszczyzna, bo to instrukcja;
 // linia sama mówi, że nastrój nie rusza ocen, bo w symulacji triumf przechylał decyzje.
+// Forma zdania z kodu, „Krux + bezokolicznik”, bez słowa „nastrój”: przy „jednym
+// zdaniu o tym nastroju” Haiku pisał formy osobowe („zniknął”, „nastrój jest”), poprawek
+// dryfu było 2,70 zamiast 1,73 na przebieg, a w 4 z 19 zdań wracało samo słowo z linii.
 export function moodNote(lore: KruxLore): { key: string; text: string } | null {
   if (lore.last === null) return null
   const key = `${lore.last}:${lore.testRuns}:${lore.builds}:${lore.commits}:${lore.tears}:${lore.edits}`
@@ -146,7 +151,7 @@ export function moodNote(lore: KruxLore): { key: string; text: string } | null {
     }
   })()
   if (mood === null) return null
-  return { key, text: `Nastrój Kruxa: ${mood}. Jedno krótkie zdanie o tym nastroju, wplecione w odpowiedź; nastrój barwi ton, nie zmienia ocen, ryzyka ani decyzji.` }
+  return { key, text: `Nastrój Kruxa: ${mood}. Pokaż go jednym krótkim zdaniem „Krux + bezokolicznik”, bez słowa „nastrój”; nastrój barwi ton, nie zmienia ocen, ryzyka ani decyzji.` }
 }
 
 // Wiadomość historii w kształcie `$.session.messages()`, tyle, ile czyta replay.

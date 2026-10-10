@@ -130,6 +130,8 @@ test('the note names the mate’s character and its place, and leaves no maybe',
   expect(note).not.toContain('jeśli pasuje')
   const places = [2, 5].map(turn => /miejsce: ([^;]+);/u.exec(lifeNote(quiet, turn)!)![1])
   expect(new Set(places).size).toBe(2)
+  // Środek mówi wprost, że nie koniec: samo „w środku” model brał za „gdzieś, także na końcu”.
+  expect(places.find(place => place?.startsWith('w środku'))).toContain('nie na końcu odpowiedzi')
 })
 
 test('every trade gets its facts: builds for Grom, interface edits for Ochra, teardown for Lont', async () => {
@@ -325,6 +327,8 @@ test('the mood line comes from the last chronicle event, with its fact, and calm
   const failing = recordTool(EMPTY_LORE, 'Bash', { command: 'npm test' }, true)
   const angry = moodNote(failing)!
   expect(angry.text).toContain('Nastrój Kruxa: zadziorny (padłe przebiegi testów: 1 z 1)')
+  // Forma z kodu: bezokolicznik przy Kruxie i bez słowa z instrukcji, które model powtarzał.
+  expect(angry.text).toContain('jednym krótkim zdaniem „Krux + bezokolicznik”, bez słowa „nastrój”')
   // Linia sama pilnuje, że nastrój nie rusza ocen ani decyzji.
   expect(angry.text).toContain('nie zmienia ocen, ryzyka ani decyzji')
   const green = recordTool(failing, 'Bash', { command: 'npm test' }, false, '3 passed')
