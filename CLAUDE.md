@@ -44,7 +44,7 @@ tests/scripts-regression.mjs                  testy skryptów i plików `agents/
 scripts/act-sheet.ts                          arkusz PNG i walidacja klatek: `npx tsx scripts/act-sheet.ts <scena|plik.ts:EKSPORT|gesty> <plik.png> [czynność|gest]`; czynność z `who` w fartuchu pierwszego orka z `who`
 scripts/voice-bench.mjs                       pomiar głosu na modelu (A/B kotwicy), scenariusze `cache` (12 tur, sam odczyt) i `smrod` (7 tur: testy, naprawa, decyzja o wydaniu); tury notek o hordzie odtwarza z odpowiedzi (`middleClosings`)
 scripts/bench-compare.mjs                     porównanie ramion: metryki od nowa z `responses.json`, test permutacyjny, odpowiedzi z wybranej tury
-benchmarks/                                   surowe przebiegi benchu: `voice-bench/<czas>/`, ramiona A/B w `haiku-ab/` i `straznik/`
+benchmarks/                                   surowe przebiegi benchu: `voice-bench/<czas>/`; ramiona A/B gałęzi strażnika (`haiku-ab/`, `straznik/`) leżą na gałęzi `bench/straznik-horda-dryf`, poza `main`
 docs/plans/                                   plan roboty gałęzi do przekazania
 scripts/tui-shot.py                           zrzut prawdziwego ekranu: `claude` w pty, emulator `pyte`, kroki i tekst ekranu
 ```

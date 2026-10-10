@@ -2,6 +2,8 @@
 
 Cztery zmiany po A/B z `docs/research/2026-10-10-haiku-ab.md` (gałąź `experiments/haiku-ab`).
 Punkt odniesienia: `main` po PR #2 (`cdd1044`, nastrój z kroniki i słowa fachu kumpli).
+Surowe przebiegi (`benchmarks/haiku-ab/`, `benchmarks/straznik/`) leżą na gałęzi
+`bench/straznik-horda-dryf`, poza `main`; ścieżki niżej odnoszą się do niej.
 
 ## 1. Strażnik ruchu nieodwracalnego
 

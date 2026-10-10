@@ -21,6 +21,7 @@ dokończona na komputerze Morry 2026-10-10. Dowody i liczby:
 | `horda: krótsze opisy kumpli…` | opisy 873 → 629 znaków, prompt bez rodzaju, Lont na czystych plikach | testy skryptów i `mod` (typ w apelu i w czacie) |
 | `test: bench-compare…` | próba porównania z przebiegiem ERROR | testy skryptów |
 | `docs: wyniki powtórki cache i Opusa…` | notatka, ten plan, surowe przebiegi `pc/` i `opus/` | — |
+| `chore: surowe przebiegi benchu na gałęzi bench/…` | dane `benchmarks/haiku-ab/` i `benchmarks/straznik/` przeniesione na `bench/straznik-horda-dryf` | odwołania w dokumentach |
 | `strażnik i horda: poprawki z drugiego przeglądu` | regresje w poprawkach: wcięty SQL, cytowane separatory, `mkfs` w prośbie; opcje globalne; Lont bez `git rm`; granice w opisach kumpli | 71 groźnych komend, 56 sąsiadów, 5 polskich próśb; porównanie wersji na 1317 napisach |
 
 Sprawdzenia na komputerze Morry (Claude Code 2.1.296): `claude plugin validate .` z jednym
@@ -37,8 +38,9 @@ Lista „do podjęcia przez Morrę” zamknięta tak:
   `hooks.PreToolUse` i `disallowedTools` w pliku agenta) i kiedy wrócić.
 - **Model Niucha i Młota:** `haiku` zostaje; skill każe podać `model` przy trudnym zadaniu.
 - **`rm -rf build` z flagą:** zostaje — fałszywy alarm to tura pełnych zdań, przeoczenie to dane.
-- **Dane `benchmarks/haiku-ab/` i `benchmarks/straznik/`:** zostają w repo, jak
-  `benchmarks/voice-bench/`; `bench-compare.mjs` odtwarza z nich każdą liczbę z notatek.
+- **Dane `benchmarks/haiku-ab/` i `benchmarks/straznik/`:** decyzja Morry przed merge — na gałęzi
+  `bench/straznik-horda-dryf`, poza `main`. Po `git switch` na tę gałąź `bench-compare.mjs`
+  odtwarza z nich każdą liczbę z notatek.
 
 ## Zostało: wydanie po merge
 
