@@ -6,8 +6,9 @@ Zmiana zachowania moda aktualizuje odpowiedni wiersz macierzy albo niezmiennik w
 
 ## Drzewo plików
 
+Moduły `hooks/` i skrypty z instrukcją użycia; reszta drzewa stoi w korzeniu `CLAUDE.md`.
+
 ```text
-.claude-plugin/{plugin.json,marketplace.json}  manifest i lokalny marketplace
 hooks/hooks.json                              wskazuje hooks module (`modules`)
 hooks/register.ts                             wszystkie hooki moda
 hooks/voice.ts                                czyste funkcje: frazy, komendy, sekcje, słowa, rodzaj roboty narzędzia (`workOf`), prawdziwy commit (`isCommitCommand`), opis narzędzi, kto pisze prośbę (`fromPerson`), ruch nieodwracalny (`isDestructive`, `riskHint`), pytanie o wydanie (`asksRelease`)
@@ -36,25 +37,10 @@ hooks/git.ts                                  czysty odczyt `git status --porcel
 hooks/threads.ts                              czyste wątki Sztolni: spec narzędzia `watki`, przejścia (`threadsAfter`), szybka notatka (`saveThread`), raport dla modelu, odtworzenie z historii
 hooks/report.ts                               czysty raport dnia do wklejenia (`dayReport`): commity, testy, plan, otwarte wątki i liczby z kroniki, neutralna polszczyzna
 hooks/shaft.ts                                czyste drzewo panelu Sztolni (`shaftTree`, `shaftTabs`): karty Stan/Dziennik, z `Box`/`Text` i danych (tablica, wiersze apelu, zużycie, zegar, szerokość); kolory iskry i skóry orka dla paneli
-voice/{persona,konkret,flow}.md               jedyne źródło tekstów trafiających do promptu
-docs/research/                                notatki ze źródeł naukowych do zmian głosu
-docs/adr/                                     decyzje trudne do cofnięcia, z odrzuconymi opcjami
-CONTEXT.md                                    słownik głosu, hordy i strażnika (bez szczegółów implementacji)
-skills/krux-horda/SKILL.md                    horda na żądanie: kiedy wołać kumpla i którym typem
-agents/*.md                                   kumple jako typy subagentów `krux-mod:<ROSTER.agent>`: fach, narzędzia, model i raport
-types/index.d.ts                              kontrakt `$.state` (`krux-mod.*`)
-tests/{voice,gauge,mood,sprites,canary,band,forge,chat,journal,echo,board,muster,shaft,git,threads,report,mod}.test.ts testy `claude plugin test`: czyste moduły i okablowanie zdarzeń
-tests/report.test.ts                          raport dnia: brak danych, komplet danych, limity i neutralna polszczyzna
-tests/scripts-regression.mjs                  testy skryptów i plików `agents/`: `node --test tests/scripts-regression.mjs`
 scripts/act-sheet.ts                          arkusz PNG i walidacja klatek: `npx tsx scripts/act-sheet.ts <scena|plik.ts:EKSPORT|gesty> <plik.png> [czynność|gest]`; czynność z `who` w fartuchu pierwszego orka z `who`
 scripts/voice-bench.mjs                       pomiar głosu na modelu (A/B kotwicy), scenariusze `cache` (12 tur, sam odczyt) i `smrod` (7 tur: testy, naprawa, decyzja o wydaniu); tury notek o hordzie odtwarza z odpowiedzi (`middleClosings`)
 scripts/bench-compare.mjs                     porównanie ramion: metryki od nowa z `responses.json`, test permutacyjny, odpowiedzi z wybranej tury
-benchmarks/                                   surowe przebiegi benchu: `voice-bench/<czas>/`; ramiona A/B gałęzi strażnika (`haiku-ab/`, `straznik/`) leżą na gałęzi `bench/straznik-horda-dryf`, poza `main`
-docs/plans/                                   plan roboty gałęzi do przekazania
-scripts/tui-shot.py                           zrzut prawdziwego ekranu: `claude` w pty, emulator `pyte`, kroki i tekst ekranu
 ```
-
-`.claude-plugin/types/` pisze silnik przy każdym załadowaniu z `--plugin-dir` — nie edytować, jest w `.gitignore`.
 
 ## Macierz zdarzeń
 
@@ -151,7 +137,7 @@ Uzupełniają zasady przekrojowe z korzenia `CLAUDE.md` i ich nie powtarzają. U
 - Ucieczkę kumpla na koniec mierzy `middleClosings` (ostatnie zdanie w turach „w środku”), nie `hordeClosings`. Bench odtwarza tury notek regułą `lifeNote` i `recordAnswer`: kumpel wymieniony bez notki przesuwa harmonogram.
 - Charakter kumpla to sam czasownik, notka nie mówi „był” (test). Liczby w tekstach moda stoją przy bezokoliczniku albo w etykiecie („2 na 2 padać”, „padłe: 2”), bez odmiany (test).
 - Humor na ekranie liczy `mood.ts`; model dostaje osobną linię `moodNote` (`lore.ts`): nastrój ostatniego zdarzenia kroniki z faktem, jedno zdanie, raz na zdarzenie (`moodSeen`); zielone bez wcześniejszego smrodu nie daje linii. Forma z kodu: „Krux + bezokolicznik”, bez słowa „nastrój”. Linia mówi, że nastrój nie zmienia ocen ani decyzji, i nie idzie przy wydaniu, planie ani ruchu nieodwracalnym. Po wznowieniu `moodSeen` pusty, więc ostatnie zdarzenie daje linię jeszcze raz. Zmiana tekstu linii to zmiana kotwicy (A/B).
-- Kumple: wzorce imienia w benchu (`hordePattern`, `MATE_NAMES`, `MATE_WORDS`) to przyrząd pomiaru, stały między ramionami A/B. Niuch i Młot chodzą na `haiku`, reszta na modelu rodzica. Bash tylko do odczytu i czyste pliki Lonta stoją w prompcie, zgody daje silnik (`docs/adr/0001-lont-zakaz-w-prompcie.md`). Opis kumpla: fach, warunek wysłania, granica; bramka korzyści zostaje w skillu `krux-horda`. Scena i apel biorą kumpla najpierw z typu (`mateOfType`).
+- Kumple: wzorce imienia w benchu (`hordePattern`, `MATE_NAMES`, `MATE_WORDS`) to przyrząd pomiaru, stały między ramionami A/B. Niuch i Młot chodzą na `haiku`, reszta na modelu rodzica. Bash tylko do odczytu i czyste pliki Lonta stoją w prompcie, zgody daje silnik (`docs/adr/0001-lont-zakaz-w-prompcie.md`). Opis kumpla: fach, warunek wysłania, granica; bramka korzyści zostaje w skillu `krux-horda`.
 
 ### Stan i tablica
 
