@@ -134,7 +134,7 @@ for (const script of ['act-sheet', 'voice-bench']) test(script === 'act-sheet'
 // szybkie wyjście bez modelu i bez `claude`: bez `--model` kończy się w
 // `parseArgs`, zanim cokolwiek odpali, więc wstaje jako osobny proces. Skrypt
 // act-sheet goły node nie wczyta (hooki importują bez rozszerzeń, stąd `npx
-// tsx` w CLAUDE.md), więc jego importy sprawdzamy statycznie, bez uruchamiania.
+// tsx` w hooks/CLAUDE.md), więc jego importy sprawdzamy statycznie, bez uruchamiania.
 function scriptRun(script, args) {
   const run = spawnSync(process.execPath, [script, ...args], { encoding: 'utf8', timeout: 10_000 })
   assert.ok(!run.error, `${script}: proces nie wstał: ${run.error}`)
