@@ -205,6 +205,8 @@ declare module 'claude-code' {
       // Początek bieżącej tury i ostatni prompt człowieka, ms od epoki.
       turnAt: number | null
       seenAt: number | null
+      // Ostatnia prośba Morry w jednym wierszu (echo odpowiedzi); po kumplu i harmonogramie `null`.
+      lastPrompt: string | null
       // Dziennik narzędzi (tylko sesja) i karta panelu Sztolni.
       journal: KruxJournal
       shaftTab: KruxShaftTab

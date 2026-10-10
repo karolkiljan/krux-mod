@@ -20,6 +20,7 @@ import { KRUX_COLOR, ORC_COLOR, shaftDigest, shaftTabs, shaftTree } from './shaf
 import { TOOL_INDENT, chatTree, toolIndent } from './chat'
 import type { AvatarSpeaker } from './avatar'
 import { EMPTY_JOURNAL, journalAfter, journalTree, toolLine } from './journal'
+import { echoLine, echoPrompt } from './echo'
 import { forgeColumns } from './sprites'
 import {
   DEFAULT_MODES,
@@ -91,6 +92,7 @@ const threads = atom({ plugin: 'krux-mod', key: 'threads' } as const, EMPTY_THRE
 const autoKonkret = atom({ plugin: 'krux-mod', key: 'autoKonkret' } as const, false)
 const turnAt = atom({ plugin: 'krux-mod', key: 'turnAt' } as const, null)
 const seenAt = atom({ plugin: 'krux-mod', key: 'seenAt' } as const, null)
+const lastPrompt = atom({ plugin: 'krux-mod', key: 'lastPrompt' } as const, null)
 const journal = atom({ plugin: 'krux-mod', key: 'journal' } as const, { entries: [] })
 const shaftTab = atom({ plugin: 'krux-mod', key: 'shaftTab' } as const, 'stan')
 
@@ -331,7 +333,7 @@ async function syncShaftPane($: EngineInterface, on: boolean): Promise<void> {
 // po wczytaniu modułu dostaje tabliczkę na każdej kropce, bez zapamiętywania.
 // Żywe bloki zachowują tabliczkę przy przerysowaniu przez ostatnie 32 tury.
 const PLATES_LIMIT = 32
-const plates = { live: false, pending: false, ids: new Set<string>() }
+const plates = { live: false, pending: false, ids: new Set<string>(), echoed: false, echoes: new Map<string, string | null>() }
 
 function claimPlate(id: string): boolean {
   if (!plates.live) return true
@@ -341,6 +343,21 @@ function claimPlate(id: string): boolean {
   plates.ids.add(id)
   if (plates.ids.size > PLATES_LIMIT) plates.ids.delete(plates.ids.values().next().value!)
   return true
+}
+
+// Echo prośby: jeden raz na turę, na pierwszym bloku z kropką, gdy praca już
+// jest długa. Decyzja zapada przy pierwszym rysunku bloku i zostaje przy
+// przerysowaniu, więc późniejsze narzędzia nie zmieniają starej odpowiedzi.
+async function echoAt($: EngineInterface, id: string): Promise<string | null> {
+  if (!plates.live) return null
+  if (plates.echoes.has(id)) return plates.echoes.get(id) ?? null
+  const started = await read($, turnAt)
+  const elapsed = started === null ? 0 : (await $.clock.now()) - started
+  const line = plates.echoed ? null : echoLine(await read($, lastPrompt), await read($, strikes), elapsed)
+  if (line !== null) plates.echoed = true
+  plates.echoes.set(id, line)
+  if (plates.echoes.size > PLATES_LIMIT) plates.echoes.delete(plates.echoes.keys().next().value!)
+  return line
 }
 
 // Stan repo po narzędziu, które mogło go zmienić; poza repo albo bez gita `null`.
@@ -624,6 +641,8 @@ export const register: Register = on => {
     const extra = freshNotes(now).map(note => note.text)
     pendingNotes = []
     await restore($)
+    // Echo dotyczy tylko tury z prośbą Morry; raport kumpla czy harmonogram go nie dostają.
+    await update($, lastPrompt, () => fromPerson(e.origin) ? echoPrompt(e.text) : null)
     if (fromPerson(e.origin)) {
       let returned = false
       await update($, seenAt, previous => { returned = previous !== null && now - previous >= 1_800_000; return now })
@@ -731,6 +750,7 @@ export const register: Register = on => {
     await update($, turnAt, () => now)
     plates.live = true
     plates.pending = true
+    plates.echoed = false
     await update($, strikes, () => 0)
     await update($, activity, () => null)
     await update($, waiting, () => 0)
@@ -886,8 +906,23 @@ export const register: Register = on => {
     const theirs = await next(e)
     const { Box, Text } = $.ui.resolve(e)
     const block = Box({ borderStyle: 'quote', borderColor: KRUX_COLOR, marginBottom: -1, children: [Box({ marginTop: -1, children: [theirs] })] })
-    if (!e.props.isFirstOfReply || !claimPlate(e.requestId)) return block
-    const plate = Box({ key: 'nameplate', position: 'absolute', top: 0, left: 0, children: [Text({ bold: true, color: KRUX_COLOR, children: [NAMEPLATE.krux] })] })
+    if (!e.props.isFirstOfReply) return block
+    // Tabliczka raz na turę; echo prośby otwiera ją ponownie na bloku po długiej robocie.
+    const claimed = claimPlate(e.requestId)
+    const echo = await echoAt($, e.requestId)
+    if (!claimed && echo === null) return block
+    const plate = Box({
+      key: 'nameplate',
+      position: 'absolute',
+      top: 0,
+      left: 0,
+      right: 0,
+      flexDirection: 'row',
+      children: [
+        Text({ bold: true, color: KRUX_COLOR, children: [NAMEPLATE.krux] }),
+        ...(echo === null ? [] : [Box({ flexShrink: 1, minWidth: 0, children: [Text({ dimColor: true, wrap: 'truncate-end', children: [` · do prośby: „${echo}”`] })] })]),
+      ],
+    })
     return Box({ flexDirection: 'column', children: [block, plate] })
   })
 
