@@ -645,6 +645,29 @@ test('voice bench counts the mood word echoed in prose, not in code', () => {
   assert.equal(moodWordHits('Nastrój Kruxa dobry, bez nastroju. `nastrój` w kodzie.'), 2)
 })
 
+// bench-compare liczy metryki od nowa z `responses.json`, więc stara seria liczy się jak
+// nowa; przebieg ERROR z częściowym `responses.json` wypada, zamiast zwalić porównanie.
+test('bench compare skips error runs and recomputes every series from its responses', t => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'krux-compare-'))
+  t.after(() => fs.rmSync(scratch, { recursive: true, force: true }))
+  const run = (series, id, status, responses) => {
+    const dir = path.join(scratch, series, id)
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(path.join(dir, 'report.json'), JSON.stringify({ status, model: 'm', mode: 'stream', scenario: 'smrod', fullAnchors: 1, shortAnchors: 6, driftFixes: 0, hordeNotes: 2, moodNotes: 0, hookContextChars: 0 }))
+    fs.writeFileSync(path.join(dir, 'responses.json'), JSON.stringify(responses))
+  }
+  const quiet = 'Krux czytać kod.'
+  const answers = middle => [quiet, quiet, 'Niuch węszyć.', quiet, quiet, middle, quiet]
+  run('A', 'r1', 'COMPLETE', answers('Krux kuć. Grom patrzeć.'))
+  run('A', 'r2', 'COMPLETE', answers('Grom patrzeć. Krux kuć.'))
+  run('A', 'r3', 'ERROR', [quiet])
+  run('B', 'r1', 'COMPLETE', answers('Grom patrzeć. Krux kuć.'))
+  const result = spawnSync(process.execPath, ['scripts/bench-compare.mjs', `A=${path.join(scratch, 'A')}`, `B=${path.join(scratch, 'B')}`, '--scenario', 'smrod'], { encoding: 'utf8', timeout: 30_000 })
+  assert.equal(result.status, 0, result.stderr)
+  assert.match(result.stdout, /^\| metryka \| A \(n=2\) \| B \(n=1\) \| Δ B \| p B \|$/mu)
+  assert.match(result.stdout, /^\| …w ostatnim zdaniu \| 0\.50 ± 0\.71 \| 0\.00 ± — \| -0\.50 \| [\d.]+ \|$/mu)
+})
+
 // Bench liczy kumpli własnymi wzorcami: przyrząd pomiaru stoi poza modem i nie zmienia się
 // między ramionami A/B. Nowy kumpel w `ROSTER` musi trafić także tam.
 test('the bench knows every mate of the roster by name and declension', () => {
