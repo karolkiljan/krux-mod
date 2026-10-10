@@ -311,6 +311,97 @@ test('a request to destroy data or history gets the risk line, ordinary work doe
   expect(isDestructive('```sh\ngit push --force-with-lease\n```')).toBe(true)
 })
 
+test('irreversible commands beyond git and SQL get the risk line, their safe neighbours do not', async () => {
+  for (const text of [
+    'git push --mirror origin',
+    'git push origin --delete feature/x',
+    'git push origin :feature/x',
+    'git push origin +main',
+    'git checkout -- .',
+    'git checkout HEAD -- src/app.ts',
+    'git checkout .',
+    'git restore .',
+    'git restore --staged --worktree src/',
+    'git stash clear',
+    'git stash drop stash@{0}',
+    'git reflog expire --expire=now --all',
+    'git gc --prune=now',
+    'find . -name "*.log" -delete',
+    'find tmp -type f -exec rm {} +',
+    'rsync -a --delete src/ dst/',
+    'aws s3 sync ./out s3://site --delete',
+    'shred -u secrets.txt',
+    'mkfs.ext4 /dev/sdb1',
+    'wipefs -a /dev/sdb',
+    'dd if=/dev/zero of=/dev/sda bs=1M',
+    'dropdb app_dev',
+    'db.dropDatabase()',
+    'redis-cli FLUSHALL',
+    'npx prisma migrate reset',
+    'npx prisma db push --force-reset',
+    'supabase db reset',
+    'bin/rails db:drop',
+    'rails db:schema:load',
+    'mix ecto.reset',
+    'python manage.py flush',
+    'UPDATE users SET role = 1;',
+    'update users set active = false',
+    'terraform destroy',
+    'terraform apply -auto-approve -destroy',
+    'pulumi destroy --yes',
+    'kubectl delete namespace prod',
+    'kubectl -n prod delete pvc data',
+    'helm uninstall api',
+    'docker volume rm pgdata',
+    'docker volume prune -f',
+    'docker compose down -v',
+    'docker system prune -a --volumes',
+    'aws s3 rm s3://kubel/dane --recursive',
+    'gsutil -m rm -r gs://kubel',
+    'gh repo delete karolkiljan/stary',
+    'npm unpublish pakiet@1.0.0',
+  ]) {
+    expect([text, isDestructive(text), riskHint(text)]).toEqual([text, true, RISK_HINT])
+  }
+  for (const text of [
+    'zresetuj bazę na stagingu',
+    'usuń wolumen z bazą',
+    'zniszcz infrastrukturę testową',
+    'usuń namespace prod',
+    'wyczyść stash',
+  ]) {
+    expect([text, riskHint(text)]).toEqual([text, RISK_HINT])
+  }
+  for (const text of [
+    'git checkout main',
+    'git checkout -b feature/x',
+    'git restore --staged src/app.ts',
+    'git restore -S src/app.ts',
+    'git stash',
+    'git stash pop',
+    'git push -u origin feature/x',
+    'git gc',
+    'find . -name "*.ts"',
+    'rsync -a src/ dst/',
+    'aws s3 cp raport.pdf s3://kubel/',
+    'aws s3 ls',
+    'rails db:migrate',
+    'UPDATE users SET role = 1 WHERE id = 7;',
+    'update the set of tests',
+    'terraform plan',
+    'kubectl get pods',
+    'kubectl apply -f deploy.yaml',
+    'docker compose down',
+    'docker volume ls',
+    'npm publish',
+    'restore the backup from yesterday',
+    'zresetuj licznik tur',
+    'dodaj test dla dysku',
+  ]) {
+    expect([text, riskHint(text)]).toEqual([text, null])
+  }
+})
+
 test('every prompt but a command gets a format line with a length budget', async () => {
   expect(formatHint('build pada z TypeError')).toBe(FORMAT_HINT.debug)
   expect(formatHint('dodaj kolumnę email do users')).toBe(LENGTH_HINT)

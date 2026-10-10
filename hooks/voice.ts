@@ -86,17 +86,54 @@ export function formatHint(text: string): string | null {
 // Komendy, które kasują dane albo historię bez drogi powrotu poza backupem i reflogiem.
 // Prośba z nimi dostaje linię o ruchu nieodwracalnym, a odpowiedzi z nimi miernik
 // nie sądzi: ostrzeżenie idzie pełnymi zdaniami, tak każe kontrakt persony.
+// Flagi szukamy najwyżej kilka słów za komendą, żeby nie skleić dwóch zdań prośby.
 const DESTRUCTIVE = new RegExp(
   `(?<![\\p{L}\\d-])(?:${[
+    // Git: historia zdalna i lokalna, schowki i zmiany w drzewie roboczym (te bez reflogu).
     String.raw`force[- ]push`,
-    String.raw`push\s+(?:\S+\s+){0,4}?(?:-f|--force(?:-with-lease)?)(?![\p{L}\d-])`,
+    String.raw`push\s+(?:\S+\s+){0,4}?(?:-f|--force(?:-with-lease)?|--mirror|--delete|-d)(?![\p{L}\d-])`,
+    String.raw`push\s+\S+\s+[:+][\p{L}\d]`,
     String.raw`reset\s+--hard`,
-    String.raw`rm\s+-[a-z]*(?:r[a-z]*f|f[a-z]*r)`,
     String.raw`clean\s+-[a-z]*f`,
+    String.raw`filter-(?:branch|repo)`,
+    String.raw`git\s+checkout\s+(?:\S+\s+)?--\s+\S`,
+    String.raw`git\s+checkout\s+\.(?:/\S*)?(?!\S)`,
+    String.raw`stash\s+(?:clear|drop)(?![\p{L}\d-])`,
+    String.raw`reflog\s+(?:expire|delete)`,
+    String.raw`gc\s+(?:\S+\s+){0,3}?--prune=now`,
+    // Pliki i dyski.
+    String.raw`rm\s+-[a-z]*(?:r[a-z]*f|f[a-z]*r)`,
+    String.raw`find\s+(?:\S+\s+){0,8}?(?:-delete|-exec\s+rm)(?![\p{L}\d-])`,
+    String.raw`(?:rsync|sync)\s+(?:\S+\s+){0,6}?--delete(?![\p{L}\d])`,
+    String.raw`shred\s+-`,
+    String.raw`mkfs`,
+    String.raw`wipefs`,
+    String.raw`dd\s+(?:\S+\s+){0,4}?of=/dev/`,
+    // SQL i narzędzia baz: reset schematu zabiera dane razem z nim.
     String.raw`drop\s+(?:table|database|schema|column)(?!\p{L})`,
     String.raw`truncate\s+table(?!\p{L})`,
     String.raw`delete\s+from(?!\p{L})`,
-    String.raw`filter-(?:branch|repo)`,
+    String.raw`dropdb(?![\p{L}\d])`,
+    String.raw`dropDatabase`,
+    String.raw`flush(?:all|db)(?![\p{L}\d])`,
+    String.raw`migrate\s+reset`,
+    String.raw`--force-reset`,
+    String.raw`db\s+reset`,
+    String.raw`db:(?:drop|reset|purge|schema:load)`,
+    String.raw`ecto\.(?:drop|reset)`,
+    String.raw`manage\.py\s+flush`,
+    // Infrastruktura, kontenery i kubełki w chmurze.
+    String.raw`terraform\s+(?:destroy|apply\s+(?:\S+\s+){0,6}?-destroy)`,
+    String.raw`pulumi\s+destroy`,
+    String.raw`kubectl\s+(?:\S+\s+){0,4}?delete(?![\p{L}\d-])`,
+    String.raw`helm\s+(?:uninstall|delete)`,
+    String.raw`volume\s+(?:rm|prune)`,
+    String.raw`compose\s+down\s+(?:\S+\s+){0,4}?(?:-v|--volumes)(?![\p{L}\d-])`,
+    String.raw`system\s+prune\s+(?:\S+\s+){0,4}?--volumes`,
+    String.raw`s3\s+(?:rm|rb)(?![\p{L}\d-])`,
+    String.raw`gsutil\s+(?:-\S+\s+){0,2}rm(?![\p{L}\d-])`,
+    String.raw`gh\s+(?:repo|release)\s+delete`,
+    String.raw`unpublish(?![\p{L}\d])`,
   ].join('|')})`,
   'iu',
 )
@@ -105,15 +142,36 @@ const DESTRUCTIVE = new RegExp(
 // `TRUNCATE users` to SQL, „truncate the text” to proza.
 const DESTRUCTIVE_CASED = /(?<![\p{L}\d-])(?:branch\s+-[a-zA-Z]*D|TRUNCATE\s)/u
 
-export function isDestructive(text: string): boolean {
-  return DESTRUCTIVE.test(text) || DESTRUCTIVE_CASED.test(text)
+// `git restore` nadpisuje zmiany w drzewie roboczym, chyba że cofa tylko indeks (`--staged`).
+const RESTORE = /(?<![\p{L}\d-])git[ \t]+restore((?:[ \t]+\S+)+)/giu
+
+function restoresWorktree(text: string): boolean {
+  for (const match of text.matchAll(RESTORE)) {
+    const args = match[1]!.trim().split(/\s+/u)
+    const staged = args.some(arg => arg === '--staged' || /^-[A-Za-z]*S/u.test(arg))
+    const worktree = args.some(arg => arg === '--worktree' || /^-[A-Za-z]*W/u.test(arg))
+    if (!staged || worktree) return true
+  }
+  return false
 }
 
-// Prośba po polsku o skasowanie danych albo historii i migracja na żywych danych.
-// Plik, import czy martwy kod to nie dane: wracają z gita.
+// `UPDATE … SET` bez `WHERE` nadpisuje całą tabelę; z `WHERE` to zwykła robota.
+const UPDATE_SET = /(?<![\p{L}\d-])update\s+[\p{L}\d_."`]+\s+set\s+[^;\n]*?=[^;\n]*/giu
+
+function updatesAll(text: string): boolean {
+  for (const match of text.matchAll(UPDATE_SET)) if (!/(?<!\p{L})where(?!\p{L})/iu.test(match[0])) return true
+  return false
+}
+
+export function isDestructive(text: string): boolean {
+  return DESTRUCTIVE.test(text) || DESTRUCTIVE_CASED.test(text) || restoresWorktree(text) || updatesAll(text)
+}
+
+// Prośba po polsku o skasowanie danych, historii, schowka albo infrastruktury i migracja
+// na żywych danych. Plik, import czy martwy kod to nie dane: wracają z gita.
 const RISK_WORDS = new RegExp(
   `(?<!\\p{L})(?:${[
-    String.raw`(?:usuń|skasuj|wykasuj|wyczyść|wywal|zdropuj|dropnij|nadpisz)\s+(?:\p{L}+\s+){0,2}?(?:baz\p{L}*|tabel\p{L}*|dane|danych|histori\p{L}*|gałąź|gałęz\p{L}*|branch\p{L}*|backup\p{L}*|kolumn\p{L}*|rekord\p{L}*|repo\p{L}*)`,
+    String.raw`(?:usuń|skasuj|wykasuj|wyczyść|wywal|zdropuj|dropnij|nadpisz|zresetuj|wyzeruj|zniszcz)\s+(?:\p{L}+\s+){0,2}?(?:baz\p{L}*|tabel\p{L}*|dane|danych|histori\p{L}*|gałąź|gałęz\p{L}*|branch\p{L}*|backup\p{L}*|kolumn\p{L}*|rekord\p{L}*|repo\p{L}*|wolumen\p{L}*|bucket\p{L}*|kubeł\p{L}*|kubł\p{L}*|klast\p{L}*|namespace\p{L}*|infrastruktur\p{L}*|środowisk\p{L}*|schowek|schowk\p{L}*|stash\p{L}*|dysk\p{L}*|partycj\p{L}*)`,
     String.raw`(?:puść|odpal|uruchom|wykonaj|przeprowadź|zrób)\s+(?:\p{L}+\s+){0,2}?migracj\p{L}*`,
     String.raw`zmigruj\p{L}*`,
   ].join('|')})(?!\\p{L})`,
