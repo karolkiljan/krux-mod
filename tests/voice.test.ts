@@ -22,6 +22,7 @@ import {
   promptKind,
   restVerb,
   riskHint,
+  asksRelease,
   shellKind,
   spinnerWord,
   statusLine,
@@ -360,5 +361,14 @@ test('arithmetic bit shifts are not heredocs and keep later test commands visibl
   ]) {
     expect(workOf('Bash', { command })).toBe('test')
     expect(describeTool('Bash', { command }).scene).toBe('test')
+  }
+})
+
+test('a release question is recognised, performance talk is not', () => {
+  for (const text of ['Wypuszczamy to dziś na produkcję?', 'Co sprawdzić przed wydaniem?', 'można deployować?', 'wdrażamy jutro', 'scalamy PR?']) {
+    expect([text, asksRelease(text)]).toEqual([text, true])
+  }
+  for (const text of ['A co z wydajnością przy dużym ruchu?', 'napraw testy', 'Jak poszło?']) {
+    expect([text, asksRelease(text)]).toEqual([text, false])
   }
 })

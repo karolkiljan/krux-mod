@@ -1082,6 +1082,24 @@ test('failing tests make Młot the topic a few turns later', async ($, on) => {
   expect((entered.context ?? []).some(entry => entry.includes('Młocie') && entry.includes('padłe: 1'))).toBe(true)
 })
 
+test('the mood of a fresh chronicle event reaches the model once, and never on a release question', async ($, on) => {
+  engine(on, new Map(), { toolError: '1 failed' })
+  await start($)
+  await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  const first = await $.prompt.submit({ text: 'co z tym?', wait: false, origin: ORIGIN })
+  expect((first.context ?? []).filter(entry => entry.startsWith('Nastrój Kruxa: zadziorny'))).toHaveLength(1)
+  const again = await $.prompt.submit({ text: 'i?', wait: false, origin: ORIGIN })
+  expect((again.context ?? []).some(entry => entry.startsWith('Nastrój Kruxa'))).toBe(false)
+  await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  const release = await $.prompt.submit({ text: 'Wypuszczamy to dziś na produkcję?', wait: false, origin: ORIGIN })
+  expect((release.context ?? []).some(entry => entry.startsWith('Nastrój Kruxa'))).toBe(false)
+  // Zdarzenie przepada razem z decyzją: następna tura nie wraca do niego.
+  const after = await $.prompt.submit({ text: 'i?', wait: false, origin: ORIGIN })
+  expect((after.context ?? []).some(entry => entry.startsWith('Nastrój Kruxa'))).toBe(false)
+  const report = await $.prompt.submit({ text: 'Review: build failed.', wait: false, origin: { kind: 'task-notification' } })
+  expect((report.context ?? []).some(entry => entry.startsWith('Nastrój Kruxa'))).toBe(false)
+})
+
 test('a request for an irreversible move gets the warning line instead of a horde aside', async ($, on) => {
   engine(on, new Map(), { toolError: '1 failed' })
   await start($)

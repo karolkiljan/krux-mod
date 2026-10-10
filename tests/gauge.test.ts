@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import { gauge, infinitiveHits, matesNamed, orcish, rewrites } from '../hooks/gauge'
-import { EMPTY_LORE, lifeNote, recordAnswer, recordTool, replay } from '../hooks/lore'
+import { EMPTY_LORE, lifeNote, moodNote, recordAnswer, recordTool, replay } from '../hooks/lore'
 import { REFRESH_TURNS, VOICE_ANCHOR, VOICE_SHORT, anchorFor } from '../hooks/voice'
 
 const ORC =
@@ -126,7 +126,7 @@ test('the horde speaks every few turns, from a fact, never the same mate twice',
 test('the note names the mate’s character and its place, and leaves no maybe', async () => {
   const quiet = { ...EMPTY_LORE, quietTurns: 2 }
   const note = lifeNote(quiet, 0)!
-  expect(note).toContain('(węszy wszędzie i mówi półsłówkami)')
+  expect(note).toContain('(węszy wszędzie i mówi półsłówkami), słowa fachu: ślad, trop, nora;')
   expect(note).not.toContain('jeśli pasuje')
   const places = [2, 5].map(turn => /miejsce: ([^;]+);/u.exec(lifeNote(quiet, turn)!)![1])
   expect(new Set(places).size).toBe(2)
@@ -318,4 +318,19 @@ test('inherited dictionary names are not verbs and cannot crash rewrites', () =>
     expect(rewrites(`Pole ${word} działa poprawnie.`)).toEqual([{ from: `Pole ${word} działa poprawnie.`, to: `Pole ${word} działać poprawnie.` }])
   }
   expect(gauge(SMOOTH + ' Pole constructor działa poprawnie.')).not.toBe(null)
+})
+
+test('the mood line comes from the last chronicle event, with its fact, and calm green says nothing', () => {
+  expect(moodNote(EMPTY_LORE)).toBe(null)
+  const failing = recordTool(EMPTY_LORE, 'Bash', { command: 'npm test' }, true)
+  const angry = moodNote(failing)!
+  expect(angry.text).toContain('Nastrój Kruxa: zadziorny (padłe przebiegi testów: 1 z 1)')
+  // Linia sama pilnuje, że nastrój nie rusza ocen ani decyzji.
+  expect(angry.text).toContain('nie zmienia ocen, ryzyka ani decyzji')
+  const green = recordTool(failing, 'Bash', { command: 'npm test' }, false, '3 passed')
+  expect(moodNote(green)!.text).toContain('dumny (testy zielone po padłych przebiegach: 1)')
+  expect(moodNote(green)!.key).not.toBe(angry.key)
+  expect(moodNote(recordTool(EMPTY_LORE, 'Bash', { command: 'npm test' }, false, '3 passed'))).toBe(null)
+  // Edycja nie zmienia nastroju, ale nowe zdarzenie po niej to nowy klucz.
+  expect(moodNote(recordTool(failing, 'Edit', { file_path: 'a.ts' }, false))!.text).toBe(angry.text)
 })
