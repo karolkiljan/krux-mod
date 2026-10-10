@@ -1,6 +1,6 @@
 # Kontrakt utrzymania moda Krux
 
-Pełny kontrakt leży w `hooks/CLAUDE.md`: drzewo plików z opisem każdego modułu, macierz zdarzeń (zdarzenie, warunek, skutek) i niezmienniki z uzasadnieniami z benchu. Claude Code dociąga go dopiero przy czytaniu plików z `hooks/`. Przed zmianą zachowania moda przeczytaj go w całości i zaktualizuj tam odpowiedni wiersz macierzy albo niezmiennik. Poniżej tylko skrót zasad, które obowiązują także poza `hooks/`.
+Pełny kontrakt leży w `hooks/CLAUDE.md`: drzewo plików z opisem każdego modułu, macierz zdarzeń (zdarzenie, warunek, skutek) i niezmienniki; uzasadnienia z benchu leżą w `docs/research/2026-10-11-uzasadnienia-niezmiennikow.md`. Claude Code dociąga go dopiero przy czytaniu plików z `hooks/`. Przed zmianą zachowania moda przeczytaj go w całości i zaktualizuj tam odpowiedni wiersz macierzy albo niezmiennik. Poniżej tylko skrót zasad, które obowiązują także poza `hooks/`.
 
 ## Drzewo plików
 
