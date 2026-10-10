@@ -39,7 +39,7 @@ const ORIGIN = { kind: 'composer' as const }
 type History = { role: 'user' | 'assistant'; text: string; toolUses: { tool_use_id: string; tool: string; input: Record<string, unknown>; isError?: true; text?: string }[] }[]
 
 type ProcessReply = { exitCode: number; stdout: string; stderr: string; isStdoutTruncated: boolean; isStderrTruncated: boolean }
-type Extras = { beforePaneList?: () => Promise<void>; paneClosed?: boolean; invalidations?: string[]; journalWrites?: KruxJournal[]; beforeStoreGet?: () => void; logs?: string[]; onPrompt?: () => void; toasts?: string[]; settings?: Record<string, unknown>; plugins?: string[]; toolError?: string; toolDenied?: boolean; toolReply?: { result: unknown; text?: string; isError?: true }; agentGate?: Promise<void>; history?: History; agents?: { id: string; status: AgentStatus; description?: string }[]; opened?: string[]; closed?: string[]; usage?: SessionUsage; usageRead?: () => SessionUsage | Promise<SessionUsage>; beforeAgentList?: () => Promise<void>; beforeStoreSet?: () => Promise<void>; paneWaits?: boolean; paneHidden?: boolean; git?: { stdout: string }; tools?: string[]; commands?: CommandSpec[]; processRun?: (argv: readonly string[], timeoutMs: number | undefined) => ProcessReply | Promise<ProcessReply> }
+type Extras = { beforePaneList?: () => Promise<void>; paneClosed?: boolean; invalidations?: string[]; journalWrites?: KruxJournal[]; beforeStoreGet?: () => void; logs?: string[]; onPrompt?: () => void; toasts?: string[]; settings?: Record<string, unknown>; plugins?: string[]; toolError?: string; toolDenied?: boolean; toolReply?: { result: unknown; text?: string; isError?: true }; agentGate?: Promise<void>; history?: History; agents?: { id: string; status: AgentStatus; description?: string; type?: string }[]; opened?: string[]; closed?: string[]; usage?: SessionUsage; usageRead?: () => SessionUsage | Promise<SessionUsage>; beforeAgentList?: () => Promise<void>; beforeStoreSet?: () => Promise<void>; paneWaits?: boolean; paneHidden?: boolean; git?: { stdout: string }; tools?: string[]; commands?: CommandSpec[]; processRun?: (argv: readonly string[], timeoutMs: number | undefined) => ProcessReply | Promise<ProcessReply> }
 
 function engine(on: On, saved: Map<string, unknown>, extras: Extras = {}) {
   const toasts = extras.toasts ?? []
@@ -103,7 +103,7 @@ function engine(on: On, saved: Map<string, unknown>, extras: Extras = {}) {
   })
   on('agent.list', async () => {
     await extras.beforeAgentList?.()
-    return { value: (extras.agents ?? []).map(agent => ({ description: '', ...agent, type: 'general-purpose' })) }
+    return { value: (extras.agents ?? []).map(agent => ({ description: '', type: 'general-purpose', ...agent })) }
   })
   on('prompt.compose', () => ({ sections: BASE }))
   on('prompt.submit', ($, e) => { extras.onPrompt?.(); return { text: e.text, context: e.context } })
@@ -543,7 +543,7 @@ test('a dispatched Niuch runs onto the stage in his apron and takes the bubble',
   expect(await ui.find({ type: 'Text', in: 'forge', text: /│ węszyć lore │/ })).toBeDefined()
 })
 
-test('a horde agent type puts its mate on stage even when the task does not name him', async ($, on) => {
+test('a horde agent type puts its mate on stage and in the muster even when the task does not name him', async ($, on) => {
   engine(on, new Map(), { agents: [{ id: 'a1', status: 'running' }] })
   await start($)
   await $.turn.start({ text: 'szukaj', turnId: 't1' })
@@ -551,6 +551,8 @@ test('a horde agent type puts its mate on stage even when the task does not name
   await $.tool.call(inLoop('a1', { tool: 'Grep', pattern: 'lore' }))
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(await forgeColors(ui)).toContain(NIUCH)
+  const shaft = await $.ui.mount({ ...SHAFT_PANE, surface: 'terminal', props: SHAFT_PROPS })
+  expect((await shaft.find({ key: 'mate-0' }))?.text).toContain('Niuch')
 })
 
 test('the band keeps six rows when nobody talks, so nothing jumps', async ($, on) => {
@@ -2230,9 +2232,9 @@ test('chat reports keep a mate name from muster after the agent leaves the engin
 })
 
 test('chat resolves unrecorded agents from descriptions, keeps nameless orks and leaves shell notifications native', async ($, on) => {
-  engine(on, new Map([['mode.czat', true]]), { agents: [{ id: 'nested', status: 'completed', description: 'Ochra: frontend' }, { id: 'plain', status: 'completed', description: 'sprawdzenie' }] })
+  engine(on, new Map([['mode.czat', true]]), { agents: [{ id: 'nested', status: 'completed', description: 'Ochra: frontend' }, { id: 'plain', status: 'completed', description: 'sprawdzenie' }, { id: 'typed', status: 'completed', description: 'ocena zmian', type: 'krux-mod:piryt' }] })
   await start($)
-  for (const [id, name] of [['nested', 'Ochra'], ['plain', 'ork']] as const) {
+  for (const [id, name] of [['nested', 'Ochra'], ['plain', 'ork'], ['typed', 'Piryt']] as const) {
     const report = await $.ui.mount({ ...CHAT_USER, requestId: id, props: { text: 'done', origin: { kind: 'task-notification' }, task: { id }, isExpanded: true } })
     expect((await report.find({ key: 'chat-header' }))?.text?.trim()).toMatch(new RegExp(`^${name} · `, 'u'))
     await report.unmount()

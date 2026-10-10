@@ -645,6 +645,22 @@ test('voice bench counts the mood word echoed in prose, not in code', () => {
   assert.equal(moodWordHits('Nastrój Kruxa dobry, bez nastroju. `nastrój` w kodzie.'), 2)
 })
 
+// Bench liczy kumpli własnymi wzorcami: przyrząd pomiaru stoi poza modem i nie zmienia się
+// między ramionami A/B. Nowy kumpel w `ROSTER` musi trafić także tam.
+test('the bench knows every mate of the roster by name and declension', () => {
+  const context = benchContext()
+  const names = vm.runInContext('MATE_NAMES', context)
+  const horde = new RegExp(vm.runInContext('hordePattern', context).source, 'u')
+  assert.deepEqual(Object.keys(names).sort(), Object.keys(ROSTER).sort())
+  assert.deepEqual(Object.keys(vm.runInContext('MATE_WORDS', context)).sort(), Object.keys(ROSTER).sort())
+  for (const [mate, { locative, accusative }] of Object.entries(ROSTER)) {
+    for (const form of [mate, locative, accusative]) {
+      assert.ok(names[mate].test(form), `${mate}: ${form}`)
+      assert.ok(horde.test(form), `${mate}: ${form}`)
+    }
+  }
+})
+
 // Odtworzenie w benchu powtarza regułę z hooks/lore.ts. Gdy zmieni się QUIET_TURNS
 // albo rotacja miejsc, ten test pada, zanim liczby w notatkach zaczną kłamać.
 test('the bench replays the horde notes by the rule the mod uses', () => {
@@ -654,6 +670,18 @@ test('the bench replays the horde notes by the rule the mod uses', () => {
   assert.equal(quietTurns(fs.readFileSync('scripts/voice-bench.mjs', 'utf8')), quietTurns(lore))
   assert.match(lore, /miejsce: \$\{pick\(PLACES, seed \+ 1\)\}/u)
   assert.match(lore, /^const PLACES = \['w środku/mu)
+})
+
+// Opisy kumpli siedzą na liście typów narzędzia `Agent` w każdej turze, więc mają budżet
+// jak kotwica. Treść pliku to prompt kumpla: bez rodzaju, jak notki o hordzie.
+test('mate definitions keep the agent listing short and address the mate without gender', () => {
+  let listing = 0
+  for (const { agent } of Object.values(ROSTER)) {
+    const text = fs.readFileSync(new URL(`../agents/${agent}.md`, import.meta.url), 'utf8')
+    listing += text.match(/^description: (.+)$/mu)[1].length
+    assert.doesNotMatch(text, /\p{L}(?:łeś|łaś)(?!\p{L})/u, `${agent}.md: forma z rodzajem`)
+  }
+  assert.ok(listing <= 700, `opisy kumpli: ${listing} znaków`)
 })
 
 test('every mate has an agent definition under his type, and the scouts and the tester cannot edit', () => {

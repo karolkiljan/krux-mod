@@ -712,7 +712,7 @@ export const register: Register = on => {
     return { text: `${statusLine(await read($, modes), await read($, autoKonkret))}\n${HELP}` }
   })
 
-  // Subagent z głównej pętli wbiega na scenę; imię bierze z opisu zadania.
+  // Subagent z głównej pętli wbiega na scenę; kumpla bierze z typu, potem z opisu zadania.
   on('agent.spawn', async ($, e, next) => {
     const result = await next(e)
     if (e.parentAgentId !== undefined || result.agentId === undefined) return result
