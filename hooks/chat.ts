@@ -16,8 +16,14 @@ export type ChatData = {
   speaker: AvatarSpeaker
   // Gotowe HH:MM z chwili wiadomości; renderowanie nie odczytuje zegara.
   time: string
-  // Wynik `next(e)`, także nieprzezroczysty węzeł `engine`.
-  content: RenderElement
+  // Wynik `next(e)`, także nieprzezroczysty węzeł `engine`, albo goły tekst
+  // prośby Morry rysowany przez mod: bez podświetlenia wiersza silnika.
+  content: RenderElement | string
+}
+
+// Komenda (`/krux czat`) i tryb powłoki (`!ls`) zostają w rysunku silnika.
+export function isCommandText(text: string): boolean {
+  return /^[/!]/u.test(text.trimStart())
 }
 
 export function chatTree({ Box, Text }: ChatElements, data: ChatData): RenderElement {
@@ -48,13 +54,16 @@ export function chatTree({ Box, Text }: ChatElements, data: ChatData): RenderEle
     marginRight: 1,
     children: [
       // Ramka dzieli rozmowę na dymki. Silnik stawia pusty wiersz nad
-      // wiadomością; w ramce byłby zbędny, więc treść wchodzi na niego.
+      // wiadomością; w ramce byłby zbędny, więc jego treść wchodzi na niego.
       Box({
         key: 'chat-body',
         borderStyle: 'round',
         borderColor: color,
         paddingX: 1,
-        children: [Box({ key: 'chat-content', flexDirection: 'column', marginTop: -1, children: [data.content] })],
+        children: [typeof data.content === 'string'
+          // Własny tekst nie ma pustego wiersza silnika nad sobą.
+          ? Box({ key: 'chat-content', flexDirection: 'column', children: [Text({ wrap: 'wrap', children: [data.content] })] })
+          : Box({ key: 'chat-content', flexDirection: 'column', marginTop: -1, children: [data.content] })],
       }),
       // Nagłówek leży na górnej krawędzi ramki, jak tytuł, bez własnego wiersza.
       Box({

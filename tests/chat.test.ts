@@ -3,7 +3,7 @@ import type { RenderElement } from 'claude-code'
 
 import { avatarRows, speakerColor } from '../hooks/avatar'
 import type { AvatarSpeaker } from '../hooks/avatar'
-import { chatTree, toolIndent } from '../hooks/chat'
+import { chatTree, isCommandText, toolIndent } from '../hooks/chat'
 import type { ChatData, ChatElements } from '../hooks/chat'
 import { PALETTE } from '../hooks/palette'
 
@@ -143,6 +143,20 @@ test('a structured content tree retains its own styles and children', () => {
   expect(children(part(root, 'chat-content'))).toEqual([styled])
   expect(children(part(root, 'chat-content'))[0]).toBe(styled)
   expect(styled).toEqual({ type: 'Text', props: { color: '#abcdef', bold: false }, children: ['kod i markdown silnika'] })
+})
+
+// Podświetlony wiersz silnika odcinał prośbę Morry od dymków orków (2026-10-11).
+test('own prompt text sits on the first row of the frame, without the engine gap', () => {
+  const root = draw({ speaker: 'Morra', content: 'siema\ndalej' })
+  const content = part(root, 'chat-content')
+  expect(content.props.marginTop).toBeUndefined()
+  expect(children(content)).toEqual([{ type: 'Text', props: { wrap: 'wrap', children: ['siema\ndalej'] } }])
+  expect(part(draw(), 'chat-content').props.marginTop).toBe(-1)
+})
+
+test('commands and shell rows keep the engine drawing, prose does not', () => {
+  for (const text of ['/krux czat', '  /reload-plugins', '!ls -la']) expect(isCommandText(text)).toBe(true)
+  for (const text of ['siema', 'ścieżka /tmp/a', 'a!b', '']) expect(isCommandText(text)).toBe(false)
 })
 
 test('every speaker keeps a fixed avatar and a single complete header', () => {

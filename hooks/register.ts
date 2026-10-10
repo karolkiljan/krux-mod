@@ -17,7 +17,7 @@ import { EMPTY_THREADS, THREAD_SPEC, THREAD_TOOL_NAME, replayThreads, saveThread
 import { dayReport } from './report'
 import { EMPTY_MUSTER, anyRunning, musterDone, musterRows, musterSpawn, musterTool } from './muster'
 import { KRUX_COLOR, ORC_COLOR, shaftDigest, shaftTabs, shaftTree } from './shaft'
-import { TOOL_INDENT, chatTree, toolIndent } from './chat'
+import { TOOL_INDENT, chatTree, isCommandText, toolIndent } from './chat'
 import type { AvatarSpeaker } from './avatar'
 import { EMPTY_JOURNAL, journalAfter, journalTree, toolLine } from './journal'
 import { echoLine, echoPrompt } from './echo'
@@ -427,10 +427,12 @@ type MessageInput = RenderInput<'AssistantMessage' | 'UserMessage', 'terminal'>
 // Dziś wiadomości nie mają czasu ani bodyColumns w kontrakcie. Przyjmujemy
 // timestamp/createdAt (ms lub ISO), jeśli host je poda; inaczej czas pierwszego
 // rysunku. Bez pomiaru szerokości zostaje natywna treść, bez zgadywania 80 kolumn.
-async function drawChat($: EngineInterface, e: MessageInput, speaker: AvatarSpeaker, content: RenderElement): Promise<RenderElement> {
+// `text` zastępuje rysunek silnika gołym tekstem; bez pomiaru wraca rysunek silnika.
+async function drawChat($: EngineInterface, e: MessageInput, speaker: AvatarSpeaker, native: () => Promise<RenderElement>, text?: string): Promise<RenderElement> {
   const props = e.props as unknown as Record<string, unknown>
   const columns = props.bodyColumns ?? props.columns ?? e.viewport?.columns
-  if (typeof columns !== 'number' || !Number.isFinite(columns) || columns <= 0) return content
+  if (typeof columns !== 'number' || !Number.isFinite(columns) || columns <= 0) return native()
+  const content = text ?? await native()
   const key = `${e.component}:${e.requestId}`
   let at = messageTimes.get(key)
   for (const value of [props.timestamp, props.createdAt]) {
@@ -901,7 +903,7 @@ export const register: Register = on => {
   on('ui.render', { component: 'AssistantMessage' }, async ($, e, next) => {
     if (e.surface !== GRID_SURFACE) return next(e)
     const now = await read($, modes)
-    if (now.czat) return drawChat($, e, 'Krux', await next(e))
+    if (now.czat) return drawChat($, e, 'Krux', () => next(e))
     if (!now.persona) return next(e)
     const theirs = await next(e)
     const { Box, Text } = $.ui.resolve(e)
@@ -934,9 +936,10 @@ export const register: Register = on => {
       const id = e.props.task?.id
       if (id !== undefined) {
         const mate = await reportMate($, id)
-        if (mate !== undefined) return drawChat($, e, mate, await next(e))
+        if (mate !== undefined) return drawChat($, e, mate, () => next(e))
       }
-      if (fromPerson(e.props.origin)) return drawChat($, e, 'Morra', await next(e))
+      // Prośba Morry bez tła wiersza silnika; komendy zostają podświetlone.
+      if (fromPerson(e.props.origin)) return drawChat($, e, 'Morra', () => next(e), isCommandText(e.props.text) ? undefined : e.props.text)
       return next(e)
     }
     if (!fromPerson(e.props.origin) || !now.persona) return next(e)

@@ -2216,6 +2216,11 @@ test('chat mode restored from its own store key wraps messages even with persona
   expect((await own.find({ key: 'chat-message' }))?.props.width).toBeUndefined()
   expect((await own.find({ key: 'chat' }))?.props.paddingLeft).toBeUndefined()
   expect(await own.find({ type: 'Text', text: 'siema' })).toBeDefined()
+  // Prośba Morry to goły tekst moda, bez podświetlonego wiersza silnika; komenda zostaje natywna.
+  expect((await own.find({ type: 'Text', text: 'siema' }))?.props.wrap).toBe('wrap')
+  const command = await $.ui.mount({ ...CHAT_USER, requestId: 'chat-command', props: { ...CHAT_USER.props, text: '/krux czat' } })
+  expect((await command.find({ key: 'chat-header' }))?.text?.trim()).toMatch(/^Morra · /u)
+  expect((await command.find({ type: 'Text', text: '/krux czat' }))?.props.wrap).toBeUndefined()
 })
 
 test('chat timestamps remain stable through redraw, resize and toggling off then on', async ($, on) => {
