@@ -10,6 +10,7 @@ import { builtinModules, createRequire, stripTypeScriptTypes } from 'node:module
 import { EventEmitter } from 'node:events'
 import { Writable } from 'node:stream'
 import { GIT_LOG, GIT_STATUS, gitOf } from '../hooks/git.ts'
+import { ROSTER } from '../hooks/roster.ts'
 
 const sourceOf = file => fs.readFileSync(file, 'utf8').replace(/^import .*\n/gmu, '').replace(/\nmain\(\)\.catch[\s\S]*$/u, '')
 for (const script of ['act-sheet', 'voice-bench']) test(script === 'act-sheet'
@@ -314,6 +315,7 @@ test('gating observers recover failures without repeating downstream actions', a
   const logs = []
   const context = registerContext({
     mateIn: () => null,
+    mateOfType: () => null,
     applyToggle: () => ({}),
     read: async () => ({ persona: true, sztolnia: true }),
     update: async () => { throw new Error('state unavailable') },
@@ -608,3 +610,21 @@ for (const [name, steps, exit, interrupt] of [
     assert.equal(result.unrelatedAlive, true, 'cleanup must leave an unrelated process alone')
   })
 }
+
+test('every mate has an agent definition under his type, and the scouts and the tester cannot edit', () => {
+  const skill = fs.readFileSync(new URL('../skills/krux-horda/SKILL.md', import.meta.url), 'utf8')
+  for (const [mate, { agent }] of Object.entries(ROSTER)) {
+    const text = fs.readFileSync(new URL(`../agents/${agent}.md`, import.meta.url), 'utf8')
+    const front = text.match(/^---\n([\s\S]*?)\n---\n/u)?.[1]
+    assert.ok(front, `${agent}.md bez frontmattera`)
+    assert.match(front, new RegExp(`^name: ${agent}$`, 'mu'))
+    assert.match(front, new RegExp(`^description: ${mate} z hordy Kruxa`, 'mu'))
+    assert.match(text, new RegExp(`^Jesteś ${mate},`, 'mu'))
+    assert.ok(skill.includes(`\`krux-mod:${agent}\``), `skill bez krux-mod:${agent}`)
+    const tools = front.match(/^tools: (.+)$/mu)?.[1].split(/,\s*/u)
+    if (['niuch', 'piryt', 'mlot'].includes(agent)) {
+      assert.ok(tools, `${agent}.md bez listy narzędzi`)
+      for (const edit of ['Edit', 'Write', 'NotebookEdit', 'MultiEdit']) assert.ok(!tools.includes(edit), `${agent}: ${edit}`)
+    }
+  }
+})

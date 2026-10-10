@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import { EMPTY_LORE, recordTool } from '../hooks/lore'
-import { CALM, EVENT_HOLD_MS, EVENT_SPEAKER, FADE_TOOLS, bubbleFor, eventLine, eventOf, mateIn, mateMoodAfter, mateStep, moodsAfter, moodsTick } from '../hooks/mood'
+import { CALM, EVENT_HOLD_MS, EVENT_SPEAKER, FADE_TOOLS, bubbleFor, eventLine, eventOf, mateIn, mateMoodAfter, mateOfType, mateStep, moodsAfter, moodsTick } from '../hooks/mood'
 import { describeTool } from '../hooks/voice'
 
 const failed = recordTool(EMPTY_LORE, 'Bash', { command: 'npm test' }, true)
@@ -97,6 +97,15 @@ test('the mate is the first horde name in the task, declined or not', async () =
   expect(mateIn('Ochra robi formularz', 'Grom')).toBe('Ochra')
   expect(mateIn('przeszukaj kod', 'znajdź wywołania endpointu')).toBe(null)
   expect(mateIn('Gromada plików', '')).toBe(null)
+})
+
+test('a horde agent type names its mate, other agent types leave the name to the task', async () => {
+  expect(mateOfType('krux-mod:niuch')).toBe('Niuch')
+  expect(mateOfType('krux-mod:mlot')).toBe('Młot')
+  expect(mateOfType('krux-mod:lont')).toBe('Lont')
+  for (const type of ['general-purpose', 'Explore', 'niuch', 'krux:niuch', 'krux-mod:Niuch', undefined]) {
+    expect([type, mateOfType(type)]).toEqual([type, null])
+  }
 })
 
 test('event lines carry the numbers from the lore', async () => {

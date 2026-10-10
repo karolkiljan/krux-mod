@@ -84,6 +84,12 @@ export function moodsTick(moods: KruxMoods): KruxMoods {
 }
 
 // Pierwsze imię z hordy w opisie, potem w prompcie zadania.
+// Kumpel z typu subagenta (`krux-mod:niuch`): typ wybiera definicję z `agents/`,
+// więc mówi pewniej niż imię w opisie. Inny typ to `null`, wtedy szukamy imienia.
+export function mateOfType(type: string | undefined): KruxMate | null {
+  return MATES.find(mate => type === `krux-mod:${ROSTER[mate].agent}`) ?? null
+}
+
 export function mateIn(...texts: string[]): KruxMate | null {
   for (const text of texts) {
     let best: { mate: KruxMate; at: number } | null = null

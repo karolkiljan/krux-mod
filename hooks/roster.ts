@@ -18,17 +18,19 @@ export type MateEntry = {
   // słowami swojego fachu brzmiał jak on sam. Czasowniki („przepalić”) ciągnęły
   // model w opowieść w czasie przeszłym z rodzajem („przepalił”).
   words: string
+  // Typ subagenta z `agents/<agent>.md`: Krux woła kumpla jako `krux-mod:<agent>`.
+  agent: string
   // Znak palety, którym kumpel podmienia skórzany fartuch.
   apron: string
 }
 
 export const ROSTER: Record<KruxMate, MateEntry> = {
-  Niuch: { trade: 'zwiad, debug, przyczyna błędu', pattern: /(?<!\p{L})Niuch(?:a|owi|em|u)?(?!\p{L})/u, locative: 'Niuchu', accusative: 'Niucha', trait: 'węszy wszędzie i mówi półsłówkami', words: 'ślad, trop, nora', apron: 'N' },
-  Grom: { trade: 'kuźnia: backend, API, dane', pattern: /(?<!\p{L})Grom(?:a|owi|em|ie)?(?!\p{L})/u, locative: 'Gromie', accusative: 'Groma', trait: 'mówi głośno i każdą sprawę chce wykuć od nowa', words: 'stal, palenisko, kowadło', apron: 'M' },
-  Piryt: { trade: 'ocena: review, ryzyko', pattern: /(?<!\p{L})Piry(?:t|ta|towi|tem|cie)(?!\p{L})/u, locative: 'Pirycie', accusative: 'Piryta', trait: 'zrzędzi i w każdej stali widzi pęknięcie', words: 'pęknięcie, rysa, skaza', apron: 'P' },
-  Ochra: { trade: 'frontend, UI', pattern: /(?<!\p{L})Ochr(?:a|y|ze|ę|ą|o)(?!\p{L})/u, locative: 'Ochrze', accusative: 'Ochrę', trait: 'pilnuje równych brzegów i kolorów', words: 'brzeg, barwa, krawędź', apron: 'O' },
-  Młot: { trade: 'testy, weryfikacja', pattern: /(?<!\p{L})Mło(?:t|ta|towi|tem|cie)(?!\p{L})/u, locative: 'Młocie', accusative: 'Młota', trait: 'liczy wszystko dwa razy i nie wierzy na słowo', words: 'dowód, rachunek, próba', apron: 'L' },
-  Lont: { trade: 'rozbiórka: martwy kod, refaktor', pattern: /(?<!\p{L})Lon(?:t|ta|towi|tem|cie)(?!\p{L})/u, locative: 'Loncie', accusative: 'Lonta', trait: 'kocha rozbiórkę, ale lont mierzy trzy razy', words: 'lont, miara, gruz', apron: 'T' },
+  Niuch: { trade: 'zwiad, debug, przyczyna błędu', pattern: /(?<!\p{L})Niuch(?:a|owi|em|u)?(?!\p{L})/u, locative: 'Niuchu', accusative: 'Niucha', trait: 'węszy wszędzie i mówi półsłówkami', words: 'ślad, trop, nora', agent: 'niuch', apron: 'N' },
+  Grom: { trade: 'kuźnia: backend, API, dane', pattern: /(?<!\p{L})Grom(?:a|owi|em|ie)?(?!\p{L})/u, locative: 'Gromie', accusative: 'Groma', trait: 'mówi głośno i każdą sprawę chce wykuć od nowa', words: 'stal, palenisko, kowadło', agent: 'grom', apron: 'M' },
+  Piryt: { trade: 'ocena: review, ryzyko', pattern: /(?<!\p{L})Piry(?:t|ta|towi|tem|cie)(?!\p{L})/u, locative: 'Pirycie', accusative: 'Piryta', trait: 'zrzędzi i w każdej stali widzi pęknięcie', words: 'pęknięcie, rysa, skaza', agent: 'piryt', apron: 'P' },
+  Ochra: { trade: 'frontend, UI', pattern: /(?<!\p{L})Ochr(?:a|y|ze|ę|ą|o)(?!\p{L})/u, locative: 'Ochrze', accusative: 'Ochrę', trait: 'pilnuje równych brzegów i kolorów', words: 'brzeg, barwa, krawędź', agent: 'ochra', apron: 'O' },
+  Młot: { trade: 'testy, weryfikacja', pattern: /(?<!\p{L})Mło(?:t|ta|towi|tem|cie)(?!\p{L})/u, locative: 'Młocie', accusative: 'Młota', trait: 'liczy wszystko dwa razy i nie wierzy na słowo', words: 'dowód, rachunek, próba', agent: 'mlot', apron: 'L' },
+  Lont: { trade: 'rozbiórka: martwy kod, refaktor', pattern: /(?<!\p{L})Lon(?:t|ta|towi|tem|cie)(?!\p{L})/u, locative: 'Loncie', accusative: 'Lonta', trait: 'kocha rozbiórkę, ale lont mierzy trzy razy', words: 'lont, miara, gruz', agent: 'lont', apron: 'T' },
 }
 
 // Kolejność wpisów to kolejność w panelu i przy szukaniu imienia.

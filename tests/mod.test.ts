@@ -124,7 +124,7 @@ function engine(on: On, saved: Map<string, unknown>, extras: Extras = {}) {
 }
 
 // Harness dopełnia resztę pól spawnu i pętlę narzędzia; typy chcą pełnego wejścia silnika.
-function spawnOf(input: { prompt: string; description: string; parentAgentId?: string; run_in_background?: boolean }) {
+function spawnOf(input: { prompt: string; description: string; parentAgentId?: string; run_in_background?: boolean; subagentType?: string }) {
   return input as unknown as Parameters<Engine['agent']['spawn']>[0]
 }
 
@@ -541,6 +541,16 @@ test('a dispatched Niuch runs onto the stage in his apron and takes the bubble',
   expect(await forgeColors(ui)).toContain(NIUCH)
   await ui.advance(600)
   expect(await ui.find({ type: 'Text', in: 'forge', text: /│ węszyć lore │/ })).toBeDefined()
+})
+
+test('a horde agent type puts its mate on stage even when the task does not name him', async ($, on) => {
+  engine(on, new Map(), { agents: [{ id: 'a1', status: 'running' }] })
+  await start($)
+  await $.turn.start({ text: 'szukaj', turnId: 't1' })
+  await $.agent.spawn(spawnOf({ prompt: 'Znajdź wywołania endpointu.', description: 'zwiad endpointu', subagentType: 'krux-mod:niuch' }))
+  await $.tool.call(inLoop('a1', { tool: 'Grep', pattern: 'lore' }))
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await forgeColors(ui)).toContain(NIUCH)
 })
 
 test('the band keeps six rows when nobody talks, so nothing jumps', async ($, on) => {

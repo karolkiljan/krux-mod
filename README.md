@@ -66,7 +66,7 @@ claude plugin disable krux@krux-marketplace
 
 Bez `on`/`off` komenda przełącza tryb na przeciwny. `/krux` działa także w trakcie tury i nie kosztuje wywołania modelu. Stare frazy z pluginu (`włącz krux`, `wyłącz konkret`, …) dalej działają, gdy stanowią całą wiadomość. Stan trybów jest trwały i przeżywa restart sesji.
 
-Mapa hordy ładuje się na żądanie: `/krux-mod:krux-horda`.
+Mapa hordy ładuje się na żądanie: `/krux-mod:krux-horda`. Kumple to typy subagentów z `agents/`: `krux-mod:niuch`, `krux-mod:grom`, `krux-mod:piryt`, `krux-mod:ochra`, `krux-mod:mlot`, `krux-mod:lont`. Każdy ma fach, narzędzia, model i format raportu: Niuch i Piryt tylko czytają, Młot puszcza testy i melduje bez edycji, Lont rusza tylko pliki śledzone przez git; Niuch i Młot chodzą na Haiku. Wysłany typem kumpel wbiega na scenę we własnym fartuchu, także gdy opis zadania nie ma jego imienia.
 
 ## Animacje
 
@@ -97,7 +97,7 @@ Okna zgody na narzędzia obsługuje silnik Claude Code. Mod nie podłącza `tool
 
 Poprawność, bezpieczeństwo i wymagany format wyprzedzają głos. Liczby, wersje, ścieżki, komendy i komunikaty błędów idą dosłownie. Kod, JSON, commit messages i opisy PR pozostają neutralne. Przed ruchem nieodwracalnym Krux przechodzi na pełne zdania: warunek, skutek, droga odwrotu.
 
-Mod to kod uruchamiany z uprawnieniami użytkownika. Ten czyta trzy pliki z `voice/`, ustawienia (`prefersReducedMotion`), listę komend, historię sesji (`$.session.messages`, do odtworzenia kroniki i tablicy po wznowieniu), zużycie kontekstu i limitów (`$.session.usage`) oraz listę agentów (`$.agent.list`). Uruchamia do pięciu komend, wszystkich tylko do odczytu: `git status` (stan repo), `git log -n 10` (ostatnie commity), `git diff --check` i `git diff --cached --check` (białe znaki w drzewie roboczym i indeksie) oraz `git rev-list @{upstream}..HEAD` (niewypchnięte commity, gdy repo ma upstream). Rejestruje jedno narzędzie dla modelu, `mcp__krux-mod__watki`: otwarte wątki tablicy, trzymane w stanie sesji. Pisze wyłącznie do własnego magazynu `$.store` (tryby) i stanu sesji. Nie wysyła niczego poza sesję. Persona i kotwica głosu trafiają do promptu modelu, tak jak reszta sesji, więc każda tura kosztuje trochę więcej tokenów. Pełna lista: `claude plugin validate .`.
+Mod to kod uruchamiany z uprawnieniami użytkownika. Ten czyta trzy pliki z `voice/`, ustawienia (`prefersReducedMotion`), listę komend, historię sesji (`$.session.messages`, do odtworzenia kroniki i tablicy po wznowieniu), zużycie kontekstu i limitów (`$.session.usage`) oraz listę agentów (`$.agent.list`). Uruchamia do pięciu komend, wszystkich tylko do odczytu: `git status` (stan repo), `git log -n 10` (ostatnie commity), `git diff --check` i `git diff --cached --check` (białe znaki w drzewie roboczym i indeksie) oraz `git rev-list @{upstream}..HEAD` (niewypchnięte commity, gdy repo ma upstream). Rejestruje jedno narzędzie dla modelu, `mcp__krux-mod__watki`: otwarte wątki tablicy, trzymane w stanie sesji. Dostarcza 6 typów subagentów (`agents/*.md`); uruchamia je model, gdy wyśle kumpla, z narzędziami z ich definicji i zgodami silnika. Pisze wyłącznie do własnego magazynu `$.store` (tryby) i stanu sesji. Nie wysyła niczego poza sesję. Persona i kotwica głosu trafiają do promptu modelu, tak jak reszta sesji, więc każda tura kosztuje trochę więcej tokenów. Pełna lista: `claude plugin validate .`.
 
 ## Rozwój
 
