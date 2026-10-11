@@ -118,7 +118,7 @@ Macierz mówi, co uruchamia zdarzenie i jakich pułapek silnika pilnować. Progi
 | `ui.fault` | płótno `forge.ts` padło (`load`, `render`, `run`) | `forgeFault`: pas i panel `/krux` rysują sam tekst do reloadu modułu (`/clear` modułu nie przeładowuje); linia do debug logu; miejsce rysuje od nowa silnik (test w `scripts-regression.mjs`: zestaw `claude plugin test` nie odpala `ui.fault`) |
 | `ui.render` `Pane` `krux` | panel otwarty | palenisko, przyciski 1–7 w komórkach `MODE_CELL`, zawijane do szerokości, horda |
 | `ui.render` `Pane` `sztolnia` | karta Stan | `shaftTabs` nad `shaftTree`; „Git” i „Commity” na górze, pod nimi „Wątki”, „Plan”, „Testy”, „Horda”, więc góra nie skacze; każda sekcja tylko z treścią, listy rosną z `scroll.bodyRows`; w doku „Kontekst” przypięty do dołu (okno, tokeny, limity, koszt), nad promptem (`inline`) `bodyRows` to limit, więc panel rośnie z treścią bez `minHeight`; bez roboty „Tablica pusta”; diff zostaje dla `/diff` |
-| `ui.render` `Pane` `sztolnia` | karta Dziennik | `shaftTabs` nad `journalTree`; przyciski zmieniają `shaftTab`, początkowo Stan |
+| `ui.render` `Pane` `sztolnia` | karta Dziennik | `shaftTabs` nad `journalTree`; przyciski zmieniają `shaftTab` (przy fokusie panelu klawisze `1` Stan, `2` Dziennik), początkowo Stan |
 
 ## Niezmienniki
 

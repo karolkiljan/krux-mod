@@ -39,7 +39,8 @@ export function shaftTabs({ Box, Text, Button }: ShaftTabElements, active: KruxS
       children: [
         // Button nie przyjmuje koloru. Znak aktywnej karty rysuje Text.
         Text({ dimColor: tab !== active, ...(tab === active ? { color: KRUX_COLOR } : {}), children: [tab === active ? '▸' : '·'] }),
-        Button({ key: `shaft-tab-${tab}`, label: tab === 'stan' ? 'Stan' : 'Dziennik', plain: true, dimColor: tab !== active, onPress: () => onPress(tab) }),
+        // Cyfra jak w `hello-tabs`: przy fokusie panelu karta jednym klawiszem.
+        Button({ key: `shaft-tab-${tab}`, label: tab === 'stan' ? 'Stan' : 'Dziennik', hotkey: tab === 'stan' ? '1' : '2', plain: true, dimColor: tab !== active, onPress: () => onPress(tab) }),
       ],
     })),
   })

@@ -410,6 +410,7 @@ test('tab rendering never calls onPress and each button passes its own card', as
   await (buttons[0]!.props.onPress as () => Promise<void>)()
   expect(chosen).toEqual(['dziennik', 'stan'])
   expect(buttons.map(button => button.props.key)).toEqual(['shaft-tab-stan', 'shaft-tab-dziennik'])
+  expect(buttons.map(button => button.props.hotkey)).toEqual(['1', '2'])
 })
 
 test('tab buttons also accept a synchronous handler', () => {
