@@ -103,6 +103,18 @@ const messageTimes = new Map<string, number>()
 // Id narzędzi z grup w czacie: wcięcie daje grupa, jej wiersze `ToolUse` (także
 // zwinięty wiersz, który silnik rysuje przez `ToolUse`) stoją w niej bez drugiego.
 const groupedTools = new Set<string>()
+// Obie pamięci rosną z sesją; limit z dużym zapasem, żeby redraw dawnej wiadomości
+// nie przesunął godziny ani nie zgubił wcięcia, a długa sesja nie rosła bez końca.
+const MESSAGE_TIMES_LIMIT = 2000
+const GROUPED_TOOLS_LIMIT = 4000
+
+// Najstarsze wpisy wypadają pierwsze (kolejność wstawiania Map i Set).
+function trimOldest(entries: Map<string, unknown> | Set<string>, limit: number): void {
+  for (const key of entries.keys()) {
+    if (entries.size <= limit) return
+    entries.delete(key)
+  }
+}
 let journalWatch: { cancel: () => void } | null = null
 let journalWatchVersion = 0
 let journalWatchRequests = 0
@@ -440,7 +452,10 @@ async function drawChat($: EngineInterface, e: MessageInput, speaker: AvatarSpea
     at = messageTimes.get(key) ?? first
   }
   // Dwa równoległe pierwsze rysunki tego id nie zastępują sobie czasu.
-  if (!messageTimes.has(key)) messageTimes.set(key, at)
+  if (!messageTimes.has(key)) {
+    messageTimes.set(key, at)
+    trimOldest(messageTimes, MESSAGE_TIMES_LIMIT)
+  }
   const date = new Date(at)
   const time = [date.getHours(), date.getMinutes()].map(value => String(value).padStart(2, '0')).join(':')
   return chatTree($.ui.resolve(e), { speaker, time, content })
@@ -965,6 +980,7 @@ export const register: Register = on => {
         groupedTools.add(call.tool_use_id)
         joined = true
       }
+      trimOldest(groupedTools, GROUPED_TOOLS_LIMIT)
       const content = await next(e)
       if (joined) $.ui.invalidate('ui.render')
       return toolIndent(table, content)

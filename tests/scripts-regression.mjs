@@ -218,6 +218,15 @@ test('a failed counter reset fails after compaction without running next twice',
   assert.equal(hook.catch, undefined)
 })
 
+test('module memories of chat times and grouped tools drop their oldest entries past the limit', () => {
+  const context = registerContext()
+  const times = vm.runInContext('const times = new Map(); for (let i = 0; i < 5; i += 1) times.set(`m${i}`, i); trimOldest(times, 3); [...times.keys()]', context)
+  assert.deepEqual(Array.from(times), ['m2', 'm3', 'm4'])
+  const tools = vm.runInContext('const tools = new Set(["a", "b"]); trimOldest(tools, 3); [...tools]', context)
+  assert.deepEqual(Array.from(tools), ['a', 'b'])
+  assert.deepEqual(Array.from(vm.runInContext('[MESSAGE_TIMES_LIMIT, GROUPED_TOOLS_LIMIT]', context)), [2000, 4000])
+})
+
 test('git refresh runs status, log and diff check concurrently and coalesces overlapping reads with one trailing refresh', async () => {
   const gitSource = fs.readFileSync('hooks/git.ts', 'utf8').replace(/^import .*\n/gmu, '').replaceAll('export ', '')
   const gitContext = vm.createContext({})
