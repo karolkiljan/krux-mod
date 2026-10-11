@@ -27,7 +27,7 @@ Notatka do zmian w `voice/persona.md`, `hooks/voice.ts` i `scripts/voice-bench.m
 
 ## Pomiar
 
-Scenariusz `cache`, `claude-opus-5-5`, 12 tur. Raporty w `benchmarks/voice-bench/2026-10-04*` (pole `anchorNote`).
+Scenariusz `cache`, `claude-opus-5-5`, 12 tur. Raporty w `benchmarks/voice-bench/2026-10-04*` (pole `anchorNote`) na gałęzi `bench/voice-bench`.
 
 | Wariant | Przebiegi | Bezokoliczniki / 100 słów | Powtórzone zamknięcia | Powtórzone otwarcia hordy | Tury z hordą | Widoczne tokeny | Koszt |
 |---|---|---|---|---|---|---|---|
@@ -59,7 +59,7 @@ Przegląd warstwy głosu na danych: 575 odpowiedzi z historii sesji tego repo (1
 
 ### Pomiar
 
-Scenariusz `cache`, `claude-opus-5-5`, 12 tur, przebiegi równolegle. Baza to HEAD `dfe619a` z `git archive`, wariant to drzewo robocze ze zmianami powyżej. Raporty w `benchmarks/voice-bench/2026-10-06*`.
+Scenariusz `cache`, `claude-opus-5-5`, 12 tur, przebiegi równolegle. Baza to HEAD `dfe619a` z `git archive`, wariant to drzewo robocze ze zmianami powyżej. Raporty w `benchmarks/voice-bench/2026-10-06*` na gałęzi `bench/voice-bench`.
 
 | Wariant | Przebiegi | Bezokoliczniki / 100 słów | Wstawka w ostatnim akapicie | Powtórzone zamknięcia | Powtórzone otwarcia hordy | Zgoda na końcu | Druga osoba | Widoczne tokeny | Koszt |
 |---|---|---|---|---|---|---|---|---|---|
@@ -70,7 +70,7 @@ Wniosek: miejsce z kodu działa zgodnie z planem. Wstawka kończy 8 z 16 odpowie
 
 ### Rozdzielenie
 
-Po commicie `b3751fb` dwa warianty po 2 przebiegi, każdy z jedną zmianą cofniętą: nowa wersja ze starą personą (`dfe619a:voice/persona.md`) i nowa wersja ze starą notką o hordzie (z „jeśli pasuje”, bez charakteru i miejsca). Raporty `benchmarks/voice-bench/2026-10-06T10-1*`, razem $1,29.
+Po commicie `b3751fb` dwa warianty po 2 przebiegi, każdy z jedną zmianą cofniętą: nowa wersja ze starą personą (`dfe619a:voice/persona.md`) i nowa wersja ze starą notką o hordzie (z „jeśli pasuje”, bez charakteru i miejsca). Raporty `benchmarks/voice-bench/2026-10-06T10-1*` (gałąź `bench/voice-bench`), razem $1,29.
 
 | Wariant | Przebiegi | Bezokoliczniki / 100 słów | Średnio | Wstawka w ostatnim akapicie | Zgoda na końcu |
 |---|---|---|---|---|---|
