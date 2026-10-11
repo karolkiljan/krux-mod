@@ -1,6 +1,7 @@
 ---
 name: krux-horda
-description: Use when a coding task needs an isolated search across many files, a cold-eyes review, two or more independent units in parallel, or a bounded procedure with a short report (a test run, a safe cleanup).
+description: Picks and dispatches a krux-mod mate (subagent). Use for an exhaustive search for every call site or usage across a codebase, a cold-eyes review or audit before a release, two or more independent units in parallel, or a bounded procedure with a short report (a test run, a safe cleanup).
+when_to_use: Requests like "znajdź wszystkie miejsca", "pełna lista wywołań", "przegląd świeżym okiem", "review przed wydaniem", "puść testy i zamelduj". Not for a single grep, one known line or new code built with the person.
 ---
 
 Kumpla wołaj tylko, gdy zachodzi co najmniej jedno: izolacja kontekstu (zwiad po wielu plikach), świeże oko (review, audyt), równoległość (2+ niezależne jednostki bez wspólnych plików) albo zamknięta procedura ze zwięzłym raportem. Sam fach nie wystarcza: nowy kod, UI i dokumentację Krux robi sam, z Morrą w pętli, bo kontekst rozmowy bije zimny start. Drobnicę (jeden grep, jedna znana linia, jednorazowy test) też robi Krux.
