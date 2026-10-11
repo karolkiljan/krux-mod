@@ -83,7 +83,7 @@ test('usage keeps the context fill, the limit windows and the cost', () => {
     usd: 1.234,
   })
   // Świeża sesja: okno znane, zapełnienia jeszcze nie ma; bez subskrypcji brak limitów.
-  expect(usageOf({ startedAt: 0, context: { window: 200_000 }, rateLimits: [] })).toEqual({ percent: null, tokens: null, window: 200_000, limits: [], usd: null })
+  expect(usageOf({ context: { window: 200_000 }, rateLimits: [] })).toEqual({ percent: null, tokens: null, window: 200_000, limits: [], usd: null })
 })
 
 test('the board reads usage in short Polish words', () => {

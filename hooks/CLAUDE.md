@@ -59,7 +59,7 @@ Macierz mówi, co uruchamia zdarzenie i jakich pułapek silnika pilnować. Progi
 | `prompt.submit` | inny tekst, persona `on` | kotwica w `context`: pełna w turze 0, co `REFRESH_TURNS` i po dryfie (z poprawką), inaczej `VOICE_SHORT`. Od człowieka dodatkowo: notka o hordzie po `QUIET_TURNS` (`lifeNote`), linia nastroju (`moodNote`, raz na zdarzenie, nie przy ryzyku, planie ani wydaniu), `formatHint`; prośba o ruch nieodwracalny (`riskHint`) dostaje `RISK_HINT` zamiast notki. Raport subagenta, inna sesja, harmonogram: sama kotwica |
 | `prompt.submit` | są notki z panelu | notki przed kotwicą, jednorazowo |
 | `session.compact` | wątek główny, persona `on` | `COMPACT_NOTE` w instrukcjach; po kompakcji (nie `precompute`) licznik tur na 0 |
-| odczyt zużycia (`refreshUsage`) | `session.start`, główne `tool.call` bez `deny`, główne `turn.complete` | okno limitu ≥ 80% włącza `autoKonkret`, wszystkie poniżej gaszą; toast tylko przy zmianie flagi; `$.store` nietknięty; wyścigi rozstrzyga wersja żądania (niezmienniki) |
+| zużycie (`applyUsage`) | odczyt `refreshUsage` po `session.start`, potem liczby pchane w `session.measure` (po każdej turze i przy ruchu limitu o pełny punkt); mod nie pyta po narzędziu ani turze | okno limitu ≥ 80% włącza `autoKonkret`, wszystkie poniżej gaszą; toast tylko przy zmianie flagi; `$.store` nietknięty; wyścigi rozstrzyga wersja żądania (niezmienniki) |
 
 ### Komendy
 
@@ -82,14 +82,14 @@ Macierz mówi, co uruchamia zdarzenie i jakich pułapek silnika pilnować. Progi
 | `turn.start`, `tool.call`, `turn.complete` | wątek główny | licznik uderzeń tury i sesji, opis roboty dla paska; wynik `tool.call` do kroniki |
 | `turn.step` | główny albo kumpel na scenie | `thinking` → `think`, `text` → `write`, `tool` → `describeToolAhead` (poza `Bash`: jego rodzaj zna dopiero `tool.call`); `startedAt` tylko przy zmianie rodzaju; błąd obserwacji gubi scenę, nie strumień |
 | `tool.call` | główny, zdarzenie kroniki | humor (`mood.ts`), wtręt kumpla z fachem na 4 s (`$.clock.after` po zapisie dymka), znak reakcji Kruxa w `cues`; bez zdarzenia humor gaśnie po 8 wywołaniach. Zdarzenia rozpoznaje `workOf`: kolor testów jak tablica (`testPassed`), commit tylko prawdziwy `git commit`, zawał nie z samych odczytów; Bash w tle nie daje ukończonych faktów |
-| `tool.call` | główny, bez `deny` | tablica (`boardAfter`): plan z `TodoWrite`/`TaskCreate`/`TaskUpdate`; przebieg testów (`workOf` = `test`, nie w tle) z ostatniego podsumowania, z nazwami padłych i `✗` mimo kodu 0; zapis przy zmianie, potem odczyt zużycia |
+| `tool.call` | główny, bez `deny` | tablica (`boardAfter`): plan z `TodoWrite`/`TaskCreate`/`TaskUpdate`; przebieg testów (`workOf` = `test`, nie w tle) z ostatniego podsumowania, z nazwami padłych i `✗` mimo kodu 0; zapis przy zmianie |
 | `tool.call` | główny albo kumpel, edycja lub testy, bez `deny` | jeden `$.clock.now()` na `boardStep`; edycja poza dokumentacją → `editedAt`, przebieg → `test.at`; późniejsza edycja kodu daje `◌ nieświeże` |
 | `tool.call` z planem | zadanie `in_progress` ze `startedAt` | `tickBoard`: zapis `musterNow` przy 15 min, potem co pełną minutę; nowy plan unieważnia stary harmonogram, brak zadań w toku kończy zegar |
 | `tool.call` | `test-fail`, główny albo kumpel | `CrewEvent.failure?` niesie nazwę padłego testu z bieżącego wyniku do `eventLine` |
 | `tool.call` | dowolny wątek, bez `deny` | `journalAfter` w `update`: `tool_use_id`, `agentId`, kto, czas końca; także przy czacie off |
 | `tool.call` | dowolny wątek, `changesRepo` (`voice.ts`, z `workOf`): edycje i Bash poza samym odczytem (`look`, `trail` bez przekierowania do pliku, `find -delete` ani `git branch` z nazwą); bez `deny` | `refreshGit` (status, log, `GIT_CHECK`, `GIT_CHECK_CACHED`, przy upstream `GIT_UNPUSHED`; 5 s na komendę); zapis przy zmianie, poza repo `null`; wzrost `behind` daje toast „origin ma N nowych commitów — git pull.” |
 | `tool.call` `mcp__krux-mod__watki` | model otwiera albo zamyka wątki | `threadsAfter` w `update`, wynik tekstem (obiekt silnik odrzuca); silnik odkłada narzędzie jak MCP, więc model widzi samą nazwę, póki jej nie wyszuka |
-| `turn.complete` | wątek główny | `turnAt` na zero; po ≥ 300 s toast „Krux skończyć po N min.”; odczyt zużycia i repo |
+| `turn.complete` | wątek główny | `turnAt` na zero; po ≥ 300 s toast „Krux skończyć po N min.”; odczyt repo |
 | `turn.complete` | główny, `reason: answer`, persona `on` | werdykt miernika zastępuje `drift` (`null` przy za krótkiej odpowiedzi i ostrzeżeniu przed ruchem nieodwracalnym); kumple z odpowiedzi do kroniki |
 
 ### Horda
@@ -159,7 +159,7 @@ Uzupełniają zasady przekrojowe z korzenia `CLAUDE.md` i ich nie powtarzają. U
 - `startedAt` zadania: wejście w `in_progress`, zostaje przy powtórzeniu statusu, znika przy wyjściu. `stuckMinutes` daje pełne minuty od 15 min. Stary harmonogram zegara planu nie nadpisze nowego; `musterNow` to wspólna zależność panelu i skrótu pasa.
 - Odczyty gita koalescowane: równoległe żądania czekają na wspólny odczyt, potem najwyżej jeden zaległy. Każda komenda 5 s i `--no-optional-locks`. `whitespace` z kodów obu kontroli: dowolne 2 → `false`, dwa 0 → `true`, reszta `null`. Toast `behind` porównuje zapisane odczyty; pierwszy, równy i mniejszy milczą.
 - `readiness`: zielone i świeże testy, `whitespace !== false`, brak konfliktów; nieznane białe znaki nie blokują. Linia gotowości tylko przy `changed + untracked > 0`; każdy brak ma tekst i znak.
-- `autoKonkret`, `turnAt`, `seenAt`, `lastPrompt` żyją tylko w `$.state` (`lastPrompt` nie wraca po `replay`). Auto konkret wynika z limitów planu, nie kontekstu; każde żądanie ma rosnącą wersję, flagę przypisuje w `update` tylko najnowsze, start sesji unieważnia starsze. Ręczny konkret przeżywa reset limitów i ma pierwszeństwo w `statusLine`. Kumple nie ruszają zegara głównej tury; `seenAt` zmieniają tylko prompty z `fromPerson`. Toasty czasu i powrotu nic nie dokładają do modelu.
+- `autoKonkret`, `turnAt`, `seenAt`, `lastPrompt` żyją tylko w `$.state` (`lastPrompt` nie wraca po `replay`). Auto konkret wynika z limitów planu, nie kontekstu; każdy odczyt i pomiar ma rosnącą wersję, flagę przypisuje w `update` tylko najnowszy, start sesji i `clear/resume/fork` unieważniają starsze. Ręczny konkret przeżywa reset limitów i ma pierwszeństwo w `statusLine`. Kumple nie ruszają zegara głównej tury; `seenAt` zmieniają tylko prompty z `fromPerson`. Toasty czasu i powrotu nic nie dokładają do modelu.
 - `saveThread` dzieli numerację, deduplikację i limity z `watki`; duplikat nie zużywa id. Raport dnia: wyłącznie dane sesji, do 10 commitów, bez modelu i głosu orka.
 
 ### Pas, scena i dymek

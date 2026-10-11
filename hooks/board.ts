@@ -247,7 +247,7 @@ export function planCount(tasks: readonly KruxTask[]): string {
 }
 
 // Odczyt `$.session.usage()` w kształcie, który da się trzymać w `$.state`.
-export function usageOf(raw: SessionUsage): KruxUsage {
+export function usageOf(raw: Pick<SessionUsage, 'context' | 'rateLimits' | 'cost'>): KruxUsage {
   return {
     percent: raw.context.percent ?? null,
     tokens: raw.context.tokens ?? null,

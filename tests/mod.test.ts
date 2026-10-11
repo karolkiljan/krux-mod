@@ -95,6 +95,7 @@ function engine(on: On, saved: Map<string, unknown>, extras: Extras = {}) {
   on('session.start', () => ({ cwd: '/work' }))
   on('session.messages', () => ({ value: extras.history ?? [] }))
   on('session.usage', async () => ({ value: extras.usageRead ? await extras.usageRead() : extras.usage ?? { startedAt: 0, context: { window: 200_000 }, rateLimits: [] } }))
+  on('session.measure', ($, e) => ({ changed: e.changed }))
   const clock = mock.clock(on)
   let spawned = 0
   on('agent.spawn', () => {
@@ -136,6 +137,11 @@ function inLoop(agentId: string, input: Record<string, unknown>) {
 async function start($: Engine, clock?: { settle(): Promise<void> }) {
   await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' })
   await clock?.settle()
+}
+
+// Silnik pcha liczby zużycia po turze i przy ruchu limitu; test pcha je sam.
+async function measure($: Engine, usage: SessionUsage): Promise<void> {
+  await $.session.measure({ context: usage.context, rateLimits: usage.rateLimits, ...(usage.cost ? { cost: usage.cost } : {}), changed: ['rateLimits'] })
 }
 
 async function sectionIds($: Engine): Promise<string[]> {
@@ -1917,14 +1923,14 @@ test('plan limits turn automatic konkret on at eighty percent and off only when 
   expect(toasts).toEqual(['Limit planu 80%: konkret włączony do resetu.'])
   const ui = await $.ui.mount({ plugin: 'krux-mod', surface: 'terminal', component: 'SessionMode', requestId: 'mode', props: { modes: [] } } as never)
   expect(await ui.find({ type: 'Text', text: 'krux,konkret (auto)' })).toBeDefined()
-  await $.tool.call({ tool: 'Read', file_path: '/work/a.ts' })
+  await measure($, usage)
   expect(toasts).toHaveLength(1)
   usage.rateLimits[0]!.percentUsed = 80
   usage.rateLimits[1]!.percentUsed = 0
-  await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't1', reason: 'answer' })
+  await measure($, usage)
   expect(toasts).toHaveLength(1)
   usage.rateLimits[0]!.percentUsed = 79
-  await $.tool.call({ tool: 'Read', file_path: '/work/a.ts' })
+  await measure($, usage)
   expect(await sectionIds($)).toEqual(['intro', 'krux-mod:persona'])
   expect(toasts).toHaveLength(2)
   expect(toasts[1]).toContain('Konkret automatyczny wyłączony')
@@ -1965,91 +1971,80 @@ test('/krux status reports auto, manual and off konkret without saving the autom
   const disabled = await $.command.run({ ...command, args: 'konkret off' })
   expect(disabled.text).toContain('konkret: auto')
   usage.rateLimits = []
-  await $.tool.call({ tool: 'Read', file_path: '/work/a.ts' })
+  await measure($, usage)
   expect((await $.command.run({ ...command, args: 'status' })).text).toContain('konkret: off')
   expect(saved.get('mode.konkret')).toBe(false)
   expect(saved.size).toBe(1)
 })
 
-test('a completed limit reset wins over an older usage read that returns late', async ($, on) => {
+test('a measured limit reset wins over a start read that returns late', async ($, on) => {
   const low: SessionUsage = { startedAt: 0, context: { window: 200_000 }, rateLimits: [{ kind: 'five_hour', percentUsed: 0 }] }
   const high: SessionUsage = { ...low, rateLimits: [{ kind: 'five_hour', percentUsed: 90 }] }
   let enterFirst!: () => void
   let releaseFirst!: () => void
   const firstEntered = new Promise<void>(resolve => { enterFirst = resolve })
   const firstGate = new Promise<void>(resolve => { releaseFirst = resolve })
-  let reads = 0
   const toasts: string[] = []
-  const clock = engine(on, new Map(), { toasts, usageRead: async () => {
-    reads += 1
-    if (reads === 1) return low
-    if (reads === 2) { enterFirst(); await firstGate; return high }
-    return low
-  } })
-  await start($, clock)
+  const clock = engine(on, new Map(), { toasts, usageRead: async () => { enterFirst(); await firstGate; return high } })
+  await start($)
   const command = { command: 'krux', args: 'status', origin: ORIGIN, presentation: { isFullscreen: false, columns: 120 } }
   const off = {
     sections: ['intro', 'krux-mod:persona'],
     status: 'persona: on · konkret: off · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off',
   }
   const snapshot = async () => ({ sections: await sectionIds($), status: (await $.command.run(command)).text })
-  const oldRead = $.tool.call({ tool: 'Read', file_path: '/work/old-read.ts' })
+  // Odczyt ze startu czeka; w tym czasie silnik pcha świeższe liczby.
+  const startRead = clock.settle()
   try {
     await firstEntered
-    await $.tool.call({ tool: 'Read', file_path: '/work/new-read.ts' })
+    await measure($, low)
     expect(await snapshot()).toEqual(off)
   } finally {
     releaseFirst()
-    await oldRead
+    await startRead
   }
   expect(await snapshot()).toEqual(off)
   expect(toasts).toEqual([])
 })
 
-test('a limit crossing toasts once even when a newer read starts while the flag is being saved', async ($, on) => {
+test('a limit crossing toasts once even when a newer measurement arrives while the flag is being saved', async ($, on) => {
   const low: SessionUsage = { startedAt: 0, context: { window: 200_000 }, rateLimits: [{ kind: 'five_hour', percentUsed: 0 }] }
   const high: SessionUsage = { ...low, rateLimits: [{ kind: 'five_hour', percentUsed: 90 }] }
-  let reads = 0
   let enterNewer!: () => void
   const newerEntered = new Promise<void>(resolve => { enterNewer = resolve })
   const toasts: string[] = []
-  const clock = engine(on, new Map(), { toasts, usageRead: () => {
-    reads += 1
-    if (reads === 3) enterNewer()
-    return reads === 1 ? low : high
-  } })
+  const clock = engine(on, new Map(), { toasts, usage: low })
   let newer: Promise<unknown> | null = null
+  on('state.get', ($state, e, next) => {
+    // Nowszy pomiar już podbił wersję, gdy czyta zużycie.
+    if (e.plugin === 'krux-mod' && e.key === 'usage' && newer !== null) enterNewer()
+    return next(e)
+  })
   on('state.set', async ($state, e, next) => {
-    // Zapis flagi z pierwszego odczytu 90% czeka, aż ruszy nowszy odczyt.
+    // Zapis flagi z pierwszego pomiaru 90% czeka, aż ruszy nowszy pomiar.
     if (e.plugin === 'krux-mod' && e.key === 'autoKonkret' && e.value === true && newer === null) {
-      newer = $.tool.call({ tool: 'Read', file_path: '/work/newer.ts' })
+      newer = measure($, high)
       await newerEntered
     }
     return next(e)
   })
   await start($, clock)
-  await $.tool.call({ tool: 'Read', file_path: '/work/older.ts' })
+  await measure($, high)
   await newer
   expect(toasts.filter(text => text.startsWith('Limit planu 80%'))).toEqual(['Limit planu 80%: konkret włączony do resetu.'])
 })
 
-test('/clear invalidates a usage read still in flight from before the reset', async ($, on) => {
-  const low: SessionUsage = { startedAt: 0, context: { window: 200_000 }, rateLimits: [{ kind: 'five_hour', percentUsed: 0 }] }
-  const high: SessionUsage = { ...low, rateLimits: [{ kind: 'five_hour', percentUsed: 90 }] }
-  let reads = 0
+test('/clear invalidates a start usage read still in flight', async ($, on) => {
+  const high: SessionUsage = { startedAt: 0, context: { window: 200_000 }, rateLimits: [{ kind: 'five_hour', percentUsed: 90 }] }
   let enterOld!: () => void
   let releaseOld!: () => void
   const oldEntered = new Promise<void>(resolve => { enterOld = resolve })
   const oldGate = new Promise<void>(resolve => { releaseOld = resolve })
   const toasts: string[] = []
-  const clock = engine(on, new Map(), { toasts, usageRead: async () => {
-    reads += 1
-    if (reads === 2) { enterOld(); await oldGate; return high }
-    return low
-  } })
+  const clock = engine(on, new Map(), { toasts, usageRead: async () => { enterOld(); await oldGate; return high } })
   on('classic.SessionStart', () => ({}))
-  await start($, clock)
-  const oldRead = $.tool.call({ tool: 'Read', file_path: '/work/before-clear.ts' })
+  await start($)
+  const oldRead = clock.settle()
   try {
     await oldEntered
     await $.classic.SessionStart({ source: 'clear' })

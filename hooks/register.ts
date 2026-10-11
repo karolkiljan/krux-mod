@@ -1,5 +1,5 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register, RenderElement, RenderInput } from 'claude-code'
+import type { EngineInterface, Register, RenderElement, RenderInput, SessionUsage } from 'claude-code'
 
 import type { KruxActivity, KruxBoard, KruxEvent, KruxGit, KruxHordeMember, KruxMode, KruxModes, KruxTestRun } from '../types'
 import { CAPTION_COLUMNS, CAPTION_GAP, bandPlan } from './band'
@@ -565,28 +565,34 @@ async function boardStep($: EngineInterface, tool: string, input: Record<string,
 // Zapełnienie kontekstu, limity i koszt dla Sztolni; bez odczytu zostaje stary.
 let usageVersion = 0
 
+// Odczyt na starcie; potem liczby pcha silnik w `session.measure` (po każdej turze
+// i przy ruchu limitu o pełny punkt), więc mod nie pyta po każdym narzędziu.
 async function refreshUsage($: EngineInterface): Promise<void> {
   const version = ++usageVersion
   try {
-    const now = usageOf(await $.session.usage())
-    if (version !== usageVersion) return
-    // Bez zmiany bez zapisu: zapis przerysowuje Sztolnię.
-    // Starszy odczyt nie cofa resetu, także gdy czekał na zapis stanu.
-    await update($, usage, current => version !== usageVersion || JSON.stringify(current) === JSON.stringify(now) ? current : now)
-    if (version !== usageVersion) return
-    const automatic = now.limits.some(limit => limit.percentUsed >= 80)
-    // Toast należy do żądania, które było najnowsze w chwili zapisu flagi: nowsze
-    // żądanie widzi już zmienioną flagę, więc samo by go nie pokazało.
-    let changed = false
-    await update($, autoKonkret, current => {
-      if (version !== usageVersion) return current
-      changed = current !== automatic
-      return automatic
-    })
-    if (changed) $.ui.toast(automatic ? 'Limit planu 80%: konkret włączony do resetu.' : 'Konkret automatyczny wyłączony: limity planu poniżej 80%.')
+    await applyUsage($, await $.session.usage(), version)
   } catch {
     // Brak odczytu to nie powód, by psuć narzędzie czy turę.
   }
+}
+
+async function applyUsage($: EngineInterface, raw: Pick<SessionUsage, 'context' | 'rateLimits' | 'cost'>, version = ++usageVersion): Promise<void> {
+  const now = usageOf(raw)
+  if (version !== usageVersion) return
+  // Bez zmiany bez zapisu: zapis przerysowuje Sztolnię.
+  // Starszy odczyt nie cofa resetu, także gdy czekał na zapis stanu.
+  await update($, usage, current => version !== usageVersion || JSON.stringify(current) === JSON.stringify(now) ? current : now)
+  if (version !== usageVersion) return
+  const automatic = now.limits.some(limit => limit.percentUsed >= 80)
+  // Toast należy do żądania, które było najnowsze w chwili zapisu flagi: nowsze
+  // żądanie widzi już zmienioną flagę, więc samo by go nie pokazało.
+  let changed = false
+  await update($, autoKonkret, current => {
+    if (version !== usageVersion) return current
+    changed = current !== automatic
+    return automatic
+  })
+  if (changed) $.ui.toast(automatic ? 'Limit planu 80%: konkret włączony do resetu.' : 'Konkret automatyczny wyłączony: limity planu poniżej 80%.')
 }
 
 // Zegar apelu: co sekundę zapis `musterNow`, który przerysowuje Sztolnię i skrót pasa,
@@ -713,6 +719,12 @@ export const register: Register = on => {
     await update($, turns, count => turnsAfter(count, e.text))
     if (extra.length === 0) return next(e)
     return next({ ...e, context: [...(e.context ?? []), ...extra] })
+  })
+
+  // Silnik pcha liczby zużycia po każdej turze i przy ruchu limitu: Sztolnia i auto konkret.
+  on('session.measure', async ($, e, next) => {
+    await applyUsage($, e)
+    return next(e)
   })
 
   // Kompakcja: streszczenie bez klimatu, a następna tura dostaje pełną kotwicę,
@@ -853,7 +865,6 @@ export const register: Register = on => {
       if (e.agentId === undefined) {
         const run = await boardStep($, tool, input, result.result, { text, isError, who: 'Krux' })
         await afterOwnTool($, tool, input, isError, text, run?.failures[0], result.result)
-        await refreshUsage($)
       } else {
         const agentId = e.agentId
         // Z pętli kumpla testy i edycje: jego lista zadań to nie plan Kruxa. Imię z apelu,
@@ -896,7 +907,6 @@ export const register: Register = on => {
     await update($, turnAt, started => { elapsed = started === null ? 0 : now - started; return null })
     if (elapsed >= 300_000) $.ui.toast(`Krux skończyć po ${Math.floor(elapsed / 60_000)} min.`)
     await update($, activity, () => null)
-    await refreshUsage($)
     await refreshGit($)
     if (e.reason === 'answer' && (await read($, modes)).persona) {
       // Poprawka jedzie raz: krótka odpowiedź nie świadczy o dryfie, więc stary werdykt gaśnie.
