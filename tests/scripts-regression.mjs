@@ -190,34 +190,6 @@ function registerContext(overrides = {}) {
   return context
 }
 
-test('a failed counter reset fails after compaction without running next twice', async () => {
-  let executions = 0
-  const context = registerContext({
-    read: async () => ({ persona: true }),
-    update: async () => { throw new Error('counter unavailable') },
-    COMPACT_NOTE: 'compact note',
-  })
-  const hooks = new Map()
-  context.on = (event, ...args) => {
-    const hook = { run: args.at(-1) }
-    hooks.set(event, hook)
-    return { catch(handler) { hook.catch = handler } }
-  }
-  vm.runInContext('register(on)', context)
-  const hook = hooks.get('session.compact')
-  const event = { trigger: 'manual', instructions: 'keep plan', messages: [{ text: 'input' }] }
-  const result = { messages: [{ text: 'completed summary' }] }
-  const next = async e => {
-    executions += 1
-    assert.equal(e.instructions, 'keep plan\n\ncompact note')
-    return result
-  }
-  await assert.rejects(hook.run({}, event, next), /counter unavailable/u)
-  // Awaria po next: silnik zostawia gotowy wynik (mods-events „Handle a hook that fails”), mod nie ma .catch.
-  assert.equal(executions, 1)
-  assert.equal(hook.catch, undefined)
-})
-
 test('module memories of chat times and grouped tools drop their oldest entries past the limit', () => {
   const context = registerContext()
   const times = vm.runInContext('const times = new Map(); for (let i = 0; i < 5; i += 1) times.set(`m${i}`, i); trimOldest(times, 3); [...times.keys()]', context)
@@ -361,39 +333,28 @@ test('git refresh reads upstream reachability with full hashes and safe global o
 })
 
 
-test('gating observers fail without repeating downstream actions', async () => {
+// Reszta kontraktu awarii idzie przez `claude plugin test` (tests/mod.test.ts); `ui.close` zestaw nie odpala.
+test('a failed close observer does not repeat the downstream close', async () => {
   const context = registerContext({
-    mateIn: () => null,
-    mateOfType: () => null,
     applyToggle: () => ({}),
     read: async () => ({ persona: true, sztolnia: true }),
     update: async () => { throw new Error('state unavailable') },
   })
   const hooks = []
   context.on = (event, ...args) => {
-    const hook = { event, matcher: args.length > 1 ? args[0] : null, run: args.at(-1) }
+    const hook = { event, run: args.at(-1) }
     hooks.push(hook)
     return { catch(handler) { hook.catch = handler } }
   }
   vm.runInContext('register(on)', context)
-  const api = {
-    clock: { now: async () => { throw new Error('clock unavailable') } },
-    store: { get: async () => { throw new Error('store unavailable') } },
-  }
-  for (const [name, matcher, event, result] of [
-    ['agent.spawn', null, { prompt: 'work', description: 'Niuch' }, { agentId: 'a1' }],
-    ['tool.call', null, { tool: 'Write', file_path: 'a.ts', content: '' }, { result: 'written' }],
-    ['tool.call', 'mcp__krux-mod__watki', { tool: 'mcp__krux-mod__watki' }, { result: 'fallback' }],
-    ['ui.close', null, { id: 'sztolnia', origin: { kind: 'person' } }, {}],
-  ]) {
-    const hook = hooks.find(hook => hook.event === name && (hook.matcher?.tool ?? null) === matcher)
-    let executions = 0
-    const next = async () => { executions += 1; return result }
-    // Silnik pomija hook bez .catch albo zostawia wynik next; mod nie może wołać next drugi raz.
-    await assert.rejects(hook.run(api, event, next), /unavailable/u)
-    assert.ok(executions <= 1)
-    assert.equal(hook.catch, undefined)
-  }
+  const hook = hooks.find(one => one.event === 'ui.close')
+  let executions = 0
+  const next = async () => { executions += 1; return {} }
+  const api = { store: { get: async () => { throw new Error('store unavailable') } } }
+  // Silnik pomija hook bez .catch albo zostawia wynik next; mod nie może wołać next drugi raz.
+  await assert.rejects(hook.run(api, { id: 'sztolnia', origin: { kind: 'person' } }, next), /unavailable/u)
+  assert.ok(executions <= 1)
+  assert.equal(hook.catch, undefined)
 })
 
 

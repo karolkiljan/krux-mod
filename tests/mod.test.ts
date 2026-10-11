@@ -39,7 +39,7 @@ const ORIGIN = { kind: 'composer' as const }
 type History = { role: 'user' | 'assistant'; text: string; toolUses: { tool_use_id: string; tool: string; input: Record<string, unknown>; isError?: true; text?: string }[] }[]
 
 type ProcessReply = { exitCode: number; stdout: string; stderr: string; isStdoutTruncated: boolean; isStderrTruncated: boolean }
-type Extras = { beforePaneList?: () => Promise<void>; paneClosed?: boolean; invalidations?: string[]; journalWrites?: KruxJournal[]; beforeStoreGet?: () => void; logs?: string[]; onPrompt?: () => void; toasts?: string[]; settings?: Record<string, unknown>; plugins?: string[]; toolError?: string; toolDenied?: boolean; toolReply?: { result: unknown; text?: string; isError?: true }; agentGate?: Promise<void>; history?: History; agents?: { id: string; status: AgentStatus; description?: string; type?: string }[]; opened?: string[]; closed?: string[]; usage?: SessionUsage; usageRead?: () => SessionUsage | Promise<SessionUsage>; beforeAgentList?: () => Promise<void>; beforeStoreSet?: () => Promise<void>; paneWaits?: boolean; paneHidden?: boolean; git?: { stdout: string }; tools?: string[]; deferrals?: (boolean | undefined)[]; commands?: CommandSpec[]; processRun?: (argv: readonly string[], timeoutMs: number | undefined) => ProcessReply | Promise<ProcessReply> }
+type Extras = { beforePaneList?: () => Promise<void>; paneClosed?: boolean; invalidations?: string[]; journalWrites?: KruxJournal[]; beforeStoreGet?: () => void; logs?: string[]; onPrompt?: () => void; toasts?: string[]; settings?: Record<string, unknown>; plugins?: string[]; toolError?: string; toolDenied?: boolean; toolReply?: { result: unknown; text?: string; isError?: true }; agentGate?: Promise<void>; history?: History; agents?: { id: string; status: AgentStatus; description?: string; type?: string }[]; opened?: string[]; closed?: string[]; usage?: SessionUsage; usageRead?: () => SessionUsage | Promise<SessionUsage>; beforeAgentList?: () => Promise<void>; beforeStoreSet?: () => Promise<void>; paneWaits?: boolean; paneHidden?: boolean; git?: { stdout: string }; tools?: string[]; onToolCall?: () => void; deferrals?: (boolean | undefined)[]; commands?: CommandSpec[]; processRun?: (argv: readonly string[], timeoutMs: number | undefined) => ProcessReply | Promise<ProcessReply> }
 
 function engine(on: On, saved: Map<string, unknown>, extras: Extras = {}) {
   const toasts = extras.toasts ?? []
@@ -112,6 +112,7 @@ function engine(on: On, saved: Map<string, unknown>, extras: Extras = {}) {
   on('turn.start', ($, e) => ({ turnId: e.turnId }))
   on('turn.complete', ($, e) => ({ text: e.answer }))
   on('tool.call', async ($, e) => {
+    extras.onToolCall?.()
     if ((String(e.tool) === 'Agent' || String(e.tool) === 'Task') && extras.agentGate) await extras.agentGate
     if (extras.toolDenied) return { deny: 'blocked' } as never
     if (extras.toolReply) return extras.toolReply
@@ -1561,6 +1562,35 @@ test('gating hook failures pass the original session, prompt and compaction even
   expect([notices, prompts, compactions]).toEqual([3, 1, 1])
   // Awarię hooka zgłasza silnik (debug log albo transkrypt przy --plugin-dir); mod nie dubluje linii.
   expect(logs.filter(line => /classic.SessionStart|prompt.submit|session.compact/u.test(line))).toEqual([])
+})
+
+// Kontrakt silnika (mods-events „Handle a hook that fails”): hook bez .catch, który pada
+// po `next`, zostawia jego wynik, a dalsza część łańcucha nie biegnie drugi raz.
+test('a hook that fails after next keeps the engine result and runs the chain once', async ($, on) => {
+  let failWrites = false
+  let compactions = 0
+  let spawns = 0
+  let calls = 0
+  const closed: string[] = []
+  engine(on, new Map(), { agents: [{ id: 'a1', status: 'running' }], onToolCall: () => { calls += 1 }, toolReply: { result: 'written' }, closed })
+  on('state.set', ($state, e, next) => (failWrites && e.plugin === 'krux-mod' ? { deny: 'state unavailable' } : next(e)) as never)
+  on('session.compact', () => { compactions += 1; return { messages: [{ role: 'user' as const, text: 'kept summary', toolUses: [] }] } })
+  await start($)
+  failWrites = true
+  const compacted = await $.session.compact({ trigger: 'manual', instructions: 'keep plan', messages: [{ role: 'user', text: 'before', toolUses: [] }] })
+  expect(compacted.messages?.[0]?.text).toBe('kept summary')
+  // Zaślepka silnika numeruje spawny: drugi bieg łańcucha dałby `a2`.
+  const spawned = await $.agent.spawn(spawnOf({ prompt: 'Niuch, zwiad.', description: 'Niuch: zwiad' }))
+  expect(spawned).toMatchObject({ agentId: 'a1' })
+  spawns = 1
+  const written = await $.tool.call({ tool: 'Write', file_path: '/work/a.ts', content: '' })
+  expect(written.result).toBe('written')
+  // Hook wątków odpowiada sam, bez `next`: po awarii silnik go pomija i odpowiada dalsza część łańcucha.
+  const threads = await $.tool.call({ tool: 'mcp__krux-mod__watki', open: [{ text: 'x' }] } as never)
+  expect(threads.result).toBe('written')
+  expect([compactions, spawns, calls]).toEqual([1, 1, 2])
+  // `ui.close` zestaw nie odpala (w `$.ui` tylko render, resolve, scroll, focus): test w scripts-regression.
+  expect(closed).toEqual([])
 })
 
 test('replay and live counting agree through toggles, disabled persona, empty text and subagent reports', async ($, on) => {
