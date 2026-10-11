@@ -829,6 +829,32 @@ test('a background agent stays on stage while listed as running, idle or not', a
   expect(await ui.find({ type: 'Text', in: 'forge', text: /│ czytać runy api\.ts │/ })).toBeDefined()
 })
 
+test('a mate resumed with SendMessage comes back on stage and into the muster on his first tool', async ($, on) => {
+  engine(on, new Map(), { agents: [{ id: 'a1', status: 'running' }] })
+  await start($)
+  await $.turn.start({ text: 'szukaj', turnId: 't1' })
+  await $.agent.spawn(spawnOf({ prompt: 'Niuch, zwiad.', description: 'Niuch: zwiad' }))
+  await $.turn.complete({ answer: 'jest', durationMs: 10, isAborted: false, turnId: 'sub', reason: 'answer', agentId: 'a1' })
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  await ui.advance(6000)
+  expect(await forgeColors(ui)).not.toContain(NIUCH)
+  // Wznowienie nie odpala agent.spawn: kumpel wraca z pierwszym narzędziem.
+  await $.tool.call(inLoop('a1', { tool: 'Grep', pattern: 'lore' }))
+  await ui.advance(3000)
+  expect(await forgeColors(ui)).toContain(NIUCH)
+  const shaft = await $.ui.mount({ ...SHAFT_PANE, surface: 'terminal', props: SHAFT_PROPS })
+  expect((await shaft.find({ key: 'mate-0' }))?.text).toContain('Niuch')
+})
+
+test('a tool from an unknown agent id does not put anyone on stage', async ($, on) => {
+  engine(on, new Map(), { agents: [{ id: 'x9', status: 'running' }] })
+  await start($)
+  await $.turn.start({ text: 'szukaj', turnId: 't1' })
+  await $.tool.call(inLoop('x9', { tool: 'Grep', pattern: 'lore' }))
+  const shaft = await $.ui.mount({ ...SHAFT_PANE, surface: 'terminal', props: SHAFT_PROPS })
+  expect(await shaft.find({ key: 'mate-0' })).toBeUndefined()
+})
+
 test('an agent no longer running drops off the stage even without its completion', async ($, on) => {
   const agents: { id: string; status: AgentStatus }[] = [{ id: 'a1', status: 'running' }]
   const clock = engine(on, new Map(), { agents })
