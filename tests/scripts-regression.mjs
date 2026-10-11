@@ -231,6 +231,9 @@ test('the version and display fields live only in plugin.json, not in the market
   const manifest = JSON.parse(fs.readFileSync('.claude-plugin/plugin.json', 'utf8'))
   const marketplace = JSON.parse(fs.readFileSync('.claude-plugin/marketplace.json', 'utf8'))
   assert.match(manifest.version, /^\d+\.\d+\.\d+$/u)
+  // Etykieta w UI; `name` zostaje stały, bo po nim idą instalacje i linie logu (publish.md „Choose a permanent name”).
+  assert.equal(manifest.displayName, 'Krux mod')
+  assert.equal(manifest.name, 'krux-mod')
   const entry = marketplace.plugins.find(plugin => plugin.name === manifest.name)
   assert.ok(entry)
   // Silnik bierze wersję z plugin.json bez ostrzeżenia (host-marketplace „Release a new version”).
