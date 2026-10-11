@@ -33,7 +33,7 @@ hooks/outcome.ts          decyzja o nieukończonym Bash: `run_in_background` alb
 hooks/terminal-text.ts    szerokość komórek terminala
 hooks/board.ts            tablica Sztolni: `boardAfter`, `testRunOf`, `usageOf`; plan, testy, gotowość
 hooks/muster.ts           apel hordy w Sztolni
-hooks/git.ts              czysty odczyt `git status --porcelain=v2 --branch` i `git log` (`gitOf`: liczby, pliki, commity z `pushed`); `GIT_CHECK` i `GIT_CHECK_CACHED` dla `diff --check` drzewa i indeksu; `--no-optional-locks` (nie ruszają indeksu Morry), `core.quotePath=false`
+hooks/git.ts              czysty odczyt `git status --porcelain=v2 --branch` i `git log` (`gitOf`: liczby, pliki, commity z `pushed`); `GIT_CHECK` i `GIT_CHECK_CACHED` dla `diff --check` drzewa i indeksu; `--no-optional-locks` (nie ruszają indeksu Morry), `core.fsmonitor=false` (bez komendy z `.git/config`), `core.quotePath=false`
 hooks/threads.ts          wątki Sztolni
 hooks/report.ts           raport dnia (`dayReport`)
 hooks/shaft.ts            panel Sztolni
@@ -160,7 +160,7 @@ Uzupełniają zasady przekrojowe z korzenia `CLAUDE.md` i ich nie powtarzają. U
 - Rodzaj roboty narzędzia rozstrzyga tylko `workOf` (`voice.ts`); tablica, scena i podpis `Bash` (`bashKind`) biorą go z tej samej decyzji (test).
 - Czas tablicy: jeden odczyt zegara w `boardStep`; edycje główne i kumpla (także błąd bez `deny`) → `editedAt`, testy → `at`. Dokumentacja (`.md`, `.mdx`, `.txt`, `.rst`, `.adoc`, bez wielkości liter) nie zmienia `editedAt`; brak znanej ścieżki to edycja. `deny` nie rusza tablicy; plan należy do głównego wątku. `testsStale` wymaga obu czasów i `editedAt > test.at`.
 - `startedAt` zadania: wejście w `in_progress`, zostaje przy powtórzeniu statusu, znika przy wyjściu. `stuckMinutes` daje pełne minuty od 15 min. Stary harmonogram zegara planu nie nadpisze nowego; `musterNow` to wspólna zależność panelu i skrótu pasa.
-- Odczyty gita koalescowane: równoległe żądania czekają na wspólny odczyt, potem najwyżej jeden zaległy. Każda komenda 5 s i `--no-optional-locks`. `whitespace` z kodów obu kontroli: dowolne 2 → `false`, dwa 0 → `true`, reszta `null`. Toast `behind` porównuje zapisane odczyty; pierwszy, równy i mniejszy milczą.
+- Odczyty gita koalescowane: równoległe żądania czekają na wspólny odczyt, potem najwyżej jeden zaległy. Każda komenda 5 s, `--no-optional-locks` i `-c core.fsmonitor=false`: git moda biegnie poza sandboksem, więc nie uruchamia komendy z konfiguracji repo (test na prawdziwym repo). `whitespace` z kodów obu kontroli: dowolne 2 → `false`, dwa 0 → `true`, reszta `null`. Toast `behind` porównuje zapisane odczyty; pierwszy, równy i mniejszy milczą.
 - `readiness`: zielone i świeże testy, `whitespace !== false`, brak konfliktów; nieznane białe znaki nie blokują. Linia gotowości tylko przy `changed + untracked > 0`; każdy brak ma tekst i znak.
 - `autoKonkret`, `turnAt`, `seenAt`, `lastPrompt` żyją tylko w `$.state` (`lastPrompt` nie wraca po `replay`). Auto konkret wynika z limitów planu, nie kontekstu; każdy odczyt i pomiar ma rosnącą wersję, flagę przypisuje w `update` tylko najnowszy, start sesji i `clear/resume/fork` unieważniają starsze. Ręczny konkret przeżywa reset limitów i ma pierwszeństwo w `statusLine`. Kumple nie ruszają zegara głównej tury; `seenAt` zmieniają tylko prompty z `fromPerson`. Toasty czasu i powrotu nic nie dokładają do modelu.
 - `saveThread` dzieli numerację, deduplikację i limity z `watki`; duplikat nie zużywa id. Raport dnia: wyłącznie dane sesji, do 10 commitów, bez modelu i głosu orka.

@@ -1834,8 +1834,8 @@ test('working and staged whitespace checks gate commit readiness with a five-sec
   expect(calls.length).toBe(16)
   for (const call of calls) {
     expect(call.argv).toEqual(call.argv.includes('--cached')
-      ? ['git', '--no-optional-locks', 'diff', '--cached', '--check']
-      : ['git', '--no-optional-locks', 'diff', '--check'])
+      ? ['git', '--no-optional-locks', '-c', 'core.fsmonitor=false', 'diff', '--cached', '--check']
+      : ['git', '--no-optional-locks', '-c', 'core.fsmonitor=false', 'diff', '--check'])
     expect(call.timeoutMs).toBe(5000)
   }
 })
