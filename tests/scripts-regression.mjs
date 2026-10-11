@@ -787,6 +787,7 @@ test('mate definitions keep the agent listing short and address the mate without
 
 test('every mate has an agent definition under his type, and the scouts and the tester cannot edit', () => {
   const skill = fs.readFileSync(new URL('../skills/krux-horda/SKILL.md', import.meta.url), 'utf8')
+  const colors = []
   for (const [mate, { agent }] of Object.entries(ROSTER)) {
     const text = fs.readFileSync(new URL(`../agents/${agent}.md`, import.meta.url), 'utf8')
     const front = text.match(/^---\n([\s\S]*?)\n---\n/u)?.[1]
@@ -796,9 +797,16 @@ test('every mate has an agent definition under his type, and the scouts and the 
     assert.match(text, new RegExp(`^Jesteś ${mate},`, 'mu'))
     assert.ok(skill.includes(`\`krux-mod:${agent}\``), `skill bez krux-mod:${agent}`)
     const tools = front.match(/^tools: (.+)$/mu)?.[1].split(/,\s*/u)
+    // Kolor z listy silnika, jeden na kumpla (sub-agents „Supported frontmatter fields”).
+    colors.push(front.match(/^color: (.+)$/mu)?.[1])
     if (['niuch', 'piryt', 'mlot'].includes(agent)) {
       assert.ok(tools, `${agent}.md bez listy narzędzi`)
       for (const edit of ['Edit', 'Write', 'NotebookEdit', 'MultiEdit']) assert.ok(!tools.includes(edit), `${agent}: ${edit}`)
     }
+    // Zwiad bierze wszystko z zadania, jak wbudowany Explore; Młot zostaje z CLAUDE.md, bo tam stoją komendy testów.
+    assert.equal(/^omitClaudeMd: true$/mu.test(front), agent === 'niuch', `${agent}: omitClaudeMd`)
+    if (['niuch', 'mlot'].includes(agent)) assert.match(front, /^maxTurns: \d+$/mu, `${agent}: maxTurns`)
   }
+  for (const color of colors) assert.ok(['red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink', 'cyan'].includes(color), String(color))
+  assert.equal(new Set(colors).size, colors.length)
 })
