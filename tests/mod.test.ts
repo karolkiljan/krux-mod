@@ -824,15 +824,31 @@ test('a background agent stays on stage while listed as running, idle or not', a
 
 test('an agent no longer running drops off the stage even without its completion', async ($, on) => {
   const agents: { id: string; status: AgentStatus }[] = [{ id: 'a1', status: 'running' }]
-  engine(on, new Map(), { agents })
+  const clock = engine(on, new Map(), { agents })
   await start($)
   await $.agent.spawn(spawnOf({ prompt: 'Lont, rozbiórka.', description: 'Lont: rozbiórka' }))
   const running = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(await forgeColors(running)).toContain(LONT)
   await running.unmount()
   agents[0]!.status = 'completed'
+  // Pas bierze listę z tyknięcia apelu (co 1 s), nie z `$.agent.list()` przy każdym rysunku.
+  await clock.advance(1000)
   const gone = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(await forgeColors(gone)).not.toContain(LONT)
+})
+
+test('while the muster ticks, band redraws reuse its agent list instead of asking each time', async ($, on) => {
+  let listings = 0
+  engine(on, new Map(), { agents: [{ id: 'a1', status: 'running' }], beforeAgentList: async () => { listings += 1 } })
+  await start($)
+  await $.turn.start({ text: 'szukaj', turnId: 't1' })
+  await $.agent.spawn(spawnOf({ prompt: 'Niuch, zwiad.', description: 'Niuch: zwiad' }))
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  expect(await forgeColors(ui)).toContain(NIUCH)
+  const before = listings
+  for (let i = 0; i < 5; i += 1) await ui.redraw()
+  expect(listings).toBe(before)
+  expect(await forgeColors(ui)).toContain(NIUCH)
 })
 
 test('a mate gone from the agent list does not take the event bubble', async ($, on) => {
