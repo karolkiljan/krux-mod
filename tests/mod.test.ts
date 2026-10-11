@@ -1479,10 +1479,8 @@ test('gating hook failures pass the original session, prompt and compaction even
   const result = await $.session.compact({ trigger: 'manual', instructions: 'original instructions', messages: [{ role: 'user', text: 'before summary', toolUses: [] }] })
   expect(result.messages?.[0]?.text).toBe('kept summary')
   expect([notices, prompts, compactions]).toEqual([3, 1, 1])
-  const failures = logs.filter(line => /classic.SessionStart|prompt.submit|session.compact/u.test(line))
-  expect(failures.length).toBe(5)
-  // Awaria hooka idzie do debug logu i bez własnej nazwy moda: silnik dokleja ją sam.
-  expect(failures.every(line => line.startsWith('[debug] ') && !line.includes('krux-mod:'))).toBe(true)
+  // Awarię hooka zgłasza silnik (debug log albo transkrypt przy --plugin-dir); mod nie dubluje linii.
+  expect(logs.filter(line => /classic.SessionStart|prompt.submit|session.compact/u.test(line))).toEqual([])
 })
 
 test('replay and live counting agree through toggles, disabled persona, empty text and subagent reports', async ($, on) => {
