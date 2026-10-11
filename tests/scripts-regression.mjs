@@ -227,6 +227,14 @@ test('module memories of chat times and grouped tools drop their oldest entries 
   assert.deepEqual(Array.from(vm.runInContext('[MESSAGE_TIMES_LIMIT, GROUPED_TOOLS_LIMIT]', context)), [2000, 4000])
 })
 
+test('the threads tool matcher is a literal that validate can read and matches THREAD_TOOL_NAME', () => {
+  const threads = vm.createContext({})
+  vm.runInContext(stripTypeScriptTypes(fs.readFileSync('hooks/threads.ts', 'utf8').replace(/^import .*\n/gmu, '').replaceAll('export ', '')), threads)
+  const name = vm.runInContext('THREAD_TOOL_NAME', threads)
+  assert.equal(name, 'mcp__krux-mod__watki')
+  assert.ok(fs.readFileSync('hooks/register.ts', 'utf8').includes(`on('tool.call', { tool: '${name}' }`))
+})
+
 // `claude plugin test` nie odpala `ui.fault`: zestaw ma tylko render, resolve, scroll i focus.
 test('a canvas fault switches the band and the forge pane to text for the session', async () => {
   const context = registerContext()

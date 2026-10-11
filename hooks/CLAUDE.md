@@ -128,6 +128,7 @@ Uzupełniają zasady przekrojowe z korzenia `CLAUDE.md` i ich nie powtarzają. U
 
 - `$` przekazujemy tylko do funkcji z najwyższego poziomu `register.ts`; pozostałe moduły go nie znają i testy idą przez ich interfejsy (`bandPlan`, `crewAfter`, `shaftTree`), nie przez piksele.
 - Ścieżka modułu `Client` to literał `'./forge.ts'`: silnik czyta go ze źródła, zmienną odrzuca.
+- Matchery w `on` to literały (`{ tool: 'mcp__krux-mod__watki' }`): `claude plugin validate` czyta je ze źródła, a stałą pokazuje jako `tool=?` (test zgodności z `THREAD_TOOL_NAME`).
 - Zgody na narzędzia obsługuje wyłącznie silnik: mod nie rejestruje `tool.check`.
 - Hooki nie mają `.catch`: awarię przed `next` silnik pomija, po `next` zostawia wynik i sam pisze linię (debug log w zainstalowanej sesji, transkrypt przy `--plugin-dir`). Hook nie woła `next` drugi raz (test). Własne błędy powtarzalne (zegar, strumień, odtworzenie historii) idą przez `$.ui.log(…, { to: 'debug' })`; do transkryptu tylko jednorazowe błędy instalacji (brak `voice/`, rejestracja `/krux` i `watki`). Tekst logu bez prefiksu `krux-mod:`: silnik dokleja nazwę moda sam.
 - `isDestructive` rozpoznaje komendy, nie słowa; przy wątpliwości flaga zostaje. Każda komenda ma przykład i bezpiecznego sąsiada w `tests/voice.test.ts`.
