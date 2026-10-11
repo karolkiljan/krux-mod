@@ -28,12 +28,22 @@ claude plugin marketplace add karolkiljan/krux-mod
 claude plugin install krux-mod@krux-mod-marketplace
 ```
 
-Na jedną sesję, z lokalnego klonu (zmiany w plikach przeładowują się same):
+Od Claude Code 2.1.292 to samo jedną komendą: `claude plugin install krux-mod --marketplace karolkiljan/krux-mod`.
+
+Aktualizacja: auto-update dla tego marketplace jest domyślnie wyłączony (włącza się go w `/plugin`, zakładka **Marketplaces**), więc nową wersję pobiera:
+
+```bash
+claude plugin update krux-mod@krux-mod-marketplace
+```
+
+Na jedną sesję, z lokalnego klonu:
 
 ```bash
 git clone https://github.com/karolkiljan/krux-mod.git
 claude --plugin-dir ./krux-mod
 ```
+
+Zmiany w `hooks/` przeładowują się same; po zmianie w `agents/`, `skills/` albo manifeście trzeba wpisać `/reload-plugins`. Kopia z `--plugin-dir` po cichu zastępuje zainstalowany mod o tej samej nazwie, choć `claude plugin list` dalej pokazuje wiersz z marketplace jako włączony; tylko log `--debug` zapisuje `Plugin "krux-mod" from --plugin-dir overrides installed version`.
 
 Odinstalowanie:
 
@@ -97,7 +107,7 @@ Okna zgody na narzędzia obsługuje silnik Claude Code. Mod nie podłącza `tool
 
 Poprawność, bezpieczeństwo i wymagany format wyprzedzają głos. Liczby, wersje, ścieżki, komendy i komunikaty błędów idą dosłownie. Kod, JSON, commit messages i opisy PR pozostają neutralne. Przed ruchem nieodwracalnym Krux przechodzi na pełne zdania: warunek, skutek, droga odwrotu.
 
-Mod to kod uruchamiany z uprawnieniami użytkownika. Ten czyta trzy pliki z `voice/`, ustawienia (`prefersReducedMotion`), listę komend, historię sesji (`$.session.messages`, do odtworzenia kroniki i tablicy po wznowieniu), zużycie kontekstu i limitów (`$.session.usage`) oraz listę agentów (`$.agent.list`). Uruchamia do pięciu komend, wszystkich tylko do odczytu: `git status` (stan repo), `git log -n 10` (ostatnie commity), `git diff --check` i `git diff --cached --check` (białe znaki w drzewie roboczym i indeksie) oraz `git rev-list @{upstream}..HEAD` (niewypchnięte commity, gdy repo ma upstream); każda z `-c core.fsmonitor=false`, więc nie uruchamia komendy zapisanej w `.git/config` repo. Rejestruje jedno narzędzie dla modelu, `mcp__krux-mod__watki`: otwarte wątki tablicy, trzymane w stanie sesji. Dostarcza 6 typów subagentów (`agents/*.md`); uruchamia je model, gdy wyśle kumpla, z narzędziami z ich definicji i zgodami silnika, a ich opisy (razem do 700 znaków) stoją na liście typów narzędzia `Agent`. Pisze wyłącznie do własnego magazynu `$.store` (tryby) i stanu sesji. Nie wysyła niczego poza sesję. Persona i kotwica głosu trafiają do promptu modelu, tak jak reszta sesji, więc każda tura kosztuje trochę więcej tokenów. Pełna lista: `claude plugin validate .`.
+Mod to kod uruchamiany z uprawnieniami użytkownika. Ten czyta trzy pliki z `voice/`, ustawienia (`prefersReducedMotion`), listę komend, historię sesji (`$.session.messages`, do odtworzenia kroniki i tablicy po wznowieniu), zużycie kontekstu i limitów (`$.session.usage`) oraz listę agentów (`$.agent.list`). Uruchamia do pięciu komend, wszystkich tylko do odczytu: `git status` (stan repo), `git log -n 10` (ostatnie commity), `git diff --check` i `git diff --cached --check` (białe znaki w drzewie roboczym i indeksie) oraz `git rev-list @{upstream}..HEAD` (niewypchnięte commity, gdy repo ma upstream); każda z `-c core.fsmonitor=false`, więc nie uruchamia komendy zapisanej w `.git/config` repo. Rejestruje jedno narzędzie dla modelu, `mcp__krux-mod__watki`: otwarte wątki tablicy, trzymane w stanie sesji. Dostarcza 6 typów subagentów (`agents/*.md`); uruchamia je model, gdy wyśle kumpla, z narzędziami z ich definicji i zgodami silnika, a ich opisy (razem do 700 znaków) stoją na liście typów narzędzia `Agent`. Pisze wyłącznie do własnego magazynu `$.store` (tryby) i stanu sesji. Nie wysyła niczego poza sesję. Koszt kontekstu: opisy skilla `krux-horda` i 6 typów subagentów to ~447 tokenów w każdej sesji (`claude --plugin-dir . plugin details krux-mod`, sekcja „Projected token cost”). Ten pomiar nie liczy tekstów moda: persona (`voice/persona.md`, ok. 8,9 tys. znaków) w prompcie systemowym każdej sesji, kotwica głosu w każdej turze (648 znaków co 6. turę i po dryfie, inaczej 195), a przy trybach `konkret` i `flow` po ok. 500 znaków; do tego opis narzędzia `watki`. Przy 2,5–3 znakach polszczyzny na token persona to szacunkowo 3–3,5 tys. tokenów. Pełna lista tego, co mod czyta i uruchamia: `claude plugin validate .`; inwentarz komponentów: `claude --plugin-dir . plugin details krux-mod`.
 
 ## Rozwój
 
