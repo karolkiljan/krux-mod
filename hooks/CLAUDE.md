@@ -98,6 +98,7 @@ Macierz mówi, co uruchamia zdarzenie i jakich pułapek silnika pilnować. Progi
 |---|---|---|
 | `agent.spawn` | pętla główna, silnik dał `agentId` | ork wbiega z prawej do slotu; wpis w apelu (`muster`); kumpel z typu (`mateOfType`), potem `mateIn` z opisu i promptu, inaczej szary ork; zegar apelu co 1 s (`musterNow`), póki ktoś biega według zdarzeń i `$.agent.list()`; póki tyka, pas bierze jego ostatnią listę (`knownRunning`) zamiast `$.agent.list()` przy każdym rysunku (test); ostatni tyk zdejmuje orków spoza `running`; błąd `$.agent.list()` zatrzymuje zegar, niepotwierdzony bieg najwyżej 30 min |
 | `tool.call` | `agentId` orka na scenie albo w apelu | poza ze sceny narzędzia (kumpel zamiast rogu młot), dymek z krokiem; ostatnie narzędzie w apelu; zdarzenie z jego wyniku zmienia tylko jego humor (`mateMoodAfter`), wtręt 4 s i znak w `cues`, kronika Kruxa go nie liczy; jego testy idą na tablicę z imieniem, jego lista zadań nie rusza planu |
+| `tool.call` | `agentId` biegu z apelu po oddaniu zwoju (wznowienie przez `SendMessage` nie odpala `agent.spawn`) | `rejoinMate`: ork wraca na scenę i do apelu z imieniem i opisem z apelu, zegar apelu rusza; obcy `agentId` (pętla zagnieżdżona, fork) nic nie zmienia (test) |
 | `turn.complete` | `agentId` orka na scenie albo w apelu | stójka w slocie, zwój do Kruxa (`handoff`), marsz w prawo; slot należy do niego do końca marszu; sam ubytek w `running` to nie oddanie zwoju; koniec w apelu (pierwszy zostaje), dymek znika |
 
 ### Rysowanie

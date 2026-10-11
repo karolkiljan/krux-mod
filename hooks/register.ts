@@ -296,6 +296,18 @@ async function liveMembers($: EngineInterface, members: KruxHordeMember[]): Prom
   return ids === null ? members : members.filter(member => ids.has(member.agentId))
 }
 
+// Kumpel wznowiony przez `SendMessage` nie odpala `agent.spawn` (mods-reference
+// „Subagents”): pierwsze jego narzędzie po oddaniu zwoju wprowadza go z powrotem na
+// scenę i do apelu, z imieniem i opisem z apelu. Obcy `agentId` nic nie zmienia.
+async function rejoinMate($: EngineInterface, agentId: string): Promise<void> {
+  const run = (await read($, muster)).runs.find(one => one.agentId === agentId)
+  if (run === undefined || run.endedAt === null) return
+  await crewStep($, { kind: 'spawn', member: { agentId, mate: run.mate, scene: 'hammer', target: '' } })
+  const now = await $.clock.now()
+  await update($, muster, current => musterSpawn(current, agentId, run.mate, run.description, now))
+  tickMuster($)
+}
+
 // Własne narzędzie Kruxa: kronika, humor, a po zdarzeniu wtręt na cztery sekundy.
 async function afterOwnTool($: EngineInterface, tool: string, input: Record<string, unknown>, isError: boolean, text: string, failure?: string, result?: unknown): Promise<KruxEvent | null> {
   let after = EMPTY_LORE
@@ -857,6 +869,7 @@ export const register: Register = on => {
       await update($, strikes, count => count + 1)
       await update($, sessionStrikes, count => count + 1)
     } else {
+      await rejoinMate($, e.agentId)
       await crewStep($, { kind: 'mate-tool', agentId: e.agentId, doing: { ...describeTool(tool, input, 0), startedAt } })
     }
     const awaits = e.agentId === undefined && workOf(tool, input) === 'agent'
