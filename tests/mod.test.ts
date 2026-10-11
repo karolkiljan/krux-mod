@@ -1772,12 +1772,12 @@ test('working and staged whitespace checks gate commit readiness with a five-sec
   for (const [working, cached, readiness] of outcomes) {
     workingCode = working
     cachedCode = cached
-    await $.tool.call({ tool: 'Bash', command: 'git status' })
+    await $.tool.call({ tool: 'Bash', command: 'git fetch' })
     expect((await ui.find({ key: 'readiness' }))?.text).toBe(readiness)
   }
   workingCode = 0
   throws = true
-  await $.tool.call({ tool: 'Bash', command: 'git status' })
+  await $.tool.call({ tool: 'Bash', command: 'git fetch' })
   expect((await ui.find({ key: 'readiness' }))?.text).toBe('✓ do commita')
   expect(calls.length).toBe(16)
   for (const call of calls) {
@@ -1835,14 +1835,14 @@ test('behind toasts compare saved reads and skip initial, equal, lower and missi
   expect(toasts).toEqual([])
   for (const behind of [2, 1, 4, 4]) {
     git.stdout = `# branch.head main\n# branch.upstream origin/main\n# branch.ab +0 -${behind}\n`
-    await $.tool.call({ tool: 'Bash', command: 'git status' })
+    await $.tool.call({ tool: 'Bash', command: 'git fetch' })
   }
   expect(toasts).toEqual(['origin ma 4 nowych commitów — git pull.'])
   extras.git = undefined
-  await $.tool.call({ tool: 'Bash', command: 'git status' })
+  await $.tool.call({ tool: 'Bash', command: 'git fetch' })
   extras.git = git
   git.stdout = git.stdout.replace('-4', '-8')
-  await $.tool.call(inLoop('a1', { tool: 'Bash', command: 'git status' }))
+  await $.tool.call(inLoop('a1', { tool: 'Bash', command: 'git fetch' }))
   expect(toasts).toHaveLength(1)
 })
 

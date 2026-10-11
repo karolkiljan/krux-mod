@@ -12,7 +12,7 @@ import { CALM, EVENT_HOLD_MS, eventOf, mateIn, mateMoodAfter, mateOfType, moodsA
 import { MATES, ROSTER } from './roster'
 import type { BoardCall } from './board'
 import { EMPTY_BOARD, boardAfter, replayBoard, returnNote, usageOf } from './board'
-import { GIT_CHECK, GIT_CHECK_CACHED, GIT_LOG, GIT_STATUS, GIT_UNPUSHED, GIT_TOOLS, gitOf } from './git'
+import { GIT_CHECK, GIT_CHECK_CACHED, GIT_LOG, GIT_STATUS, GIT_UNPUSHED, gitOf } from './git'
 import { EMPTY_THREADS, THREAD_SPEC, THREAD_TOOL_NAME, replayThreads, saveThread, threadsAfter, threadsReport } from './threads'
 import { dayReport } from './report'
 import { EMPTY_MUSTER, anyRunning, musterDone, musterRows, musterSpawn, musterTool } from './muster'
@@ -31,6 +31,7 @@ import {
   anchorFor,
   applyToggle,
   asksRelease,
+  changesRepo,
   describeTool,
   describeToolAhead,
   describePhase,
@@ -836,7 +837,7 @@ export const register: Register = on => {
         await update($, muster, current => musterTool(current, agentId, tool, input))
         await afterMateTool($, agentId, tool, input, isError, text, run?.failures[0], result.result)
       }
-      if (GIT_TOOLS.has(tool)) await refreshGit($)
+      if (changesRepo(tool, input)) await refreshGit($)
     }
     return result
   })

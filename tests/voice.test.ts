@@ -1,6 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import {
+  changesRepo,
   DEFAULT_MODES,
   HELP,
   FORMAT_HINT,
@@ -557,4 +558,30 @@ test('a release question is recognised, performance talk is not', () => {
   for (const text of ['A co z wydajnością przy dużym ruchu?', 'napraw testy', 'Jak poszło?']) {
     expect([text, asksRelease(text)]).toEqual([text, false])
   }
+})
+
+test('git is read again only after a tool that may change the repo', () => {
+  for (const [tool, input] of [
+    ['Edit', { file_path: 'a.ts' }],
+    ['NotebookEdit', { notebook_path: 'a.ipynb' }],
+    ['Bash', { command: 'git commit -m x' }],
+    ['Bash', { command: 'ls && ./deploy.sh' }],
+    ['Bash', { command: 'git diff > patch.txt' }],
+    ['Bash', { command: 'cat a >> b' }],
+    ['Bash', { command: 'find . -name "*.tmp" -delete' }],
+    ['Bash', { command: 'git branch -D old' }],
+    ['Bash', { command: 'git branch feature' }],
+  ] as const) expect(changesRepo(tool, input)).toBe(true)
+  for (const [tool, input] of [
+    ['Read', { file_path: 'a.ts' }],
+    ['Grep', { pattern: 'x' }],
+    ['Bash', { command: 'ls -la' }],
+    ['Bash', { command: 'cat a.ts | head -5' }],
+    ['Bash', { command: 'git status 2>&1' }],
+    ['Bash', { command: 'git log --oneline -5 2>/dev/null' }],
+    ['Bash', { command: 'rg foo > /dev/null' }],
+    ['Bash', { command: 'git branch -a' }],
+    ['Bash', { command: 'git branch' }],
+    ['Bash', { command: 'cd /repo && grep -n x a.ts' }],
+  ] as const) expect(changesRepo(tool, input)).toBe(false)
 })

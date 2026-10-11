@@ -15,10 +15,6 @@ export const GIT_UNPUSHED = ['git', '--no-optional-locks', '-c', 'core.quotePath
 // Plików w panelu najwyżej tyle; reszta to liczba w wierszu „zmienione”.
 const FILES_LIMIT = 20
 
-// Narzędzia, po których stan repo może być inny: powłoka (commit, push, checkout)
-// i edycje plików.
-export const GIT_TOOLS: ReadonlySet<string> = new Set(['Bash', 'Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
-
 // Ścieżka i litera stanu z wiersza porcelain v2: `1 XY … ścieżka`, `2 XY … ścieżka\tstara`,
 // `u XY … ścieżka`, `? ścieżka`. Litera: drzewo robocze przed indeksem.
 function fileOf(line: string): { code: string; path: string } | null {
