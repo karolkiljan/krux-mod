@@ -1308,6 +1308,20 @@ test('an empty board says so in one line', async ($, on) => {
   expect(await ui.find({ key: 'plan' })).toBeUndefined()
 })
 
+test('above the prompt the shaft grows with its tree, beside the transcript it fills its rows', async ($, on) => {
+  engine(on, new Map())
+  await start($)
+  const heights = async (placement: 'dock' | 'inline') => {
+    const ui = await $.ui.mount({ ...SHAFT_PANE, surface: 'terminal', props: { ...SHAFT_PROPS, placement } })
+    const boxes = await ui.findAll({ type: 'Box' })
+    await ui.unmount()
+    return boxes.map(box => box.props.minHeight).filter(height => height !== undefined)
+  }
+  // `bodyRows` nad promptem to limit, nie wymóg (mods-reference „Height of a Pane above the prompt”).
+  expect(await heights('inline')).toEqual([])
+  expect(await heights('dock')).toEqual([SHAFT_PROPS.scroll.bodyRows - 1])
+})
+
 test('the plan shows what is done, what is in hand and what waits', async ($, on) => {
   engine(on, new Map())
   await start($)

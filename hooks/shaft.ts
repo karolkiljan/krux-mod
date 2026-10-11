@@ -56,8 +56,11 @@ export type ShaftData = {
   // Zegar sesji w ms: reset limitów i wiek zadania liczą się od niego.
   now: number
   columns: number
-  // Wiersze panelu: „Kontekst” stoi na dole, a listy repo rosną z wysokością.
+  // Wiersze panelu: listy repo rosną z wysokością.
   rows: number
+  // Panel z boku (`dock`) ma stałą wysokość: „Kontekst” stoi na dole. Nad promptem (`inline`)
+  // `rows` to limit, więc panel rośnie z treścią i nie wymusza pełnej wysokości.
+  fill: boolean
 }
 
 // Ile plików i commitów zmieści panel: wysoki pokazuje więcej, niski tylko czoło.
@@ -291,7 +294,7 @@ export function shaftTree({ Box, Text }: ShaftElements, data: ShaftData): Render
   // Robota u góry, „Kontekst” przypięty do dołu: panel nie wisi pustym ogonem.
   return Box({
     flexDirection: 'column',
-    ...(data.rows > 0 ? { minHeight: data.rows } : {}),
+    ...(data.fill && data.rows > 0 ? { minHeight: data.rows } : {}),
     children: [Box({ key: 'work', flexDirection: 'column', gap: 1, flexGrow: 1, ...(gauges.length > 0 ? { marginBottom: 1 } : {}), children: work }), ...gauges],
   })
 }
