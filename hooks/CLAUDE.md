@@ -50,7 +50,7 @@ Macierz mówi, co uruchamia zdarzenie i jakich pułapek silnika pilnować. Progi
 
 | Zdarzenie | Warunek | Skutek |
 |---|---|---|
-| `session.start` | zawsze | tryby z `$.store` do `$.state`, teksty z `voice/`, `prefersReducedMotion`, ostrzeżenie o pluginie `krux`, rejestracja `/krux` i narzędzia `watki` (`mcp__krux-mod__watki`), odczyt zużycia i repo; wznawia zegar apelu (są biegnący) i planu (zadanie w toku), także po reloadzie modułu |
+| `session.start` | zawsze | tryby z `$.store` do `$.state`, teksty z `voice/`, `prefersReducedMotion`, ostrzeżenie o pluginie `krux`, rejestracja `/krux` i narzędzia `watki` (`mcp__krux-mod__watki`); odczyt zużycia i repo zegarem po rejestracji (`$.clock.after(0)`), bo silnik czeka na ten hook przed pierwszym promptem (test); wznawia zegar apelu (są biegnący) i planu (zadanie w toku), także po reloadzie modułu |
 | `classic.SessionStart` | `clear`, `resume`, `fork` | tryby, `prefersReducedMotion` i repo od nowa: te komendy zerują `$.state` |
 | `prompt.compose` | dowolny | na końcu sekcje `krux-mod:persona`, `krux-mod:konkret`, `krux-mod:flow` aktywnych trybów, `scope: session`; konkret przy `modes.konkret \|\| autoKonkret` |
 | `prompt.submit` | od człowieka (`fromPerson`), także przełącznik | `lastPrompt = echoPrompt(text)` (spoza Morry `null`), `seenAt`; po przerwie ≥ 30 min toast `returnNote` (pusty nie); nic dla modelu |

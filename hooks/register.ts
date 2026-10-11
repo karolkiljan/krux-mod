@@ -595,8 +595,6 @@ export const register: Register = on => {
     // Reload modułu kasuje zegar apelu; orkowie z `$.state` biegną dalej.
     if (anyRunning(await read($, muster))) tickMuster($)
     tickBoard($, await read($, board), await $.clock.now())
-    await refreshUsage($)
-    await refreshGit($)
     try {
       await $.tool.register(THREAD_SPEC)
     } catch (error) {
@@ -612,6 +610,12 @@ export const register: Register = on => {
     } catch (error) {
       $.ui.log(`nie zarejestrować /krux: ${String(error)}`)
     }
+    // Silnik czeka na ten hook przed pierwszym promptem: zużycie i git (do 5 komend po 5 s)
+    // czyta zegar, nie start sesji.
+    $.clock.after(0, async () => {
+      await refreshUsage($)
+      await refreshGit($)
+    })
     return next(e)
   })
 
