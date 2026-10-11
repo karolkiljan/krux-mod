@@ -1,8 +1,8 @@
 # Kontrakt hooków moda Krux
 
-Pełny kontrakt moda: rola każdego modułu, macierz zdarzeń i niezmienniki z uzasadnieniami. Claude Code dociąga ten plik dopiero przy czytaniu plików z `hooks/`, więc nie obciąża startu każdej sesji. Korzeń `CLAUDE.md` trzyma mapę repo, skrót zasad przekrojowych i wskazanie skilla przed wydaniem.
+Pełny kontrakt moda: rola każdego modułu, macierz zdarzeń i niezmienniki z uzasadnieniami. Claude Code dociąga ten plik dopiero przy czytaniu plików z `hooks/`, więc nie obciąża startu każdej sesji. `.claude/CLAUDE.md` (kontekst projektu; w korzeniu pluginu `claude plugin validate --strict` go odrzuca) trzyma mapę repo, skrót zasad przekrojowych i wskazanie skilla przed wydaniem.
 
-Zmiana zachowania moda aktualizuje odpowiedni wiersz macierzy albo niezmiennik w tym pliku. Zasady przekrojowe stoją w korzeniu. Tu leżą reguły dotyczące wyłącznie `hooks/`.
+Zmiana zachowania moda aktualizuje odpowiedni wiersz macierzy albo niezmiennik w tym pliku. Zasady przekrojowe stoją w `.claude/CLAUDE.md`. Tu leżą reguły dotyczące wyłącznie `hooks/`.
 
 ## Moduły i skrypty
 
@@ -122,7 +122,7 @@ Macierz mówi, co uruchamia zdarzenie i jakich pułapek silnika pilnować. Progi
 
 ## Niezmienniki
 
-Uzupełniają zasady przekrojowe z korzenia `CLAUDE.md` i ich nie powtarzają. Uzasadnienia z pomiarów (liczby z benchu, A/B, zrzuty) leżą w `docs/research/2026-10-11-uzasadnienia-niezmiennikow.md`; pełna dawna wersja: `git show 5d76e5d:CLAUDE.md`.
+Uzupełniają zasady przekrojowe z `.claude/CLAUDE.md` i ich nie powtarzają. Uzasadnienia z pomiarów (liczby z benchu, A/B, zrzuty) leżą w `docs/research/2026-10-11-uzasadnienia-niezmiennikow.md`; pełna dawna wersja: `git show 5d76e5d:CLAUDE.md` (wtedy w korzeniu).
 
 ### Reguły hooks/
 
