@@ -609,6 +609,21 @@ export function workOf(tool: string, input: Record<string, unknown>): ToolWork |
   return null
 }
 
+// Czy narzędzie mogło zmienić repo, czyli czy po nim czytać git. Edycje zawsze. Bash nie,
+// gdy cały łańcuch tylko czyta (`look`, `trail`): bez przekierowania do pliku, bez
+// `find -delete/-exec` i bez `git branch` z nazwą. Przy wątpliwości: tak.
+export function changesRepo(tool: string, input: Record<string, unknown>): boolean {
+  const work = workOf(tool, input)
+  if (work === 'edit') return true
+  if (tool !== 'Bash') return false
+  if (work !== 'look' && work !== 'trail') return true
+  const command = String(input.command ?? '')
+  if (/(?:^|[^\d&>])>{1,2}(?!&)(?!\s*\/dev\/null\b)/u.test(command)) return true
+  return shellParts(command).some(part =>
+    /^find\b.*\s-(?:delete|exec|execdir|ok)\b/u.test(part) ||
+    /^git branch\s+(?!(?:-[arv]+|-vv|--list|--show-current|--all|--remotes|--verbose|--contains|--merged|--no-merged)(?:\s|$))\S/u.test(part))
+}
+
 // Rodzaj komendy powłoki dla `workOf` i dla sceny z podpisem: odczyt na początku
 // łańcucha nie może ukryć późniejszej komendy, ani jej błędu w kronice, ani roboty
 // na scenie (`ls && ./deploy.sh` to już kopanie, nie zaglądanie).
