@@ -39,7 +39,7 @@ const ORIGIN = { kind: 'composer' as const }
 type History = { role: 'user' | 'assistant'; text: string; toolUses: { tool_use_id: string; tool: string; input: Record<string, unknown>; isError?: true; text?: string }[] }[]
 
 type ProcessReply = { exitCode: number; stdout: string; stderr: string; isStdoutTruncated: boolean; isStderrTruncated: boolean }
-type Extras = { beforePaneList?: () => Promise<void>; paneClosed?: boolean; invalidations?: string[]; journalWrites?: KruxJournal[]; beforeStoreGet?: () => void; logs?: string[]; onPrompt?: () => void; toasts?: string[]; settings?: Record<string, unknown>; plugins?: string[]; toolError?: string; toolDenied?: boolean; toolReply?: { result: unknown; text?: string; isError?: true }; agentGate?: Promise<void>; history?: History; agents?: { id: string; status: AgentStatus; description?: string; type?: string }[]; opened?: string[]; closed?: string[]; usage?: SessionUsage; usageRead?: () => SessionUsage | Promise<SessionUsage>; beforeAgentList?: () => Promise<void>; beforeStoreSet?: () => Promise<void>; paneWaits?: boolean; paneHidden?: boolean; git?: { stdout: string }; tools?: string[]; commands?: CommandSpec[]; processRun?: (argv: readonly string[], timeoutMs: number | undefined) => ProcessReply | Promise<ProcessReply> }
+type Extras = { beforePaneList?: () => Promise<void>; paneClosed?: boolean; invalidations?: string[]; journalWrites?: KruxJournal[]; beforeStoreGet?: () => void; logs?: string[]; onPrompt?: () => void; toasts?: string[]; settings?: Record<string, unknown>; plugins?: string[]; toolError?: string; toolDenied?: boolean; toolReply?: { result: unknown; text?: string; isError?: true }; agentGate?: Promise<void>; history?: History; agents?: { id: string; status: AgentStatus; description?: string; type?: string }[]; opened?: string[]; closed?: string[]; usage?: SessionUsage; usageRead?: () => SessionUsage | Promise<SessionUsage>; beforeAgentList?: () => Promise<void>; beforeStoreSet?: () => Promise<void>; paneWaits?: boolean; paneHidden?: boolean; git?: { stdout: string }; tools?: string[]; deferrals?: (boolean | undefined)[]; commands?: CommandSpec[]; processRun?: (argv: readonly string[], timeoutMs: number | undefined) => ProcessReply | Promise<ProcessReply> }
 
 function engine(on: On, saved: Map<string, unknown>, extras: Extras = {}) {
   const toasts = extras.toasts ?? []
@@ -85,6 +85,7 @@ function engine(on: On, saved: Map<string, unknown>, extras: Extras = {}) {
   }))
   on('tool.register', ($, e) => {
     extras.tools?.push(String(e.name))
+    extras.deferrals?.push(e.isDeferred)
     return { value: { tool: `mcp__krux-mod__${String(e.name)}` } }
   })
   if (extras.invalidations !== undefined) on('ui.invalidate', ($, e, next) => { extras.invalidations!.push(e.event); return next(e) })
@@ -1290,9 +1291,12 @@ test('/krux sztolnia closes the shaft pane and opens it again', async ($, on) =>
 
 test('the threads tool is registered at start, keeps the threads and the Sztolnia leads with them', async ($, on) => {
   const tools: string[] = []
-  engine(on, new Map(), { tools })
+  const deferrals: (boolean | undefined)[] = []
+  engine(on, new Map(), { tools, deferrals })
   await start($)
   expect(tools).toEqual(['watki'])
+  // Pełny opis od pierwszej tury: model otwiera wątki sam, nie po wyszukaniu nazwy.
+  expect(deferrals).toEqual([false])
   const opened = await $.tool.call({ tool: 'mcp__krux-mod__watki', open: [{ text: '6 commitów niewypchniętych' }, { text: 'tsc nie puszczony', kind: 'risk' }] } as never)
   expect(opened.text).toBe('Open threads:\n#1 [todo] 6 commitów niewypchniętych\n#2 [risk] tsc nie puszczony')
   // Silnik przyjmuje od narzędzia moda wynik tekstem, nie obiektem.

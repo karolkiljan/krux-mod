@@ -38,6 +38,9 @@ export const THREAD_SPEC = {
       close: { type: 'array', items: { type: 'integer' }, description: 'Ids of threads now resolved.' },
     },
   },
+  // Model ma sięgać po wątki sam, więc musi widzieć opis co turę, nie samą nazwę
+  // za wyszukiwaniem narzędzi (v2.1.293+; starsze wersje pole pomijają).
+  isDeferred: false,
 }
 
 export const THREAD_MARK: Record<KruxThreadKind, string> = { todo: '○', risk: '⚠', ask: '?' }
