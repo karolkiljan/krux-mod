@@ -227,7 +227,7 @@ test('module memories of chat times and grouped tools drop their oldest entries 
   assert.deepEqual(Array.from(vm.runInContext('[MESSAGE_TIMES_LIMIT, GROUPED_TOOLS_LIMIT]', context)), [2000, 4000])
 })
 
-test('the version lives only in plugin.json, not in the marketplace entry', () => {
+test('the version and display fields live only in plugin.json, not in the marketplace entry', () => {
   const manifest = JSON.parse(fs.readFileSync('.claude-plugin/plugin.json', 'utf8'))
   const marketplace = JSON.parse(fs.readFileSync('.claude-plugin/marketplace.json', 'utf8'))
   assert.match(manifest.version, /^\d+\.\d+\.\d+$/u)
@@ -235,6 +235,8 @@ test('the version lives only in plugin.json, not in the marketplace entry', () =
   assert.ok(entry)
   // Silnik bierze wersję z plugin.json bez ostrzeżenia (host-marketplace „Release a new version”).
   assert.equal('version' in entry, false)
+  // Pola wyświetlane z wpisu przesłaniają plugin.json; przy źródle względnym silnik czyta manifest sam.
+  for (const field of ['description', 'author', 'displayName', 'homepage', 'repository', 'license', 'keywords']) assert.equal(field in entry, false, field)
 })
 
 test('the threads tool matcher is a literal that validate can read and matches THREAD_TOOL_NAME', () => {

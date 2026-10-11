@@ -10,11 +10,7 @@
   "plugins": [
     {
       "name": "krux-mod",
-      "source": "./",
-      "description": "Krux jako mod Claude Code: persona orka w prompcie systemowym, kotwica głosu, /krux i animowany kowal.",
-      "author": {
-        "name": "Karol Kiljan"
-      }
+      "source": "./"
     }
   ]
 }
