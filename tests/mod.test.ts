@@ -2106,38 +2106,30 @@ test('a quick note before the first prompt survives restoration and continues re
   expect(report.text).toBe('Open threads:\n#99 [todo] stary\n#100 [todo] nowy')
 })
 
-test('long-turn toasts start at five minutes, use the main clock and reset after completion', async ($, on) => {
+test('long-turn toasts start at five minutes of the engine turn duration', async ($, on) => {
   const toasts: string[] = []
-  const clock = engine(on, new Map(), { toasts })
+  engine(on, new Map(), { toasts })
   await start($)
   await $.turn.start({ text: '', turnId: 't1' })
-  await clock.advance(299_999)
-  await $.turn.complete({ answer: '', durationMs: 999_999, isAborted: false, turnId: 't1', reason: 'answer' })
+  await $.turn.complete({ answer: '', durationMs: 299_999, isAborted: false, turnId: 't1', reason: 'answer' })
   expect(toasts).toEqual([])
   await $.turn.start({ text: '', turnId: 't2' })
-  await clock.advance(300_000)
-  await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't2', reason: 'answer' })
+  await $.turn.complete({ answer: '', durationMs: 300_000, isAborted: false, turnId: 't2', reason: 'answer' })
   expect(toasts).toEqual(['Krux skończyć po 5 min.'])
-  await clock.advance(300_000)
-  await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 't2', reason: 'answer' })
-  expect(toasts).toHaveLength(1)
   await $.turn.start({ text: '', turnId: 't3' })
-  await clock.advance(359_999)
-  await $.turn.complete({ answer: '', durationMs: 1, isAborted: true, turnId: 't3', reason: 'answer' })
+  await $.turn.complete({ answer: '', durationMs: 359_999, isAborted: true, turnId: 't3', reason: 'answer' })
   expect(toasts[1]).toBe('Krux skończyć po 5 min.')
 })
 
-test('mate turn events cannot replace or clear the main turn timer', async ($, on) => {
+test('mate turn completions do not toast the main turn time', async ($, on) => {
   const toasts: string[] = []
-  const clock = engine(on, new Map(), { toasts })
+  engine(on, new Map(), { toasts })
   await start($)
   await $.turn.start({ text: '', turnId: 'main' })
-  await clock.advance(60_000)
   await $.turn.start({ text: '', turnId: 'mate', agentId: 'a1' } as never)
-  await clock.advance(240_000)
-  await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 'mate', reason: 'answer', agentId: 'a1' } as never)
+  await $.turn.complete({ answer: '', durationMs: 600_000, isAborted: false, turnId: 'mate', reason: 'answer', agentId: 'a1' } as never)
   expect(toasts).toEqual([])
-  await $.turn.complete({ answer: '', durationMs: 1, isAborted: false, turnId: 'main', reason: 'answer' })
+  await $.turn.complete({ answer: '', durationMs: 300_000, isAborted: false, turnId: 'main', reason: 'answer' })
   expect(toasts).toEqual(['Krux skończyć po 5 min.'])
 })
 

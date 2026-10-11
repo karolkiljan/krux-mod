@@ -902,10 +902,9 @@ export const register: Register = on => {
       await update($, muster, current => musterDone(current, agentId, now))
       return next(e)
     }
-    const now = await $.clock.now()
-    let elapsed = 0
-    await update($, turnAt, started => { elapsed = started === null ? 0 : now - started; return null })
-    if (elapsed >= 300_000) $.ui.toast(`Krux skończyć po ${Math.floor(elapsed / 60_000)} min.`)
+    // Czas tury daje silnik (`durationMs`, zegar ścienny); `turnAt` służy już tylko echu prośby.
+    await update($, turnAt, () => null)
+    if (e.durationMs >= 300_000) $.ui.toast(`Krux skończyć po ${Math.floor(e.durationMs / 60_000)} min.`)
     await update($, activity, () => null)
     await refreshGit($)
     if (e.reason === 'answer' && (await read($, modes)).persona) {
