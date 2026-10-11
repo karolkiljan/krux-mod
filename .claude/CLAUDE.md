@@ -7,7 +7,7 @@ Pełny kontrakt leży w `hooks/CLAUDE.md`: macierz zdarzeń (zdarzenie, warunek,
 ```text
 .claude/CLAUDE.md                              ten plik: kontekst projektu dla Claude Code (nie w korzeniu: `validate --strict` odrzuca `CLAUDE.md` w korzeniu pluginu)
 .claude/skills/przed-wydaniem/SKILL.md         checki przed wydaniem (skill projektu, poza paczką pluginu)
-.claude-plugin/{plugin.json,marketplace.json}  manifest i lokalny marketplace (wersja w obu)
+.claude-plugin/{plugin.json,marketplace.json}  manifest (jedyne źródło wersji) i lokalny marketplace
 hooks/                                         moduły moda; kontrakt, macierz i niezmienniki w `hooks/CLAUDE.md`
 voice/{persona,konkret,flow}.md                jedyne źródło tekstów trafiających do promptu
 agents/*.md                                    kumple jako typy subagentów `krux-mod:<ROSTER.agent>`
@@ -29,7 +29,7 @@ CONTEXT.md                                     słownik głosu, hordy i strażni
 - Przykłady w `voice/persona.md` nie powtarzają formuły zamknięcia: model kopiuje powierzchnię przykładów. O Morrze i o kumplach bez rodzaju („Morra wybrać”).
 - Nowy kumpel: wpis w `ROSTER`, imię w `KruxMate`, plik w `agents/`, linia w `skills/krux-horda/SKILL.md`, wzorce imienia w benchu (pilnuje `tests/scripts-regression.mjs`). Pliki `agents/` zastępują prompt systemowy kumpla: neutralna polszczyzna, bez rodzaju, opisy wszystkich kumpli razem najwyżej 700 znaków, Niuch, Piryt i Młot bez narzędzi edycji. Słowa fachu (`ROSTER.words`) to same rzeczowniki.
 - Trwały stan to wyłącznie tryby w `$.store`, każdy pod `mode.<tryb>`; reszta żyje w `$.state` sesji. Nowy tryb wymaga wpisu w `MODES`, `DEFAULT_MODES` i `types/index.d.ts`.
-- Wersja stoi w dwóch miejscach: `.claude-plugin/plugin.json` i `.claude-plugin/marketplace.json`.
+- Wersja stoi tylko w `.claude-plugin/plugin.json`; wpis w `marketplace.json` jej nie ma, bo silnik i tak bierze wersję z manifestu (host-marketplace.md, „Release a new version”).
 
 ## Przed wydaniem
 
