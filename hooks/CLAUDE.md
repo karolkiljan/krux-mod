@@ -1,6 +1,6 @@
 # Kontrakt hooków moda Krux
 
-Pełny kontrakt moda: rola każdego modułu, macierz zdarzeń i niezmienniki z uzasadnieniami. Claude Code dociąga ten plik dopiero przy czytaniu plików z `hooks/`, więc nie obciąża startu każdej sesji. Korzeń `CLAUDE.md` trzyma skrót zasad przekrojowych i wskazanie skilla przed wydaniem.
+Pełny kontrakt moda: rola każdego modułu, macierz zdarzeń i niezmienniki z uzasadnieniami. Claude Code dociąga ten plik dopiero przy czytaniu plików z `hooks/`, więc nie obciąża startu każdej sesji. Korzeń `CLAUDE.md` trzyma mapę repo, skrót zasad przekrojowych i wskazanie skilla przed wydaniem.
 
 Zmiana zachowania moda aktualizuje odpowiedni wiersz macierzy albo niezmiennik w tym pliku. Zasady przekrojowe stoją w korzeniu. Tu leżą reguły dotyczące wyłącznie `hooks/`.
 
@@ -11,7 +11,7 @@ Moduły `hooks/` z rolą i skrypty z instrukcją użycia.
 ```text
 hooks/hooks.json          wiring modułu (`modules`)
 hooks/register.ts         wszystkie hooki moda
-hooks/voice.ts            czyste funkcje głosu i ryzyka
+hooks/voice.ts            czyste funkcje głosu i ryzyka (`isCommitCommand`, `asksRelease`)
 hooks/roster.ts           horda: fach, odmiana, charakter, typ subagenta
 hooks/band.ts             plan pasa nad promptem
 hooks/avatar.ts           awatar rozmowy
@@ -20,22 +20,22 @@ hooks/echo.ts             echo prośby przy długiej turze
 hooks/journal.ts          dziennik narzędzi
 hooks/crew.ts             przejścia sceny poza Kruxem
 hooks/forge.ts            powierzchnia `Client`: płótno, sloty, marsz, reakcje
-hooks/sprites.ts          katalog scen, oś czynności, dymek
-hooks/palette.ts          kolory pikseli i fartuchy kumpli
-hooks/apron.ts            fartuchy i znaki fachu
-hooks/stage.ts            warsztat czynności i oś czasu
+hooks/sprites.ts          katalog scen, oś czynności (`Track`), dymek
+hooks/palette.ts          kolory pikseli (`PALETTE`) i zarezerwowane fartuchy kumpli (`MATE_APRONS`)
+hooks/apron.ts            fartuchy i znaki fachu (`dress`)
+hooks/stage.ts            warsztat czynności i oś czasu (`Route`)
 hooks/fidget.ts           gesty wiercenia
-hooks/acts/*.ts           czynności scen dla orków; `rest.ts` to czekanie na hordę
+hooks/acts/*.ts           czynności scen dla orków, także test/seal/build/tear/think/write; `rest.ts` to czekanie na hordę
 hooks/mood.ts             humor orków i teksty dymków
 hooks/gauge.ts            miernik głosu odpowiedzi
 hooks/lore.ts             kronika sesji i notka o hordzie
-hooks/outcome.ts          decyzja o nieukończonym Bash
+hooks/outcome.ts          decyzja o nieukończonym Bash: `run_in_background` albo `backgroundTaskId` wyniku
 hooks/terminal-text.ts    szerokość komórek terminala
-hooks/board.ts            tablica Sztolni: plan, testy, gotowość
+hooks/board.ts            tablica Sztolni: `boardAfter`, `testRunOf`, `usageOf`; plan, testy, gotowość
 hooks/muster.ts           apel hordy w Sztolni
-hooks/git.ts              odczyt gita; `--no-optional-locks` (nie ruszają indeksu Morry), `core.quotePath=false`
+hooks/git.ts              czysty odczyt `git status --porcelain=v2 --branch` i `git log` (`gitOf`: liczby, pliki, commity z `pushed`); `GIT_CHECK` i `GIT_CHECK_CACHED` dla `diff --check` drzewa i indeksu; `--no-optional-locks` (nie ruszają indeksu Morry), `core.quotePath=false`
 hooks/threads.ts          wątki Sztolni
-hooks/report.ts           raport dnia
+hooks/report.ts           raport dnia (`dayReport`)
 hooks/shaft.ts            panel Sztolni
 scripts/act-sheet.ts                          arkusz PNG i walidacja klatek: `npx tsx scripts/act-sheet.ts <scena|plik.ts:EKSPORT|gesty> <plik.png> [czynność|gest]`; czynność z `who` w fartuchu pierwszego orka z `who`
 scripts/voice-bench.mjs                       pomiar głosu na modelu (A/B kotwicy), scenariusze `cache` (12 tur, sam odczyt) i `smrod` (7 tur: testy, naprawa, decyzja o wydaniu); tury notek o hordzie odtwarza z odpowiedzi (`middleClosings`)
@@ -129,6 +129,7 @@ Uzupełniają zasady przekrojowe z korzenia `CLAUDE.md` i ich nie powtarzają. U
 - Zgody na narzędzia obsługuje wyłącznie silnik: mod nie rejestruje `tool.check`.
 - `isDestructive` rozpoznaje komendy, nie słowa; przy wątpliwości flaga zostaje. Każda komenda ma przykład i bezpiecznego sąsiada w `tests/voice.test.ts`.
 - Sekcje moda idą na końcu jako `session`: tekst zmienny nie może siedzieć po stronie `shared` cache'a.
+- Żaden przodek treści silnika (`next(e)`) nie ma `width`: silnik odrzuca takie drzewo, a `claude plugin test` tego nie łapie.
 
 ### Głos i miernik
 
@@ -142,7 +143,7 @@ Uzupełniają zasady przekrojowe z korzenia `CLAUDE.md` i ich nie powtarzają. U
 ### Horda w prompcie i nastrój
 
 - Notka o hordzie: imię i fakt z kroniki, bez faktu prośba o coś z dnia kumpla; nigdy robota w repo. Fakt ma każdy fach: testy Młot, commity Piryt, zawał Niuch, budowanie albo edycje Grom, pliki interfejsu Ochra, rozbiórka Lont; spośród kumpli z faktem wybiera seed, nie ostatnie zdarzenie. Charakter (`trait`), miejsce i formę daje kod; miejsca rotują (`pick(PLACES, tura + 1)`), a środek mówi wprost „nie na końcu odpowiedzi”.
-- Ucieczkę kumpla na koniec mierzy `middleClosings` (ostatnie zdanie w turach „w środku”), nie `hordeClosings`. Bench odtwarza tury notek regułą `lifeNote` i `recordAnswer`: kumpel wymieniony bez notki przesuwa harmonogram.
+- Ucieczkę kumpla na koniec mierzy `middleClosings` (ostatnie zdanie w turach „w środku”), nie `hordeClosings`. Bench odtwarza tury notek regułą `lifeNote` i `recordAnswer`: kumpel wymieniony bez notki przesuwa harmonogram. Bench i `lore.ts` dzielą `QUIET_TURNS` i rotację miejsc (test skryptów).
 - Charakter kumpla to sam czasownik, notka nie mówi „był” (test). Liczby w tekstach moda stoją przy bezokoliczniku albo w etykiecie („2 na 2 padać”, „padłe: 2”), bez odmiany (test).
 - Humor na ekranie liczy `mood.ts`; model dostaje osobną linię `moodNote` (`lore.ts`): nastrój ostatniego zdarzenia kroniki z faktem, jedno zdanie, raz na zdarzenie (`moodSeen`); zielone bez wcześniejszego smrodu nie daje linii. Forma z kodu: „Krux + bezokolicznik”, bez słowa „nastrój”. Linia mówi, że nastrój nie zmienia ocen ani decyzji, i nie idzie przy wydaniu, planie ani ruchu nieodwracalnym. Po wznowieniu `moodSeen` pusty, więc ostatnie zdarzenie daje linię jeszcze raz. Zmiana tekstu linii to zmiana kotwicy (A/B).
 - Kumple: wzorce imienia w benchu (`hordePattern`, `MATE_NAMES`, `MATE_WORDS`) to przyrząd pomiaru, stały między ramionami A/B. Niuch i Młot chodzą na `haiku`, reszta na modelu rodzica. Bash tylko do odczytu i czyste pliki Lonta stoją w prompcie, zgody daje silnik (`docs/adr/0001-lont-zakaz-w-prompcie.md`). Opis kumpla: fach, warunek wysłania, granica; bramka korzyści zostaje w skillu `krux-horda`.

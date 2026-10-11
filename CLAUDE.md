@@ -1,6 +1,23 @@
 # Kontrakt utrzymania moda Krux
 
-Pełny kontrakt leży w `hooks/CLAUDE.md`: macierz zdarzeń (zdarzenie, warunek, skutek) i niezmienniki; uzasadnienia z benchu leżą w `docs/research/2026-10-11-uzasadnienia-niezmiennikow.md`. Claude Code dociąga go dopiero przy czytaniu plików z `hooks/`. Przed zmianą zachowania moda przeczytaj go w całości i zaktualizuj tam odpowiedni wiersz macierzy albo niezmiennik. Poniżej tylko skrót zasad, które obowiązują także poza `hooks/`.
+Pełny kontrakt leży w `hooks/CLAUDE.md`: macierz zdarzeń (zdarzenie, warunek, skutek) i niezmienniki; uzasadnienia z benchu leżą w `docs/research/2026-10-11-uzasadnienia-niezmiennikow.md`. Claude Code dociąga go dopiero przy czytaniu plików z `hooks/`. Przed zmianą zachowania moda przeczytaj go w całości i zaktualizuj tam odpowiedni wiersz macierzy albo niezmiennik. Poniżej mapa repo i skrót zasad, które obowiązują także poza `hooks/`.
+
+## Mapa repo
+
+```text
+.claude-plugin/{plugin.json,marketplace.json}  manifest i lokalny marketplace (wersja w obu)
+hooks/                                         moduły moda; kontrakt, macierz i niezmienniki w `hooks/CLAUDE.md`
+voice/{persona,konkret,flow}.md                jedyne źródło tekstów trafiających do promptu
+agents/*.md                                    kumple jako typy subagentów `krux-mod:<ROSTER.agent>`
+skills/krux-horda/SKILL.md                     horda na żądanie: kiedy wołać kumpla i którym typem
+types/index.d.ts                               kontrakt `$.state` (`krux-mod.*`)
+tests/*.test.ts                                testy `claude plugin test`
+tests/scripts-regression.mjs                   testy skryptów i plików `agents/`
+scripts/                                       act-sheet (arkusz klatek), voice-bench i bench-compare (pomiar głosu), tui-shot.py (zrzut ekranu)
+benchmarks/                                    surowe przebiegi benchu
+docs/research/, docs/adr/, docs/plans/         źródła zmian głosu, decyzje trudne do cofnięcia, plany gałęzi
+CONTEXT.md                                     słownik głosu, hordy i strażnika
+```
 
 ## Zasady przekrojowe
 
