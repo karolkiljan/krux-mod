@@ -26,7 +26,7 @@ claude plugin tag --dry-run .
 claude plugin eval . --scaffold --trust-plugin --no-publish
 ```
 
-Pełny przebieg to 3 przypadki × 3 biegi × 2 ramiona (z modem i bez), na modelu domyślnym; do iteracji `--runs 1 --ablation none --model sonnet`. Po zmianie opisu skilla albo agentów porównać `skill-fired` przed i po. Wyniki lądują w `evals/results/` (w `.gitignore`).
+Pełny przebieg to 3 przypadki × 3 biegi × 2 ramiona (z modem i bez), na modelu domyślnym; do iteracji `--runs 1 --ablation none --model sonnet`. Po zmianie opisu skilla albo agentów porównać `skill-fired` przed i po. Punkt odniesienia (opis z `when_to_use`, `sonnet`, 3 biegi): `skill-fired` 2/3 w obu przypadkach pozytywnych, drobnica 3/3 bez hordy; stary opis: 0/3. Wyniki lądują w `evals/results/` (w `.gitignore`).
 
 ## Wersja i instalacja
 
