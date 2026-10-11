@@ -5,7 +5,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import vm from 'node:vm'
-import { spawnSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { builtinModules, createRequire, stripTypeScriptTypes } from 'node:module'
 import { EventEmitter } from 'node:events'
 import { Writable } from 'node:stream'
@@ -272,10 +272,10 @@ test('git refresh runs status, log and diff check concurrently and coalesces ove
   const context = registerContext({ ...commands, read: async () => state, update: async (_api, _atom, change) => { state = change(state) } })
   const api = { process: { run: async (argv, options) => {
     assert.equal(options.timeoutMs, 5000)
-    const command = argv.includes('--cached') ? 'diff-cached' : argv.includes('--check') ? 'diff' : argv[4]
-    if (command === 'diff') assert.deepEqual(Array.from(argv), ['git', '--no-optional-locks', 'diff', '--check'])
-    else if (command === 'diff-cached') assert.deepEqual(Array.from(argv), ['git', '--no-optional-locks', 'diff', '--cached', '--check'])
-    else assert.deepEqual(Array.from(argv).slice(0, 4), ['git', '--no-optional-locks', '-c', 'core.quotePath=false'])
+    const command = argv.includes('--cached') ? 'diff-cached' : argv.includes('--check') ? 'diff' : argv[6]
+    if (command === 'diff') assert.deepEqual(Array.from(argv), ['git', '--no-optional-locks', '-c', 'core.fsmonitor=false', 'diff', '--check'])
+    else if (command === 'diff-cached') assert.deepEqual(Array.from(argv), ['git', '--no-optional-locks', '-c', 'core.fsmonitor=false', 'diff', '--cached', '--check'])
+    else assert.deepEqual(Array.from(argv).slice(0, 6), ['git', '--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'core.quotePath=false'])
     calls.push(command)
     if (command === 'status' && failStatus) throw new Error('git unavailable')
     if (blocked && command === 'log') await gate
@@ -329,9 +329,9 @@ test('git refresh reads upstream reachability with full hashes and safe global o
     calls.push(Array.from(argv))
     assert.equal(options.timeoutMs, 5000)
     if (argv.includes('--check')) return { exitCode: 0, stdout: '' }
-    if (argv[4] === 'status') return { exitCode: 0, stdout: '# branch.head main\n# branch.upstream origin/main\n# branch.ab +2 -0' }
-    if (argv[4] === 'log') return { exitCode: 0, stdout: 'mergeoid\tmerge\tmerge\nremoteoid\tremote\tupstream\nlocaloid\tlocal\tlocal\nbaseoid\tbase\tbase' }
-    assert.deepEqual(Array.from(argv), ['git', '--no-optional-locks', '-c', 'core.quotePath=false', 'rev-list', '@{upstream}..HEAD'])
+    if (argv[6] === 'status') return { exitCode: 0, stdout: '# branch.head main\n# branch.upstream origin/main\n# branch.ab +2 -0' }
+    if (argv[6] === 'log') return { exitCode: 0, stdout: 'mergeoid\tmerge\tmerge\nremoteoid\tremote\tupstream\nlocaloid\tlocal\tlocal\nbaseoid\tbase\tbase' }
+    assert.deepEqual(Array.from(argv), ['git', '--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'core.quotePath=false', 'rev-list', '@{upstream}..HEAD'])
     return { exitCode: reachability === 'failed' ? 128 : 0, stdout: reachability === 'truncated' ? 'mergeoid\n' : 'mergeoid\nlocaloid\n', isStdoutTruncated: reachability === 'truncated' }
   } } }
   await vm.runInContext('refreshGit(api)', context)
@@ -406,14 +406,39 @@ test('a refresh at completion reads again instead of joining a finished snapshot
       update: async (_api, _atom, change) => { state = change(state) },
     })
     context.api = { process: { run: async argv => {
-      calls.push(argv.includes('--cached') ? 'diff-cached' : argv.includes('--check') ? 'diff' : argv[4])
-      return { exitCode: 0, stdout: argv[4] === 'status' ? '# branch.head main' : 'oid\tabc\tlocal' }
+      calls.push(argv.includes('--cached') ? 'diff-cached' : argv.includes('--check') ? 'diff' : argv[6])
+      return { exitCode: 0, stdout: argv[6] === 'status' ? '# branch.head main' : 'oid\tabc\tlocal' }
     } } }
     const first = vm.runInContext('refreshGit(api)', context)
     await first
     await lateCall
     await later
     assert.deepEqual(calls, ['status', 'log', 'diff', 'diff-cached', 'status', 'log', 'diff', 'diff-cached'], `microtask depth ${depth}`)
+  }
+})
+
+test('mod git reads do not run a core.fsmonitor command from the repository config', () => {
+  const repository = fs.mkdtempSync(path.join(os.tmpdir(), 'krux-git-fsmonitor-'))
+  try {
+    const marker = path.join(repository, 'fsmonitor-ran')
+    const hook = path.join(repository, 'fsmonitor.sh')
+    fs.writeFileSync(hook, `#!/bin/sh\ntouch '${marker}'\n`, { mode: 0o755 })
+    const git = (...args) => execFileSync('git', args, { cwd: repository, stdio: 'pipe' })
+    git('init', '-q')
+    git('config', 'core.fsmonitor', hook)
+    // Bez wyłączenia git uruchamia komendę z konfiguracji repo: test ma sens.
+    git('status', '--porcelain=v2')
+    assert.ok(fs.existsSync(marker))
+    fs.rmSync(marker)
+    const gitContext = vm.createContext({})
+    vm.runInContext(stripTypeScriptTypes(fs.readFileSync('hooks/git.ts', 'utf8').replace(/^import .*\n/gmu, '').replaceAll('export ', '')), gitContext)
+    const commands = vm.runInContext('[GIT_STATUS, GIT_LOG, GIT_CHECK, GIT_CHECK_CACHED]', gitContext)
+    for (const [command, ...args] of commands) {
+      try { execFileSync(command, args, { cwd: repository, stdio: 'pipe' }) } catch { /* Pusty log bez commitów kończy się kodem 128. */ }
+    }
+    assert.equal(fs.existsSync(marker), false)
+  } finally {
+    fs.rmSync(repository, { recursive: true, force: true })
   }
 })
 

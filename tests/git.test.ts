@@ -5,8 +5,8 @@ import { GIT_LOG, GIT_STATUS, gitBusy, gitOf, gitShort } from '../hooks/git'
 
 test('whitespace checks inspect the working tree and the index separately without optional locks', () => {
   expect(gitCommands).toMatchObject({
-    GIT_CHECK: ['git', '--no-optional-locks', 'diff', '--check'],
-    GIT_CHECK_CACHED: ['git', '--no-optional-locks', 'diff', '--cached', '--check'],
+    GIT_CHECK: ['git', '--no-optional-locks', '-c', 'core.fsmonitor=false', 'diff', '--check'],
+    GIT_CHECK_CACHED: ['git', '--no-optional-locks', '-c', 'core.fsmonitor=false', 'diff', '--cached', '--check'],
   })
 })
 
@@ -65,8 +65,8 @@ test('commits absent from upstream wait to be pushed; without upstream none coun
 })
 
 test('git reads disable optional index locks and keep non-ASCII paths readable', () => {
-  expect([...GIT_STATUS]).toEqual(['git', '--no-optional-locks', '-c', 'core.quotePath=false', 'status', '--porcelain=v2', '--branch'])
-  expect([...GIT_LOG]).toEqual(['git', '--no-optional-locks', '-c', 'core.quotePath=false', 'log', '--format=%H%x09%h%x09%s', '-n', '10'])
+  expect([...GIT_STATUS]).toEqual(['git', '--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'core.quotePath=false', 'status', '--porcelain=v2', '--branch'])
+  expect([...GIT_LOG]).toEqual(['git', '--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'core.quotePath=false', 'log', '--format=%H%x09%h%x09%s', '-n', '10'])
   expect(gitOf('# branch.head main\n? kawał.txt\n1 .M N... 100644 100644 100644 aaa bbb żółw.txt').files).toEqual([
     { code: '?', path: 'kawał.txt' }, { code: 'M', path: 'żółw.txt' },
   ])
