@@ -227,6 +227,29 @@ test('module memories of chat times and grouped tools drop their oldest entries 
   assert.deepEqual(Array.from(vm.runInContext('[MESSAGE_TIMES_LIMIT, GROUPED_TOOLS_LIMIT]', context)), [2000, 4000])
 })
 
+// `claude plugin test` nie odpala `ui.fault`: zestaw ma tylko render, resolve, scroll i focus.
+test('a canvas fault switches the band and the forge pane to text for the session', async () => {
+  const context = registerContext()
+  const hooks = new Map()
+  context.on = (event, ...args) => {
+    hooks.set(event, args.at(-1))
+    return { catch() {} }
+  }
+  vm.runInContext('register(on)', context)
+  assert.equal(vm.runInContext('forgeFault', context), false)
+  const logs = []
+  const event = { surface: 'terminal', component: 'AbovePrompt', requestId: 'band', element: 'forge', module: 'hooks/forge.ts', phase: 'load', reason: 'boom' }
+  const result = await hooks.get('ui.fault')({ ui: { log: (text, options) => logs.push([text, options?.to]) } }, event, async e => { assert.equal(e, event); return {} })
+  assert.deepEqual(result, {})
+  assert.equal(vm.runInContext('forgeFault', context), true)
+  assert.deepEqual(logs, [['płótno hooks/forge.ts (load): boom', 'debug']])
+  // Oba miejsca z płótnem czytają flagę: pas (`hasClient`, gałąź tekstu) i panel /krux.
+  const source = fs.readFileSync('hooks/register.ts', 'utf8')
+  assert.match(source, /hasClient: 'Client' in table && !forgeFault/u)
+  assert.match(source, /!\('Client' in table\) \|\| forgeFault/u)
+  assert.match(source, /'Client' in table && !forgeFault && e\.props\.bodyColumns/u)
+})
+
 test('git refresh runs status, log and diff check concurrently and coalesces overlapping reads with one trailing refresh', async () => {
   const gitSource = fs.readFileSync('hooks/git.ts', 'utf8').replace(/^import .*\n/gmu, '').replaceAll('export ', '')
   const gitContext = vm.createContext({})
