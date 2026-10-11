@@ -193,6 +193,7 @@ async function loadSession($: EngineInterface): Promise<void> {
   journalWatch = null
   journalWatchVersion += 1
   journalVisible = false
+  knownRunning = null
   await loadModes($)
   await loadMotion($)
 }
@@ -272,18 +273,23 @@ async function noteStep($: EngineInterface, agentId: string | undefined, descrip
 }
 
 // Agenci, których silnik widzi jako `running`; `null`, gdy listy nie ma.
+// Ostatnia lista biegnących z silnika: póki zegar apelu tyka co sekundę, pas bierze ją
+// zamiast pytać `$.agent.list()` przy każdym rysunku.
+let knownRunning: ReadonlySet<string> | null = null
+
 async function runningIds($: EngineInterface): Promise<ReadonlySet<string> | null> {
   try {
-    return new Set((await $.agent.list()).filter(agent => agent.status === 'running').map(agent => agent.id))
+    knownRunning = new Set((await $.agent.list()).filter(agent => agent.status === 'running').map(agent => agent.id))
   } catch {
-    return null
+    knownRunning = null
   }
+  return knownRunning
 }
 
 // Agenci w tle kończą się poza turą: na scenie zostaje tylko to, co silnik widzi jako `running`.
 async function liveMembers($: EngineInterface, members: KruxHordeMember[]): Promise<KruxHordeMember[]> {
   if (members.length === 0) return members
-  const ids = await runningIds($)
+  const ids = ticking && knownRunning !== null ? knownRunning : await runningIds($)
   return ids === null ? members : members.filter(member => ids.has(member.agentId))
 }
 
