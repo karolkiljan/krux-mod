@@ -62,7 +62,7 @@ function engine(on: On, saved: Map<string, unknown>, extras: Extras = {}) {
     value: (extras.plugins ?? []).map(plugin => ({ name: `${plugin}:${plugin}`, description: '', source: 'plugin' as const, plugin })),
   }))
   on('command.register', (_$, e) => { extras.commands?.push(e); return { value: { command: e.name } } })
-  on('ui.log', ($, e) => { extras.logs?.push(String(e.text)); return { value: undefined } })
+  on('ui.log', ($, e) => { extras.logs?.push(e.to === 'debug' ? `[debug] ${e.text}` : String(e.text)); return { value: undefined } })
   on('ui.toast', ($, e) => {
     toasts.push(String(e.text))
     return { value: undefined }
@@ -1479,7 +1479,10 @@ test('gating hook failures pass the original session, prompt and compaction even
   const result = await $.session.compact({ trigger: 'manual', instructions: 'original instructions', messages: [{ role: 'user', text: 'before summary', toolUses: [] }] })
   expect(result.messages?.[0]?.text).toBe('kept summary')
   expect([notices, prompts, compactions]).toEqual([3, 1, 1])
-  expect(logs.filter(line => /classic.SessionStart|prompt.submit|session.compact/u.test(line)).length).toBe(5)
+  const failures = logs.filter(line => /classic.SessionStart|prompt.submit|session.compact/u.test(line))
+  expect(failures.length).toBe(5)
+  // Awaria hooka idzie do debug logu i bez własnej nazwy moda: silnik dokleja ją sam.
+  expect(failures.every(line => line.startsWith('[debug] ') && !line.includes('krux-mod:'))).toBe(true)
 })
 
 test('replay and live counting agree through toggles, disabled persona, empty text and subagent reports', async ($, on) => {

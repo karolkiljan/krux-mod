@@ -118,9 +118,10 @@ function freshNotes(now: number): typeof pendingNotes {
   return pendingNotes.filter(note => now - note.at <= NOTES_TTL_MS).slice(-NOTES_LIMIT)
 }
 
-// Błąd dodatku nie blokuje sesji; nawet logowanie może zawieść.
+// Błąd dodatku nie blokuje sesji; nawet logowanie może zawieść. Awarie idą do debug logu,
+// nie do transkryptu; nazwę moda silnik dokleja sam.
 function hookFailure($: EngineInterface, event: string, error: { kind: string; message?: string }): void {
-  try { $.ui.log(`krux-mod: ${event}: ${error.kind}${error.message === undefined ? '' : `: ${error.message}`}`) } catch { /* Log nie zastępuje zdarzenia. */ }
+  try { $.ui.log(`${event}: ${error.kind}${error.message === undefined ? '' : `: ${error.message}`}`, { to: 'debug' }) } catch { /* Log nie zastępuje zdarzenia. */ }
 }
 
 // Jeden zegar apelu naraz; reload modułu zaczyna bez zegara.
@@ -240,7 +241,7 @@ async function restoreOnce($: EngineInterface): Promise<void> {
     if (last !== null) await update($, moods, () => moodsAfter(last, found.lore))
     await update($, drift, () => found.drift)
   } catch (error) {
-    $.ui.log(`nie odtworzyć historii: ${String(error)}`)
+    $.ui.log(`nie odtworzyć historii: ${String(error)}`, { to: 'debug' })
   }
 }
 
@@ -322,7 +323,7 @@ async function syncShaftPane($: EngineInterface, on: boolean): Promise<void> {
     if (on) await $.ui.open({ id: SHAFT_PANE, title: 'Sztolnia', columns: SHAFT_COLUMNS })
     else await $.ui.close({ id: SHAFT_PANE })
   } catch (error) {
-    $.ui.log(`sztolnia: ${String(error)}`)
+    $.ui.log(`sztolnia: ${String(error)}`, { to: 'debug' })
   }
 }
 
@@ -487,7 +488,7 @@ function watchJournalVisibility($: EngineInterface, visible: boolean): void {
         tick()
       } catch (error) {
         if (version !== journalWatchVersion) return
-        try { $.ui.log(`dziennik: widoczność: ${String(error)}`) } catch { /* Zegar ma odzyskać odczyt. */ }
+        try { $.ui.log(`dziennik: widoczność: ${String(error)}`, { to: 'debug' }) } catch { /* Zegar ma odzyskać odczyt. */ }
         tick(1000)
       }
     })
@@ -783,7 +784,7 @@ export const register: Register = on => {
           try {
             await noteStep($, e.agentId, description)
           } catch (error) {
-            $.ui.log(`scena strumienia: ${String(error)}`)
+            $.ui.log(`scena strumienia: ${String(error)}`, { to: 'debug' })
           }
         }
         yield chunk
