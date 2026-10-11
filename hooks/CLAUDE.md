@@ -1,42 +1,42 @@
 # Kontrakt hooków moda Krux
 
-Pełny kontrakt moda: drzewo plików z opisem modułów, macierz zdarzeń i niezmienniki z uzasadnieniami. Claude Code dociąga ten plik dopiero przy czytaniu plików z `hooks/`, więc nie obciąża startu każdej sesji. Korzeń `CLAUDE.md` trzyma skrót zasad przekrojowych i komendy przed wydaniem.
+Pełny kontrakt moda: rola każdego modułu, macierz zdarzeń i niezmienniki z uzasadnieniami. Claude Code dociąga ten plik dopiero przy czytaniu plików z `hooks/`, więc nie obciąża startu każdej sesji. Korzeń `CLAUDE.md` trzyma skrót zasad przekrojowych i wskazanie skilla przed wydaniem.
 
-Zmiana zachowania moda aktualizuje odpowiedni wiersz macierzy albo niezmiennik w tym pliku. Zasady przekrojowe stoją tylko w korzeniu, bo ten plik zawsze jedzie razem z nim; tu ich nie powtarzamy.
+Zmiana zachowania moda aktualizuje odpowiedni wiersz macierzy albo niezmiennik w tym pliku. Zasady przekrojowe stoją w korzeniu. Tu leżą reguły dotyczące wyłącznie `hooks/`.
 
-## Drzewo plików
+## Moduły i skrypty
 
-Moduły `hooks/` i skrypty z instrukcją użycia; reszta drzewa stoi w korzeniu `CLAUDE.md`.
+Moduły `hooks/` z rolą i skrypty z instrukcją użycia.
 
 ```text
-hooks/hooks.json                              wskazuje hooks module (`modules`)
-hooks/register.ts                             wszystkie hooki moda
-hooks/voice.ts                                czyste funkcje: frazy, komendy, sekcje, słowa, rodzaj roboty narzędzia (`workOf`), prawdziwy commit (`isCommitCommand`), opis narzędzi, kto pisze prośbę (`fromPerson`), ruch nieodwracalny (`isDestructive`, `riskHint`), pytanie o wydanie (`asksRelease`)
-hooks/roster.ts                               horda w jednej tabeli: fach, odmiana imienia, charakter, słowa fachu, typ subagenta, fartuch
-hooks/band.ts                                 czysty plan pasa nad promptem: podpis, orkowie na płótnie, wysokość, kreska
-hooks/avatar.ts                              czysty awatar rozmowy: głowa orka/Morry jako runy półbloków, kolor mówcy
-hooks/chat.ts                                czyste drzewo czatu (`chatTree`): awatar, nagłówek, strony i natywna treść silnika
-hooks/echo.ts                                 echo prośby: cytat z ostatniej prośby Morry przy długiej turze (`echoLine`, próg 4 uderzenia albo 120 s, 60 kolumn)
-hooks/journal.ts                             czysty dziennik (`journalAfter`, do 200 wpisów), karta (`journalTree`) i zwinięty wiersz (`toolLine`)
-hooks/crew.ts                                 czyste przejścia sceny poza Kruxem: wysłani kumple, dymek i znaki reakcji / oddania zwoju (`crewAfter`)
-hooks/forge.ts                                moduł powierzchni `Client`: płótno, sloty, marsz, reakcje, rzut zwoju, zmęczenie, drzemka i odsłanianie dymka
-hooks/sprites.ts                              katalog scen, oś czynności orka (`Track`), humor, scena wielu orków, dymek, efekty płótna i chwyt zwoju (`withCatch`, `behind`)
-hooks/palette.ts                              kolory pikseli (`PALETTE`) i zarezerwowane fartuchy kumpli (`MATE_APRONS`)
-hooks/apron.ts                                fartuchy i znaki fachu: hełm Groma, nos Niucha, pędzel Ochry, lont Lonta (`dress`)
-hooks/stage.ts                                warsztat czynności: `Act`, `Gesture`, stójka, pomocnicy rysunku, oś czasu (`Route`: odcinki czynności, gesty), zejście do stójki
-hooks/fidget.ts                               gesty wiercenia (`GESTURES`): wspólne i z fachu (`who`)
-hooks/acts/*.ts                               co najmniej 3 czynności każdej sceny dla każdego orka (`who` zawęża czynność do fachu); także test/seal/build/tear/think/write; `rest.ts` to czekanie na hordę
-hooks/mood.ts                                 czyste funkcje: humor ze zdarzeń kroniki i z wyniku roboty kumpla (`mateMoodAfter`), kumpel z typu subagenta (`mateOfType`) i z zadania (`mateIn`), teksty dymka
-hooks/gauge.ts                                miernik głosu jednej odpowiedzi (metryki z benchmarku pluginu)
-hooks/lore.ts                                 kronika sesji, notka o życiu hordy i linia nastroju (`moodNote`)
-hooks/outcome.ts                              wspólna decyzja o nieukończonym Bash: run_in_background albo backgroundTaskId wyniku
-hooks/terminal-text.ts                        szerokość komórek terminala i obcinanie całych grafemów, bez zmiany treści
-hooks/board.ts                                czyste funkcje tablicy Sztolni: plan i testy z czasami (`boardAfter`, `testRunOf`), nieświeżość testów (`testsStale`), utknięcie (`stuckMinutes`), gotowość do commita (`readiness`), notka powrotu (`returnNote`), historia (`replayBoard`), zużycie (`usageOf`), paski i podpisy
-hooks/muster.ts                               czyste funkcje apelu hordy w Sztolni: start, ostatnie narzędzie, koniec, czas i kolejność orków
-hooks/git.ts                                  czysty odczyt `git status --porcelain=v2 --branch` i `git log`, oba z `--no-optional-locks` (nie ruszają indeksu Morry) i `core.quotePath=false` (`gitOf`: liczby, pliki, commity z `pushed`), komendy `GIT_CHECK` i `GIT_CHECK_CACHED` dla `diff --check` drzewa roboczego i indeksu, krótki podpis repo i narzędzia, po których repo czytamy od nowa
-hooks/threads.ts                              czyste wątki Sztolni: spec narzędzia `watki`, przejścia (`threadsAfter`), szybka notatka (`saveThread`), raport dla modelu, odtworzenie z historii
-hooks/report.ts                               czysty raport dnia do wklejenia (`dayReport`): commity, testy, plan, otwarte wątki i liczby z kroniki, neutralna polszczyzna
-hooks/shaft.ts                                czyste drzewo panelu Sztolni (`shaftTree`, `shaftTabs`): karty Stan/Dziennik, z `Box`/`Text` i danych (tablica, wiersze apelu, zużycie, zegar, szerokość); kolory iskry i skóry orka dla paneli
+hooks/hooks.json          wiring modułu (`modules`)
+hooks/register.ts         wszystkie hooki moda
+hooks/voice.ts            czyste funkcje głosu i ryzyka
+hooks/roster.ts           horda: fach, odmiana, charakter, typ subagenta
+hooks/band.ts             plan pasa nad promptem
+hooks/avatar.ts           awatar rozmowy
+hooks/chat.ts             drzewo czatu
+hooks/echo.ts             echo prośby przy długiej turze
+hooks/journal.ts          dziennik narzędzi
+hooks/crew.ts             przejścia sceny poza Kruxem
+hooks/forge.ts            powierzchnia `Client`: płótno, sloty, marsz, reakcje
+hooks/sprites.ts          katalog scen, oś czynności, dymek
+hooks/palette.ts          kolory pikseli i fartuchy kumpli
+hooks/apron.ts            fartuchy i znaki fachu
+hooks/stage.ts            warsztat czynności i oś czasu
+hooks/fidget.ts           gesty wiercenia
+hooks/acts/*.ts           czynności scen dla orków; `rest.ts` to czekanie na hordę
+hooks/mood.ts             humor orków i teksty dymków
+hooks/gauge.ts            miernik głosu odpowiedzi
+hooks/lore.ts             kronika sesji i notka o hordzie
+hooks/outcome.ts          decyzja o nieukończonym Bash
+hooks/terminal-text.ts    szerokość komórek terminala
+hooks/board.ts            tablica Sztolni: plan, testy, gotowość
+hooks/muster.ts           apel hordy w Sztolni
+hooks/git.ts              odczyt gita; `--no-optional-locks` (nie ruszają indeksu Morry), `core.quotePath=false`
+hooks/threads.ts          wątki Sztolni
+hooks/report.ts           raport dnia
+hooks/shaft.ts            panel Sztolni
 scripts/act-sheet.ts                          arkusz PNG i walidacja klatek: `npx tsx scripts/act-sheet.ts <scena|plik.ts:EKSPORT|gesty> <plik.png> [czynność|gest]`; czynność z `who` w fartuchu pierwszego orka z `who`
 scripts/voice-bench.mjs                       pomiar głosu na modelu (A/B kotwicy), scenariusze `cache` (12 tur, sam odczyt) i `smrod` (7 tur: testy, naprawa, decyzja o wydaniu); tury notek o hordzie odtwarza z odpowiedzi (`middleClosings`)
 scripts/bench-compare.mjs                     porównanie ramion: metryki od nowa z `responses.json`, test permutacyjny, odpowiedzi z wybranej tury
@@ -121,6 +121,14 @@ Macierz mówi, co uruchamia zdarzenie i jakich pułapek silnika pilnować. Progi
 ## Niezmienniki
 
 Uzupełniają zasady przekrojowe z korzenia `CLAUDE.md` i ich nie powtarzają. Uzasadnienia z pomiarów (liczby z benchu, A/B, zrzuty) leżą w `docs/research/2026-10-11-uzasadnienia-niezmiennikow.md`; pełna dawna wersja: `git show 5d76e5d:CLAUDE.md`.
+
+### Reguły hooks/
+
+- `$` przekazujemy tylko do funkcji z najwyższego poziomu `register.ts`; pozostałe moduły go nie znają i testy idą przez ich interfejsy (`bandPlan`, `crewAfter`, `shaftTree`), nie przez piksele.
+- Ścieżka modułu `Client` to literał `'./forge.ts'`: silnik czyta go ze źródła, zmienną odrzuca.
+- Zgody na narzędzia obsługuje wyłącznie silnik: mod nie rejestruje `tool.check`.
+- `isDestructive` rozpoznaje komendy, nie słowa; przy wątpliwości flaga zostaje. Każda komenda ma przykład i bezpiecznego sąsiada w `tests/voice.test.ts`.
+- Sekcje moda idą na końcu jako `session`: tekst zmienny nie może siedzieć po stronie `shared` cache'a.
 
 ### Głos i miernik
 
