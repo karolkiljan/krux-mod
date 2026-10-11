@@ -151,6 +151,7 @@ Uzupełniają zasady przekrojowe z korzenia `CLAUDE.md` i ich nie powtarzają. U
 
 ### Stan i tablica
 
+- Kilka zapisów `$.state` w jednym zdarzeniu (np. `tool.call`) nie daje kilku rysunków: silnik przerysowuje czytające miejsca w tempie odświeżania (10/s, w terminalu do 30/s) i łączy szybsze zmiany (typy `ui.render`: „at the redraw rate”; mods-reference „Limits”). Atomów nie scalamy dla liczby przerysowań; kosztem jest tylko wywołanie API.
 - Stary obiekt `modes` w `$.store` służy tylko za źródło trybów jeszcze niezapisanych pod `mode.<tryb>`. Lista kluczy `$.state`: `types/index.d.ts`; apel nie wraca po wznowieniu. Kronikę liczymy w środku `update`, nie przez osobny odczyt i zapis.
 - Po wznowieniu (`--resume`, restart) `replay` odtwarza raz na pusty `$.state`: kronikę, dryf, licznik tur i humor z ostatniego zdarzenia (sceny nie); `replayBoard` plan i ostatni przebieg testów (na Kruxa: historia nie mówi, który ork wołał); `replayThreads` wątki z oryginalnymi id, więc przycięta historia nie przenumerowuje. Równoległe odtworzenia czekają na wspólny wynik, pusta historia niczego nie nadpisuje.
 - Rodzaj roboty narzędzia rozstrzyga tylko `workOf` (`voice.ts`); tablica, scena i podpis `Bash` (`bashKind`) biorą go z tej samej decyzji (test).
