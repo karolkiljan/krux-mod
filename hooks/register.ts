@@ -13,7 +13,7 @@ import { MATES, ROSTER } from './roster'
 import type { BoardCall } from './board'
 import { EMPTY_BOARD, boardAfter, replayBoard, returnNote, usageOf } from './board'
 import { GIT_CHECK, GIT_CHECK_CACHED, GIT_LOG, GIT_STATUS, GIT_UNPUSHED, gitOf } from './git'
-import { EMPTY_THREADS, THREAD_SPEC, THREAD_TOOL_NAME, replayThreads, saveThread, threadsAfter, threadsReport } from './threads'
+import { EMPTY_THREADS, THREAD_SPEC, replayThreads, saveThread, threadsAfter, threadsReport } from './threads'
 import { dayReport } from './report'
 import { EMPTY_MUSTER, anyRunning, musterDone, musterRows, musterSpawn, musterTool } from './muster'
 import { KRUX_COLOR, ORC_COLOR, shaftDigest, shaftTabs, shaftTree } from './shaft'
@@ -908,7 +908,8 @@ export const register: Register = on => {
   })
 
   // Narzędzie wątków: model otwiera i zamyka wątki Sztolni, w odpowiedzi widzi otwarte z id.
-  on('tool.call', { tool: THREAD_TOOL_NAME }, async ($, e) => {
+  // Literał, nie stała: `claude plugin validate` czyta matcher ze źródła (test pilnuje zgodności z THREAD_TOOL_NAME).
+  on('tool.call', { tool: 'mcp__krux-mod__watki' }, async ($, e) => {
     let now = EMPTY_THREADS
     await update($, threads, current => (now = threadsAfter(current, e as unknown as Record<string, unknown>)))
     // Wynik narzędzia moda to tekst: rekord obiektem silnik odrzuca.
