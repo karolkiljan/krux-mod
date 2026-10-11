@@ -15,6 +15,7 @@ skills/krux-horda/SKILL.md                     horda na żądanie: kiedy wołać
 types/index.d.ts                               kontrakt `$.state` (`krux-mod.*`)
 tests/*.test.ts                                testy `claude plugin test`
 tests/scripts-regression.mjs                   testy skryptów i plików `agents/`
+evals/                                         evale `claude plugin eval` dla skilla `krux-horda` (wyniki w `evals/results/`, ignorowane)
 scripts/                                       act-sheet (arkusz klatek), voice-bench i bench-compare (pomiar głosu), tui-shot.py (zrzut ekranu)
 benchmarks/                                    surowe przebiegi benchu
 docs/research/, docs/adr/, docs/plans/         źródła zmian głosu, decyzje trudne do cofnięcia, plany gałęzi
