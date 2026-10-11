@@ -18,6 +18,16 @@ claude plugin tag --dry-run .
 
 `--strict` traktuje ostrzeżenia jak błędy, tak jak każe krok „Validate” w docs publikacji. `plugin tag --dry-run` (po commicie wydania, bo brudne drzewo odrzuca) sprawdza, że drzewo jest czyste, tag jeszcze nie istnieje, a wersja z `plugin.json` zgadza się z wpisem marketplace (wpis wersji nie ma, więc rozstrzyga manifest). Sam tag (`claude plugin tag . --push`, nazwa `krux-mod--v<wersja>`) jest potrzebny dopiero wtedy, gdy inny plugin zadeklaruje zakres wersji na ten; do tego czasu wystarcza próba.
 
+## Evale skilla `krux-horda`
+
+`evals/` trzyma 3 przypadki: szeroki zwiad i przegląd świeżym okiem (skill powinien się odpalić) oraz drobnicę (bez skilla i bez subagenta). Fixture tworzą skrypty `fixture.sh`, więc potrzebne jest `--scaffold`:
+
+```bash
+claude plugin eval . --scaffold --trust-plugin --no-publish
+```
+
+Pełny przebieg to 3 przypadki × 3 biegi × 2 ramiona (z modem i bez), na modelu domyślnym; do iteracji `--runs 1 --ablation none --model sonnet`. Po zmianie opisu skilla albo agentów porównać `skill-fired` przed i po. Wyniki lądują w `evals/results/` (w `.gitignore`).
+
 ## Wersja i instalacja
 
 Wersję podbija się tylko w `.claude-plugin/plugin.json`. Użytkownicy instalują przez marketplace, więc przed wydaniem trzeba sprawdzić tę ścieżkę, nie tylko `--plugin-dir`:
