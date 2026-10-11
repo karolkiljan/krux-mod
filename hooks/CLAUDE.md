@@ -88,7 +88,7 @@ Macierz mówi, co uruchamia zdarzenie i jakich pułapek silnika pilnować. Progi
 | `tool.call` | `test-fail`, główny albo kumpel | `CrewEvent.failure?` niesie nazwę padłego testu z bieżącego wyniku do `eventLine` |
 | `tool.call` | dowolny wątek, bez `deny` | `journalAfter` w `update`: `tool_use_id`, `agentId`, kto, czas końca; także przy czacie off |
 | `tool.call` | dowolny wątek, `changesRepo` (`voice.ts`, z `workOf`): edycje i Bash poza samym odczytem (`look`, `trail` bez przekierowania do pliku, `find -delete` ani `git branch` z nazwą); bez `deny` | `refreshGit` (status, log, `GIT_CHECK`, `GIT_CHECK_CACHED`, przy upstream `GIT_UNPUSHED`; 5 s na komendę); zapis przy zmianie, poza repo `null`; wzrost `behind` daje toast „origin ma N nowych commitów — git pull.” |
-| `tool.call` `mcp__krux-mod__watki` | model otwiera albo zamyka wątki | `threadsAfter` w `update`, wynik tekstem (obiekt silnik odrzuca); silnik odkłada narzędzie jak MCP, więc model widzi samą nazwę, póki jej nie wyszuka |
+| `tool.call` `mcp__krux-mod__watki` | model otwiera albo zamyka wątki | `threadsAfter` w `update`, wynik tekstem (obiekt silnik odrzuca); rejestracja z `isDeferred: false`, więc model widzi pełny opis co turę zamiast samej nazwy za wyszukiwaniem narzędzi (v2.1.293+, test) |
 | `turn.complete` | wątek główny | `turnAt` na zero; `e.durationMs` ≥ 300 s daje toast „Krux skończyć po N min.”; odczyt repo |
 | `turn.complete` | główny, `reason: answer`, persona `on` | werdykt miernika zastępuje `drift` (`null` przy za krótkiej odpowiedzi i ostrzeżeniu przed ruchem nieodwracalnym); kumple z odpowiedzi do kroniki |
 
