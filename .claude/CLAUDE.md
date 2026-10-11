@@ -5,6 +5,8 @@ Pełny kontrakt leży w `hooks/CLAUDE.md`: macierz zdarzeń (zdarzenie, warunek,
 ## Mapa repo
 
 ```text
+.claude/CLAUDE.md                              ten plik: kontekst projektu dla Claude Code (nie w korzeniu: `validate --strict` odrzuca `CLAUDE.md` w korzeniu pluginu)
+.claude/skills/przed-wydaniem/SKILL.md         checki przed wydaniem (skill projektu, poza paczką pluginu)
 .claude-plugin/{plugin.json,marketplace.json}  manifest i lokalny marketplace (wersja w obu)
 hooks/                                         moduły moda; kontrakt, macierz i niezmienniki w `hooks/CLAUDE.md`
 voice/{persona,konkret,flow}.md                jedyne źródło tekstów trafiających do promptu
