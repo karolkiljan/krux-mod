@@ -190,9 +190,8 @@ function registerContext(overrides = {}) {
   return context
 }
 
-test('a failed counter reset preserves completed compaction without running next twice', async () => {
+test('a failed counter reset fails after compaction without running next twice', async () => {
   let executions = 0
-  const logs = []
   const context = registerContext({
     read: async () => ({ persona: true }),
     update: async () => { throw new Error('counter unavailable') },
@@ -213,15 +212,10 @@ test('a failed counter reset preserves completed compaction without running next
     assert.equal(e.instructions, 'keep plan\n\ncompact note')
     return result
   }
-  const api = { ui: { log: text => logs.push(text) } }
-  await assert.rejects(hook.run(api, event, next), /counter unavailable/u)
-  // Kontrakt silnika: next w .catch zwraca zapamiętany wynik, jeśli już wykonany.
-  const caught = Object.assign(async () => result, { called: true, error: { kind: 'throw', message: 'counter unavailable' } })
-  assert.equal(await hook.catch(api, event, caught), result)
+  await assert.rejects(hook.run({}, event, next), /counter unavailable/u)
+  // Awaria po next: silnik zostawia gotowy wynik (mods-events „Handle a hook that fails”), mod nie ma .catch.
   assert.equal(executions, 1)
-  assert.match(logs[0], /session.compact.*counter unavailable/u)
-  // Awaria logowania też nie odbiera gotowego wyniku.
-  assert.equal(await hook.catch({ ui: { log() { throw new Error('log unavailable') } } }, event, caught), result)
+  assert.equal(hook.catch, undefined)
 })
 
 test('git refresh runs status, log and diff check concurrently and coalesces overlapping reads with one trailing refresh', async () => {
@@ -312,8 +306,7 @@ test('git refresh reads upstream reachability with full hashes and safe global o
 })
 
 
-test('gating observers recover failures without repeating downstream actions', async () => {
-  const logs = []
+test('gating observers fail without repeating downstream actions', async () => {
   const context = registerContext({
     mateIn: () => null,
     mateOfType: () => null,
@@ -331,7 +324,6 @@ test('gating observers recover failures without repeating downstream actions', a
   const api = {
     clock: { now: async () => { throw new Error('clock unavailable') } },
     store: { get: async () => { throw new Error('store unavailable') } },
-    ui: { log: text => logs.push(text) },
   }
   for (const [name, matcher, event, result] of [
     ['agent.spawn', null, { prompt: 'work', description: 'Niuch' }, { agentId: 'a1' }],
@@ -342,12 +334,11 @@ test('gating observers recover failures without repeating downstream actions', a
     const hook = hooks.find(hook => hook.event === name && (hook.matcher?.tool ?? null) === matcher)
     let executions = 0
     const next = async () => { executions += 1; return result }
+    // Silnik pomija hook bez .catch albo zostawia wynik next; mod nie może wołać next drugi raz.
     await assert.rejects(hook.run(api, event, next), /unavailable/u)
-    const caught = Object.assign(async () => executions > 0 ? result : next(), { called: executions > 0, error: { kind: 'throw', message: 'unavailable' } })
-    assert.equal(await hook.catch(api, event, caught), result)
-    assert.equal(executions, 1)
+    assert.ok(executions <= 1)
+    assert.equal(hook.catch, undefined)
   }
-  assert.equal(logs.length, 4)
 })
 
 

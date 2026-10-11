@@ -127,7 +127,7 @@ Uzupełniają zasady przekrojowe z korzenia `CLAUDE.md` i ich nie powtarzają. U
 - `$` przekazujemy tylko do funkcji z najwyższego poziomu `register.ts`; pozostałe moduły go nie znają i testy idą przez ich interfejsy (`bandPlan`, `crewAfter`, `shaftTree`), nie przez piksele.
 - Ścieżka modułu `Client` to literał `'./forge.ts'`: silnik czyta go ze źródła, zmienną odrzuca.
 - Zgody na narzędzia obsługuje wyłącznie silnik: mod nie rejestruje `tool.check`.
-- Awarie hooków i błędy powtarzalne (zegar, strumień, odtworzenie historii) idą przez `$.ui.log(…, { to: 'debug' })`; do transkryptu tylko jednorazowe błędy instalacji (brak `voice/`, rejestracja `/krux` i `watki`). Tekst logu bez prefiksu `krux-mod:`: silnik dokleja nazwę moda sam (test).
+- Hooki nie mają `.catch`: awarię przed `next` silnik pomija, po `next` zostawia wynik i sam pisze linię (debug log w zainstalowanej sesji, transkrypt przy `--plugin-dir`). Hook nie woła `next` drugi raz (test). Własne błędy powtarzalne (zegar, strumień, odtworzenie historii) idą przez `$.ui.log(…, { to: 'debug' })`; do transkryptu tylko jednorazowe błędy instalacji (brak `voice/`, rejestracja `/krux` i `watki`). Tekst logu bez prefiksu `krux-mod:`: silnik dokleja nazwę moda sam.
 - `isDestructive` rozpoznaje komendy, nie słowa; przy wątpliwości flaga zostaje. Każda komenda ma przykład i bezpiecznego sąsiada w `tests/voice.test.ts`.
 - Sekcje moda idą na końcu jako `session`: tekst zmienny nie może siedzieć po stronie `shared` cache'a.
 - Żaden przodek treści silnika (`next(e)`) nie ma `width`: silnik odrzuca takie drzewo, a `claude plugin test` tego nie łapie.

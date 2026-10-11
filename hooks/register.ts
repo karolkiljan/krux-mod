@@ -118,12 +118,6 @@ function freshNotes(now: number): typeof pendingNotes {
   return pendingNotes.filter(note => now - note.at <= NOTES_TTL_MS).slice(-NOTES_LIMIT)
 }
 
-// Błąd dodatku nie blokuje sesji; nawet logowanie może zawieść. Awarie idą do debug logu,
-// nie do transkryptu; nazwę moda silnik dokleja sam.
-function hookFailure($: EngineInterface, event: string, error: { kind: string; message?: string }): void {
-  try { $.ui.log(`${event}: ${error.kind}${error.message === undefined ? '' : `: ${error.message}`}`, { to: 'debug' }) } catch { /* Log nie zastępuje zdarzenia. */ }
-}
-
 // Jeden zegar apelu naraz; reload modułu zaczyna bez zegara.
 let ticking = false
 
@@ -629,7 +623,7 @@ export const register: Register = on => {
     await update($, shaftTab, () => 'stan')
     await refreshGit($)
     return next(e)
-  }).catch(($, e, next) => { hookFailure($, 'classic.SessionStart', next.error); return next(e) })
+  })
 
   on('prompt.compose', async ($, e, next) => {
     const composed = await next(e)
@@ -684,7 +678,7 @@ export const register: Register = on => {
     await update($, turns, count => turnsAfter(count, e.text))
     if (extra.length === 0) return next(e)
     return next({ ...e, context: [...(e.context ?? []), ...extra] })
-  }).catch(($, e, next) => { hookFailure($, 'prompt.submit', next.error); return next(e) })
+  })
 
   // Kompakcja: streszczenie bez klimatu, a następna tura dostaje pełną kotwicę,
   // bo po streszczeniu w historii nie ma już przykładów głosu.
@@ -694,7 +688,7 @@ export const register: Register = on => {
     const result = await next({ ...e, instructions })
     if (result.messages !== undefined && e.trigger !== 'precompute') await update($, turns, () => 0)
     return result
-  }).catch(($, e, next) => { hookFailure($, 'session.compact', next.error); return next(e) })
+  })
 
   on('command.run', { command: 'krux' }, async ($, e) => {
     const command = parseCommand(e.args)
@@ -745,7 +739,7 @@ export const register: Register = on => {
     await update($, muster, current => musterSpawn(current, agentId, mate, e.description, now))
     tickMuster($)
     return result
-  }).catch(($, e, next) => { hookFailure($, 'agent.spawn', next.error); return next(e) })
+  })
 
   on('turn.start', async ($, e, next) => {
     if ('agentId' in e && e.agentId !== undefined) return next(e)
@@ -841,7 +835,7 @@ export const register: Register = on => {
       if (GIT_TOOLS.has(tool)) await refreshGit($)
     }
     return result
-  }).catch(($, e, next) => { hookFailure($, 'tool.call', next.error); return next(e) })
+  })
 
   // Narzędzie wątków: model otwiera i zamyka wątki Sztolni, w odpowiedzi widzi otwarte z id.
   on('tool.call', { tool: THREAD_TOOL_NAME }, async ($, e) => {
@@ -850,7 +844,7 @@ export const register: Register = on => {
     // Wynik narzędzia moda to tekst: rekord obiektem silnik odrzuca.
     const report = threadsReport(now)
     return { result: report, text: report }
-  }).catch(($, e, next) => { hookFailure($, 'tool.call', next.error); return next(e) })
+  })
 
   // Po turze miernik ocenia głos, a kronika notuje, kto z hordy się odezwał.
   on('turn.complete', async ($, e, next) => {
@@ -1094,7 +1088,7 @@ export const register: Register = on => {
       $.ui.toast('Sztolnia zamknięta. Wraca przez /krux sztolnia.')
     }
     return next(e)
-  }).catch(($, e, next) => { hookFailure($, 'ui.close', next.error); return next(e) })
+  })
 
   // Sztolnia: stan roboty. Plan, ostatni przebieg testów, horda w biegu,
   // kontekst i limity; drzewo buduje `shaft.ts`. Diff i drzewo zmian rysuje silnik (`/diff`).
