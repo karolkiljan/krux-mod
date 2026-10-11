@@ -13,7 +13,7 @@ const ELEMENTS = {
   Text: (props: Record<string, unknown>) => ({ type: 'Text', props }),
 } as unknown as ShaftElements
 
-const EMPTY: ShaftData = { board: EMPTY_BOARD, horde: [], usage: null, git: null, threads: EMPTY_THREADS, now: 0, columns: 46, rows: 0 }
+const EMPTY: ShaftData = { board: EMPTY_BOARD, horde: [], usage: null, git: null, threads: EMPTY_THREADS, now: 0, columns: 46, rows: 0, fill: true }
 
 function draw(data: Partial<ShaftData>): Node {
   return shaftTree(ELEMENTS, { ...EMPTY, ...data }) as unknown as Node
@@ -173,6 +173,8 @@ test('the context sits at the bottom of a pane as tall as its rows, the work abo
   const top = children(root) as Node[]
   expect(top.map(child => child.props.key)).toEqual(['work', 'usage'])
   expect(top[0]!.props.flexGrow).toBe(1)
+  // Nad promptem `rows` to limit: pusta tablica nie zajmuje całej wysokości.
+  expect(draw({ usage, rows: 30, fill: false }).props.minHeight).toBeUndefined()
 })
 
 test('a long commit subject gives way, the hash never wraps', () => {

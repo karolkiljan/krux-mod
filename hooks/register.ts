@@ -1103,7 +1103,7 @@ export const register: Register = on => {
     await read($, musterNow)
     const ids = await runningIds($)
     const horde = musterRows(await read($, muster), now, ids, 6)
-    const content = shaftTree(table, { board: plan, horde, usage: await read($, usage), git: await read($, git), threads: await read($, threads), now, columns: e.props.bodyColumns, rows: Math.max(0, e.props.scroll.bodyRows - 1) })
+    const content = shaftTree(table, { board: plan, horde, usage: await read($, usage), git: await read($, git), threads: await read($, threads), now, columns: e.props.bodyColumns, rows: Math.max(0, e.props.scroll.bodyRows - 1), fill: e.props.placement !== 'inline' })
     return table.Box({ flexDirection: 'column', children: [tabs, content] })
   })
 
