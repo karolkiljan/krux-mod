@@ -118,6 +118,8 @@ function trimOldest(entries: Map<string, unknown> | Set<string>, limit: number):
 let journalWatch: { cancel: () => void } | null = null
 let journalWatchVersion = 0
 let journalWatchRequests = 0
+// Ostatnia widoczność Dziennika z zegara: wiersze narzędzi czytają ją zamiast `$.ui.panes()`.
+let journalVisible = false
 
 // Teksty głosu czyta session.start; reload modułu czyta je od nowa.
 let texts: Texts = { persona: '', konkret: '', flow: '' }
@@ -190,6 +192,7 @@ async function loadSession($: EngineInterface): Promise<void> {
   journalWatch?.cancel()
   journalWatch = null
   journalWatchVersion += 1
+  journalVisible = false
   await loadModes($)
   await loadMotion($)
 }
@@ -465,6 +468,11 @@ async function journalShown($: EngineInterface, surface: string): Promise<boolea
   if (surface !== GRID_SURFACE) return false
   const now = await read($, modes)
   if (!now.czat || !now.sztolnia || (await read($, shaftTab)) !== 'dziennik') return false
+  // Zegar już patrzy: każdy wiersz narzędzia bierze jego odczyt, zmianę zgłasza `invalidate`.
+  if (journalWatch !== null) {
+    journalWatchRequests += 1
+    return journalVisible
+  }
   const shown = await shaftShown($, true)
   watchJournalVisibility($, shown)
   return shown
@@ -476,6 +484,7 @@ async function journalShown($: EngineInterface, surface: string): Promise<boolea
 function watchJournalVisibility($: EngineInterface, visible: boolean): void {
   journalWatchRequests += 1
   if (journalWatch !== null) return
+  journalVisible = visible
   const version = ++journalWatchVersion
   const tick = (delay = 250) => {
     journalWatch = $.clock.after(delay, async () => {
@@ -494,7 +503,7 @@ function watchJournalVisibility($: EngineInterface, visible: boolean): void {
         }
         const shown = await shaftShown($, true)
         if (version !== journalWatchVersion) return
-        if (shown !== visible) { visible = shown; $.ui.invalidate('ui.render') }
+        if (shown !== journalVisible) { journalVisible = shown; $.ui.invalidate('ui.render') }
         tick()
       } catch (error) {
         if (version !== journalWatchVersion) return

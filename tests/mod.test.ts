@@ -2408,7 +2408,7 @@ test('journal and selected card start empty and are not reconstructed from resum
 
 test('tool rows collapse only with chat on and a placed, shown journal card', async ($, on) => {
   const extras: Extras = {}
-  engine(on, new Map(), extras)
+  const clock = engine(on, new Map(), extras)
   await start($)
   await readForJournal($)
   const tool = await $.ui.mount(TOOL_USE)
@@ -2416,14 +2416,16 @@ test('tool rows collapse only with chat on and a placed, shown journal card', as
   expect(await tool.find({ type: 'Text', text: 'engine' })).toBeDefined()
   await kruxCommand($, 'czat on')
   expect((await tool.findAll({ type: 'Text' })).map(node => node.text).join('')).toBe('⚒ Read a.ts✓')
+  // Widoczność panelu czyta zegar (250 ms); wiersz bierze jego odczyt.
   extras.paneWaits = true
-  await tool.redraw()
+  await clock.advance(250)
   expect(await tool.find({ type: 'Text', text: 'engine' })).toBeDefined()
   extras.paneWaits = false
   extras.paneHidden = true
-  await tool.redraw()
+  await clock.advance(250)
   expect(await tool.find({ type: 'Text', text: 'engine' })).toBeDefined()
   extras.paneHidden = false
+  await clock.advance(250)
   const pane = await $.ui.mount({ ...SHAFT_PANE, surface: 'terminal', props: SHAFT_PROPS })
   await pane.press({ key: 'shaft-tab-stan' })
   expect(await tool.find({ type: 'Text', text: 'engine' })).toBeDefined()
@@ -2431,6 +2433,21 @@ test('tool rows collapse only with chat on and a placed, shown journal card', as
   expect(await tool.find({ type: 'Text', text: '⚒ Read a.ts' })).toBeDefined()
   await kruxCommand($, 'sztolnia off')
   expect(await tool.find({ type: 'Text', text: 'engine' })).toBeDefined()
+})
+
+test('tool rows take the journal visibility from the watch instead of listing panes each', async ($, on) => {
+  let listings = 0
+  const extras: Extras = { beforePaneList: async () => { listings += 1 } }
+  engine(on, new Map([['mode.czat', true]]), extras)
+  await start($)
+  await readForJournal($)
+  await kruxCommand($, 'dziennik')
+  const tool = await $.ui.mount(TOOL_USE)
+  expect(await tool.find({ type: 'Text', text: '⚒ Read a.ts' })).toBeDefined()
+  const before = listings
+  for (let i = 0; i < 5; i += 1) await tool.redraw()
+  expect(listings).toBe(before)
+  expect(await tool.find({ type: 'Text', text: '⚒ Read a.ts' })).toBeDefined()
 })
 
 test('pane visibility changes restore native tools without a manual redraw', async ($, on) => {
