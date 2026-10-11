@@ -118,6 +118,9 @@ function trimOldest(entries: Map<string, unknown> | Set<string>, limit: number):
 let journalWatch: { cancel: () => void } | null = null
 let journalWatchVersion = 0
 let journalWatchRequests = 0
+// Płótno `Client` (`forge.ts`) padło w tej sesji: pas i panel rysują sam tekst.
+// Silnik po `ui.fault` sam rysuje miejsce od nowa; reload modułu próbuje znowu.
+let forgeFault = false
 // Ostatnia widoczność Dziennika z zegara: wiersze narzędzi czytają ją zamiast `$.ui.panes()`.
 let journalVisible = false
 
@@ -721,6 +724,14 @@ export const register: Register = on => {
     return next({ ...e, context: [...(e.context ?? []), ...extra] })
   })
 
+  // Płótno padło (moduł, rysunek albo kod po rysunku): od teraz sam tekst. Silnik
+  // po tym hooku rysuje miejsce od nowa, więc render zostawia `Client` poza drzewem.
+  on('ui.fault', ($, e, next) => {
+    forgeFault = true
+    $.ui.log(`płótno ${e.module} (${e.phase}): ${e.reason}`, { to: 'debug' })
+    return next(e)
+  })
+
   // Silnik pcha liczby zużycia po każdej turze i przy ruchu limitu: Sztolnia i auto konkret.
   on('session.measure', async ($, e, next) => {
     await applyUsage($, e)
@@ -1053,7 +1064,7 @@ export const register: Register = on => {
       now: await $.clock.now(),
       columns: e.props.bodyColumns,
       rows: e.props.maxRows,
-      hasClient: 'Client' in table,
+      hasClient: 'Client' in table && !forgeFault,
     }
     // Skrót Sztolni za płótnem, gdy jej panelu nie widać: zamknięty, czeka na
     // szerszy terminal (bez pytania silnik stawia go od 144 kolumn) albo stoi
@@ -1072,7 +1083,7 @@ export const register: Register = on => {
     const { Box, Text } = table
     // Kreska nad pasem oddziela go od odpowiedzi i zabiera jeden wiersz.
     const rule = plan.rule ? [Text({ dimColor: true, wrap: 'truncate-end', children: ['─'.repeat(Math.max(1, e.props.bodyColumns))] })] : []
-    if (plan.stage === null || !('Client' in table)) {
+    if (plan.stage === null || !('Client' in table) || forgeFault) {
       const caption = [[plan.verb, plan.target].filter(Boolean).join(' '), plan.tally].filter(Boolean).join(' · ')
       const line = Text({ dimColor: true, wrap: 'truncate-end', children: [`⚒ ${caption}`] })
       return Box({ flexDirection: 'column', children: [...rule, line, theirs] })
@@ -1178,7 +1189,7 @@ export const register: Register = on => {
       })
     const scale = e.props.bodyColumns >= forgeColumns('pane', 2) + 2 ? 2 : 1
     const art =
-      e.surface === GRID_SURFACE && 'Client' in table && e.props.bodyColumns >= forgeColumns('pane', 1)
+      e.surface === GRID_SURFACE && 'Client' in table && !forgeFault && e.props.bodyColumns >= forgeColumns('pane', 1)
         ? [
             table.Client({
               key: `forge-pane-${scale}-${isStill ? 'still' : 'live'}`,
