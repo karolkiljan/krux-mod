@@ -18,6 +18,7 @@ import { dayReport } from './report'
 import { EMPTY_MUSTER, anyRunning, musterDone, musterRows, musterSpawn, musterTool } from './muster'
 import { KRUX_COLOR, ORC_COLOR, shaftDigest, shaftTabs, shaftTree } from './shaft'
 import { TOOL_INDENT, chatTree, isCommandText, toolIndent } from './chat'
+import { MORRA_COLOR } from './avatar'
 import type { AvatarSpeaker } from './avatar'
 import { EMPTY_JOURNAL, journalAfter, journalTree, toolLine } from './journal'
 import { echoLine, echoPrompt } from './echo'
@@ -65,9 +66,6 @@ const DIGEST_MAX = 64
 // pusty wiersz nad wiadomością, piksele z półbloków. Desktop rysuje je krzywo
 // (tabliczka na tekście, piksele z przerwami), więc stoją tylko w terminalu.
 const GRID_SURFACE = 'terminal'
-
-// Kolor Morry: chłodny błękit (człowiek, nie ork; czytelny na jasnym i ciemnym tle).
-const MORRA_COLOR = '#5b9bd5'
 
 const modes = atom({ plugin: 'krux-mod', key: 'modes' } as const, DEFAULT_MODES)
 const activity = atom({ plugin: 'krux-mod', key: 'activity' } as const, null)

@@ -7,15 +7,12 @@ import type { KruxBoard, KruxGit, KruxShaftTab, KruxThreads, KruxUsage } from '.
 import { limitName, meter, planCount, planRows, readiness, resetIn, stuckMinutes, testLine, testsStale, tokens } from './board'
 import { gitBusy, gitShort } from './git'
 import type { MusterRow } from './muster'
-import { PALETTE, SPEAKER_COLOR } from './sprites'
+import { ALARM_COLOR, OK_COLOR, PALETTE, SPEAKER_COLOR } from './sprites'
 import { EMPTY_THREADS, THREAD_MARK } from './threads'
 
 // Kolor Kruxa (iskra z palety) i skóry orka; dzielą je panele i pas.
 export const KRUX_COLOR = SPEAKER_COLOR.Krux
 export const ORC_COLOR = PALETTE.g!
-// Stan na tablicy: zielone przeszło, czerwone padło albo blisko limitu.
-const OK_COLOR = '#3fb950'
-const ALARM_COLOR = '#e0322b'
 
 // Plan najwyżej w 8 wierszach: długa lista nie spycha reszty tablicy.
 const PLAN_ROWS = 8

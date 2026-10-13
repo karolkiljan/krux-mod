@@ -13,6 +13,7 @@ export const THREAD_TOOL_NAME = `mcp__krux-mod__${THREAD_TOOL}`
 
 // Tablica nie rośnie bez końca: najstarsze wątki wypadają pierwsze.
 export const THREADS_LIMIT = 12
+// Opis narzędzia każe modelowi pisać do 80 znaków; ten limit to margines na zawijas, nie nowa granica.
 const TEXT_LIMIT = 100
 
 const KINDS: readonly KruxThreadKind[] = ['todo', 'risk', 'ask']

@@ -7,7 +7,7 @@ import type { KruxJournal, KruxJournalEntry } from '../types'
 import { testLine, testPassed, testRunOf } from './board'
 import { isBackgroundToolCall } from './outcome'
 import { terminalText } from './terminal-text'
-import { SPEAKER_COLOR } from './sprites'
+import { ALARM_COLOR, OK_COLOR, SPEAKER_COLOR } from './sprites'
 import { describeTool, workOf } from './voice'
 
 export const EMPTY_JOURNAL: KruxJournal = { entries: [] }
@@ -30,9 +30,6 @@ export type JournalCall = {
 
 export type JournalElements = { Box: ElementConstructor<BoxProps>; Text: ElementConstructor<TextProps> }
 export type ToolLineData = Pick<KruxJournalEntry, 'tool' | 'target' | 'ok'>
-
-const OK_COLOR = '#3fb950'
-const ERROR_COLOR = '#e0322b'
 
 function record(value: unknown): Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : {}
@@ -146,7 +143,7 @@ function markOf(ok: boolean | null): string {
 }
 
 function outcomeColor(ok: boolean | null): { color?: string; dimColor?: boolean } {
-  return ok === null ? { dimColor: true } : { color: ok ? OK_COLOR : ERROR_COLOR }
+  return ok === null ? { dimColor: true } : { color: ok ? OK_COLOR : ALARM_COLOR }
 }
 
 function oneLine(text: string): string {
@@ -213,7 +210,7 @@ export function toolLine({ Box, Text }: JournalElements, data: ToolLineData | re
   // Czerwień niesie tylko znak: cały czerwony wiersz krzyczał jak awaria,
   // a ✗ to często zwykły niezerowy kod wyjścia (grep bez trafień).
   const style = { dimColor: true }
-  const mark = Text(ok === false ? { color: ERROR_COLOR, children: [markOf(ok)] } : { ...style, children: [markOf(ok)] })
+  const mark = Text(ok === false ? { color: ALARM_COLOR, children: [markOf(ok)] } : { ...style, children: [markOf(ok)] })
   return Box({
     width: room,
     height: 1,
