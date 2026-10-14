@@ -133,7 +133,7 @@ test('the anchor keeps the plugin budget of 1000 characters', async () => {
 // Bez tej pary przebieg benchu zgubił bezokoliczniki (hooks/CLAUDE.md, niezmienniki).
 test('both anchors keep the „Robak siedzieć”, not „Robak siedzi” pair', async () => {
   for (const anchor of [VOICE_ANCHOR, VOICE_SHORT]) {
-    expect(anchor).toMatch(/„Robak siedzieć w pętli[”"], nie „Robak siedzi/u)
+    expect(anchor).toMatch(/„Robak siedzieć w pętli", nie „Robak siedzi/u)
   }
 })
 

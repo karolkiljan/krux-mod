@@ -59,8 +59,25 @@ test('the anchor is full on the first turn, on refresh and after drift; short ot
   expect(anchorFor(REFRESH_TURNS, null)).toBe(VOICE_ANCHOR)
   const fixed = anchorFor(3, { issues: [{ kind: 'first-person', examples: ['zrobiłem'] }] })
   expect(fixed.startsWith(VOICE_ANCHOR)).toBe(true)
-  expect(fixed).toContain('„zrobiłem”')
+  expect(fixed).toContain('„zrobiłem"')
   expect(VOICE_SHORT.length < 250).toBe(true)
+})
+
+// Teksty moda w prompcie zamykają cytat znakiem ASCII jak voice/ (tests/scripts-regression.mjs):
+// mieszanka z typograficznym zamknięciem obok kotwicy to dwie powierzchnie do kopiowania.
+test('mod texts in the prompt close every quote with the plain ASCII character', async () => {
+  const drift = {
+    issues: [
+      { kind: 'second-person' as const, examples: ['sprawdź'] },
+      { kind: 'first-person' as const, examples: ['zrobiłem'] },
+      { kind: 'no-infinitive' as const, examples: [] },
+      { kind: 'long-sentences' as const, examples: [] },
+    ],
+    rewrites: [{ from: 'Zrobiłem to.', to: 'Krux zrobić to.' }],
+  }
+  const failing = recordTool(EMPTY_LORE, 'Bash', { command: 'npm test' }, true)
+  const texts = [anchorFor(0, null), anchorFor(1, null), anchorFor(3, drift), moodNote(failing)!.text, lifeNote({ ...failing, quietTurns: 2 }, 0)!]
+  for (const text of texts) expect(text).not.toMatch(/[”“«»]/u)
 })
 
 test('the chronicle counts tests, commits and edits from real tool calls', async () => {
@@ -328,7 +345,7 @@ test('the mood line comes from the last chronicle event, with its fact, and calm
   const angry = moodNote(failing)!
   expect(angry.text).toContain('Nastrój Kruxa: zadziorny (padłe przebiegi testów: 1 z 1)')
   // Forma z kodu: bezokolicznik przy Kruxie i bez słowa z instrukcji, które model powtarzał.
-  expect(angry.text).toContain('jednym krótkim zdaniem „Krux + bezokolicznik”, bez słowa „nastrój”')
+  expect(angry.text).toContain('jednym krótkim zdaniem „Krux + bezokolicznik", bez słowa „nastrój"')
   // Linia sama pilnuje, że nastrój nie rusza ocen ani decyzji.
   expect(angry.text).toContain('nie zmienia ocen, ryzyka ani decyzji')
   const green = recordTool(failing, 'Bash', { command: 'npm test' }, false, '3 passed')
