@@ -301,6 +301,11 @@ export const SPEAKER_COLOR = {
   ...Object.fromEntries(MATES.map(mate => [mate, PALETTE[ROSTER[mate].apron]!])),
 } as Record<KruxSpeaker, string>
 
+// Zielony i czerwień stanu roboty na tablicach: Sztolnia i dziennik dzielą je stąd.
+// Czerwień to ta sama wartość co oko orka w palecie; zielonego paleta nie zna.
+export const OK_COLOR = '#3fb950'
+export const ALARM_COLOR = PALETTE.r!
+
 export function bandColumns(count: number): number {
   return count * ORC_WIDTH + Math.max(0, count - 1) * ORC_GAP
 }

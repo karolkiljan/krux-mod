@@ -1110,7 +1110,7 @@ test('after a smooth answer the next prompt carries the full anchor with the fix
   await $.turn.complete({ answer: SMOOTH_ANSWER, durationMs: 10, isAborted: false, turnId: 't2', reason: 'answer' })
   const third = await $.prompt.submit({ text: 'i co?', wait: false, origin: ORIGIN })
   const anchor = (third.context ?? []).find(entry => entry.startsWith(VOICE_ANCHOR))
-  expect(anchor).toContain('„Przejrzałem”')
+  expect(anchor).toContain('„Przejrzałem"')
 })
 
 test('a short answer after the fix lets the stale drift go', async ($, on) => {
@@ -1254,7 +1254,7 @@ test('a resumed session picks up turns, lore and drift from its history', async 
   await start($)
   const entered = await $.prompt.submit({ text: 'cztery', wait: false, origin: ORIGIN })
   const context = entered.context ?? []
-  expect(context.find(entry => entry.startsWith(VOICE_ANCHOR))).toContain('„Przejrzałem”')
+  expect(context.find(entry => entry.startsWith(VOICE_ANCHOR))).toContain('„Przejrzałem"')
   expect(context.some(entry => entry.includes('Młocie') && entry.includes('padłe: 1'))).toBe(true)
 })
 

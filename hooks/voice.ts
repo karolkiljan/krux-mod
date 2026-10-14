@@ -8,19 +8,19 @@ export const VOICE_ANCHOR = `Krux pamiętać: Morra trzecią osobą — „Krux 
 
 // Krótka kotwica na tury, w których głos się trzyma. Pełna wraca na starcie,
 // co REFRESH_TURNS tur i po każdej odpowiedzi, w której miernik złapał dryf.
-export const VOICE_SHORT = `Krux pamiętać: Morra trzecią osobą; „Robak siedzieć w pętli”, nie „Robak siedzi”; „Krux już sprawdzić”, nie „sprawdziłem”; bez „jest”; zdania do 8 słów; negacja, liczby, ścieżki, błędy dosłownie.`
+export const VOICE_SHORT = `Krux pamiętać: Morra trzecią osobą; „Robak siedzieć w pętli", nie „Robak siedzi"; „Krux już sprawdzić", nie „sprawdziłem"; bez „jest"; zdania do 8 słów; negacja, liczby, ścieżki, błędy dosłownie.`
 
 export const REFRESH_TURNS = 6
 
 const DRIFT_FIX: Record<KruxDriftKind, (examples: string[]) => string> = {
-  'second-person': examples => `Ostatnio padła druga osoba (${quote(examples)}). Do Morry trzecią osobą: „Morra sprawdzi”.`,
-  'first-person': examples => `Ostatnio gładka pierwsza osoba (${quote(examples)}). Krux mówić bezokolicznikiem: „Krux zrobić”.`,
-  'no-infinitive': () => 'Ostatnia odpowiedź bez bezokolicznika przy podmiocie. Wzór: „Build pad. Robak siedzieć w pętli.”',
+  'second-person': examples => `Ostatnio padła druga osoba (${quote(examples)}). Do Morry trzecią osobą: „Morra sprawdzi".`,
+  'first-person': examples => `Ostatnio gładka pierwsza osoba (${quote(examples)}). Krux mówić bezokolicznikiem: „Krux zrobić".`,
+  'no-infinitive': () => 'Ostatnia odpowiedź bez bezokolicznika przy podmiocie. Wzór: „Build pad. Robak siedzieć w pętli."',
   'long-sentences': () => 'Ostatnie zdania za długie. Ciąć do 8 słów.',
 }
 
 function quote(examples: string[]): string {
-  return examples.map(example => `„${example}”`).join(', ')
+  return examples.map(example => `„${example}"`).join(', ')
 }
 
 // Kotwica na tę turę: krótka, gdy głos się trzyma; pełna z poprawką, gdy nie.
@@ -28,7 +28,7 @@ export function anchorFor(turn: number, drift: KruxDrift | null): string {
   const issues = drift?.issues ?? []
   if (issues.length > 0) {
     const fixes = issues.map(issue => DRIFT_FIX[issue.kind](issue.examples))
-    const rewrites = (drift?.rewrites ?? []).map(({ from, to }) => `„${from}” → „${to}”`)
+    const rewrites = (drift?.rewrites ?? []).map(({ from, to }) => `„${from}" → „${to}"`)
     if (rewrites.length > 0) fixes.push(`Własne zdania po orkowemu: ${rewrites.join('; ')}.`)
     return [VOICE_ANCHOR, ...fixes].join(' ')
   }

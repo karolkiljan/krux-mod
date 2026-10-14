@@ -10,6 +10,7 @@ import { head, STAND } from './stage'
 export type AvatarSpeaker = Face | 'Morra'
 
 export const AVATAR_COLUMNS = 6
+// Kolor Morry: chłodny błękit (człowiek, nie ork; czytelny na jasnym i ciemnym tle).
 export const MORRA_COLOR = '#5b9bd5'
 
 // Imię i ramka mówią kolorem fartucha; Krux iskrą, Morra błękitem.

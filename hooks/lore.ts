@@ -151,7 +151,7 @@ export function moodNote(lore: KruxLore): { key: string; text: string } | null {
     }
   })()
   if (mood === null) return null
-  return { key, text: `Nastrój Kruxa: ${mood}. Pokaż go jednym krótkim zdaniem „Krux + bezokolicznik”, bez słowa „nastrój”; nastrój barwi ton, nie zmienia ocen, ryzyka ani decyzji.` }
+  return { key, text: `Nastrój Kruxa: ${mood}. Pokaż go jednym krótkim zdaniem „Krux + bezokolicznik", bez słowa „nastrój"; nastrój barwi ton, nie zmienia ocen, ryzyka ani decyzji.` }
 }
 
 // Wiadomość historii w kształcie `$.session.messages()`, tyle, ile czyta replay.
