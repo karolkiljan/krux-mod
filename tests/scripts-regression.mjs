@@ -771,3 +771,27 @@ test('every mate has an agent definition under his type, and the scouts and the 
   for (const color of colors) assert.ok(['red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink', 'cyan'].includes(color), String(color))
   assert.equal(new Set(colors).size, colors.length)
 })
+
+// Audyt wykopał duplikaty kolorów stanów i Morry (#5b9bd5 dwa razy, #3fb950 i #e0322b po dwa):
+// każdy hex ma jedno źródło, dokumentacja w hooks/CLAUDE.md zostaje dosłowna i nie liczy się.
+test('each UI colour lives in its single source file, not in a third place under hooks/', () => {
+  const homes = { '5b9bd5': 'avatar.ts', '3fb950': 'sprites.ts', e0322b: 'palette.ts' }
+  for (const file of fs.readdirSync('hooks')) {
+    if (!file.endsWith('.ts')) continue
+    const text = fs.readFileSync(path.join('hooks', file), 'utf8')
+    for (const [hex, home] of Object.entries(homes)) {
+      if (file !== home) assert.ok(!text.includes(hex), `${hex} poza hooks/${home}: hooks/${file}`)
+    }
+  }
+})
+
+// Cudzysłowy w voice/ zamykają się znakiem ASCII jak w VOICE_ANCHOR (hooks/voice.ts):
+// mieszanka z typograficznym U+201D była (43 do 3), model kopiuje powierzchnię przykładów.
+// Odwrót zasady to zmiana głosu: bramka A/B z .claude/CLAUDE.md, potem ten test idzie z nią.
+test('voice markdown closes every quote with the plain ASCII character like VOICE_ANCHOR', () => {
+  for (const file of fs.readdirSync('voice')) {
+    if (!file.endsWith('.md')) continue
+    const text = fs.readFileSync(path.join('voice', file), 'utf8')
+    assert.doesNotMatch(text, /”/u, `voice/${file}: typograficzne zamknięcie ”`)
+  }
+})
