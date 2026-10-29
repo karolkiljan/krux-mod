@@ -7,7 +7,8 @@ import type { BandInput } from './band'
 import { EMPTY_CREW, crewAfter } from './crew'
 import type { CrewEvent } from './crew'
 import { gauge, matesNamed } from './gauge'
-import { EMPTY_LORE, lifeNote, moodNote, recordAnswer, recordTool, replay, turnsAfter } from './lore'
+import { EMPTY_LORE, lifeNote, moodNote, recallOf, recordAnswer, recordTool, rememberAfter, replay, traceOf, turnsAfter } from './lore'
+import type { Recall } from './lore'
 import { CALM, EVENT_HOLD_MS, eventOf, mateIn, mateMoodAfter, mateOfType, moodsAfter, moodsTick } from './mood'
 import { MATES, ROSTER } from './roster'
 import type { BoardCall } from './board'
@@ -254,6 +255,35 @@ async function restoreOnce($: EngineInterface): Promise<void> {
     await update($, drift, () => found.drift)
   } catch (error) {
     $.ui.log(`nie odtworzyć historii: ${String(error)}`, { to: 'debug' })
+  }
+}
+
+// Pamięć hordy: jeden klucz `$.store` na katalog projektu sesji.
+async function memoryKey($: EngineInterface): Promise<string> {
+  return `memory.${await $.session.root()}`
+}
+
+// Ślad sesji do pamięci repo po każdej turze z robotą. Awaria magazynu kosztuje
+// tylko wspomnienie, więc idzie do debug logu.
+async function remember($: EngineInterface): Promise<void> {
+  try {
+    const run = (await read($, board)).test
+    const failure = run !== null && !run.ok && run.who === 'Krux' ? run.failures[0] ?? null : null
+    const trace = traceOf(await read($, lore), await $.session.id(), await $.clock.now(), failure)
+    if (trace === null) return
+    const key = await memoryKey($)
+    await $.store.set(key, rememberAfter(await $.store.get(key), trace))
+  } catch (error) {
+    $.ui.log(`nie zapisać pamięci hordy: ${String(error)}`, { to: 'debug' })
+  }
+}
+
+async function recallFor($: EngineInterface): Promise<Recall | null> {
+  try {
+    return recallOf(await $.store.get(await memoryKey($)), await $.session.id(), await $.clock.now())
+  } catch (error) {
+    $.ui.log(`nie odczytać pamięci hordy: ${String(error)}`, { to: 'debug' })
+    return null
   }
 }
 
@@ -714,15 +744,19 @@ export const register: Register = on => {
         // Prośba o ruch nieodwracalny: zamiast wstawki o hordzie linia o ostrzeżeniu, na końcu.
         const risk = riskHint(e.text)
         const chronicle = await read($, lore)
-        const life = risk === null ? lifeNote(chronicle, turn) : null
+        // Decyzja o wydaniu, plan i ruch nieodwracalny idą samymi faktami: tam nastrój
+        // przechylał wybór, więc przepada linia nastroju i humor kumpla w notce.
+        const decides = promptKind(e.text) === 'plan' || asksRelease(e.text)
+        // Wspomnienie bierze tylko pierwsza wstawka sesji, więc magazyn czytamy do niej.
+        const aside = { recall: risk === null && chronicle.lastMate === null ? await recallFor($) : null, humor: !decides }
+        const life = risk === null ? lifeNote(chronicle, turn, aside) : null
         if (life) extra.push(life)
-        // Nastrój z ostatniego zdarzenia, raz na zdarzenie. Decyzja o wydaniu, plan i ruch
-        // nieodwracalny idą samymi faktami: tam nastrój przechylał wybór, więc przepada.
+        // Nastrój z ostatniego zdarzenia, raz na zdarzenie.
         const mood = moodNote(chronicle)
         if (mood) {
           let fresh = false
           await update($, moodSeen, seen => { fresh = seen !== mood.key; return mood.key })
-          if (fresh && risk === null && promptKind(e.text) !== 'plan' && !asksRelease(e.text)) extra.push(mood.text)
+          if (fresh && risk === null && !decides) extra.push(mood.text)
         }
         const hint = formatHint(e.text)
         if (hint) extra.push(hint)
@@ -936,6 +970,7 @@ export const register: Register = on => {
       await update($, drift, () => verdict)
       await update($, lore, now => recordAnswer(now, matesNamed(e.answer)))
     }
+    await remember($)
     return next(e)
   })
 

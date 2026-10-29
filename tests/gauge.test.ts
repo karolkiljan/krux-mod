@@ -1,7 +1,8 @@
 import { expect, test } from 'claude-code/testing'
 
 import { gauge, infinitiveHits, matesNamed, orcish, rewrites } from '../hooks/gauge'
-import { EMPTY_LORE, lifeNote, moodNote, recordAnswer, recordTool, replay } from '../hooks/lore'
+import { EMPTY_LORE, lifeNote, moodNote, recallOf, recordAnswer, recordTool, rememberAfter, replay, traceOf } from '../hooks/lore'
+import { MATES, ROSTER } from '../hooks/roster'
 import { REFRESH_TURNS, VOICE_ANCHOR, VOICE_SHORT, anchorFor } from '../hooks/voice'
 
 const ORC =
@@ -168,6 +169,78 @@ test('the note after Ochra speaks of her without a gendered verb', async () => {
   const note = lifeNote({ ...EMPTY_LORE, quietTurns: 2, lastMate: 'Ochra' }, 0)!
   expect(note).toContain('Nie Ochrę: o Ochrze była ostatnia wstawka.')
   expect(note).not.toMatch(/(?<!\p{L})był(?!\p{L})|(?<!\p{L})mu(?!\p{L})/u)
+})
+
+// Kumple gadają też między sobą: każdy ma parę do sporu, a spór pary brzmi tak samo z obu stron.
+test('every mate has a sparring partner, and the pairs agree on the feud', () => {
+  for (const mate of MATES) {
+    const { spar, feud } = ROSTER[mate]
+    expect(spar).not.toBe(mate)
+    expect(ROSTER[spar].spar).toBe(mate)
+    expect(ROSTER[spar].feud).toBe(feud)
+  }
+  const quiet = { ...EMPTY_LORE, quietTurns: 2 }
+  const forms = [0, 1, 2, 3, 4].map(seed => /forma: ([^.]+)\./u.exec(lifeNote(quiet, seed)!)![1])
+  expect(new Set(forms).size).toBe(5)
+  const spat = lifeNote(quiet, 4)!
+  expect(spat).toContain('mową o Młocie')
+  expect(spat).toContain('forma: krótka wymiana zdań z Niuchem, spór: trop kontra dowód.')
+})
+
+// Humor kumpla to jego mina z ekranu: czerwone testy marszczą Młota, zielone po smrodzie go puszą.
+test('the note carries the mate’s humor from the last chronicle event, without gender', () => {
+  const failing = recordAnswer(recordAnswer(recordTool(EMPTY_LORE, 'Bash', { command: 'npm test' }, true), []), [])
+  expect(lifeNote(failing, 0)).toContain('mową o Młocie')
+  expect(lifeNote(failing, 0)).toContain('słowa fachu: dowód, rachunek, próba; humor: burczeć; miejsce:')
+  // Plan i wydanie idą bez humoru, jak bez linii nastroju.
+  expect(lifeNote(failing, 0, { humor: false })).not.toContain('humor:')
+  const green = { ...recordTool(failing, 'Bash', { command: 'npm test' }, false, '3 passed'), quietTurns: 2 }
+  expect(lifeNote(green, 0)).toContain('humor: puszyć się;')
+  // Kumpel bez zdarzenia stoi spokojnie: notka nie zmyśla mu humoru.
+  expect(lifeNote({ ...EMPTY_LORE, quietTurns: 2 }, 0)).not.toContain('humor:')
+  for (const seed of [0, 1, 2, 3, 4]) expect(lifeNote(failing, seed)).not.toMatch(/(?<!\p{L})(?:dumny|dumna|zły|zła|był|była)(?!\p{L})/u)
+})
+
+const DAY = 86_400_000
+const NOW = Date.UTC(2026, 9, 29, 12)
+
+// Pamięć hordy: ślad tej sesji nadpisuje się sam, nowa sesja spycha go do `before`.
+test('the horde remembers the previous session in the repo, and a resumed one reaches past itself', () => {
+  expect(traceOf(EMPTY_LORE, 's1', NOW, null)).toBe(null)
+  let lore = recordTool(EMPTY_LORE, 'Bash', { command: 'npm test' }, true)
+  lore = recordTool(lore, 'Bash', { command: './deploy.sh' }, true)
+  const trace = traceOf(lore, 's1', NOW - 2 * DAY, '"cache\nexpires" after  write')!
+  // Zawał patrzy tylko w swoją sesję; nazwa testu jednym wierszem i bez cudzysłowów.
+  expect(trace).toMatchObject({ session: 's1', testRuns: 1, testFails: 1, last: null, failure: 'cache expires after write' })
+  expect(traceOf(lore, 's1', NOW, 'x'.repeat(80))!.failure).toHaveLength(48)
+  const first = rememberAfter(undefined, trace)
+  expect(first).toEqual({ last: trace, before: null })
+  const again = rememberAfter(first, { ...trace, testRuns: 2, at: NOW - DAY })
+  expect(again.before).toBe(null)
+  const next = rememberAfter(again, { ...trace, session: 's2', at: NOW })
+  expect(next.before?.session).toBe('s1')
+  expect(recallOf(next, 's3', NOW)?.trace.session).toBe('s2')
+  expect(recallOf(next, 's2', NOW)).toMatchObject({ days: 1, trace: { session: 's1', testRuns: 2 } })
+  expect(recallOf(first, 's1', NOW)).toBe(null)
+  // Po miesiącu wspomnienie gaśnie; obcy kształt w magazynie to brak pamięci.
+  expect(recallOf(first, 's9', NOW + 31 * DAY)).toBe(null)
+  expect(recallOf({ last: { session: 's1' } }, 's9', NOW)).toBe(null)
+  expect(recallOf('stary format', 's9', NOW)).toBe(null)
+  expect(rememberAfter({ last: 7 }, trace)).toEqual({ last: trace, before: null })
+})
+
+test('the first aside of a session reaches back to the previous one, and only the first', () => {
+  const trace = traceOf(recordTool(EMPTY_LORE, 'Bash', { command: 'npm test' }, true), 's1', NOW - 2 * DAY, 'cache expires')!
+  const recall = recallOf(rememberAfter(undefined, trace), 's2', NOW)
+  const quiet = { ...EMPTY_LORE, quietTurns: 2 }
+  const note = lifeNote(quiet, 0, { recall })!
+  expect(note).toContain('mową o Młocie')
+  expect(note).toContain('Wspomnienie z poprzedniej sesji w tym repo (dni temu: 2): przebiegi testów: 1, padłe: 1, ostatni czerwony, padły test: cache expires; to dawna robota Kruxa, kumpel ją tylko wspomina.')
+  expect(note).not.toContain('w tej sesji')
+  expect(lifeNote({ ...quiet, lastMate: 'Grom' }, 0, { recall })).not.toContain('Wspomnienie')
+  const today = recallOf(rememberAfter(undefined, { ...trace, at: NOW }), 's2', NOW)
+  expect(lifeNote(quiet, 0, { recall: today })).toContain('(dziś)')
+  expect(lifeNote(quiet, 0, { recall: today })).not.toMatch(/[”“«»]/u)
 })
 
 // Kontrakt każe ostrzegać pełnymi zdaniami; miernik nie może za to ciąć następnej tury.

@@ -94,6 +94,8 @@ function engine(on: On, saved: Map<string, unknown>, extras: Extras = {}) {
     return { value: [...panes].filter(id => !(id === 'sztolnia' && extras.paneClosed)).map(id => ({ id, title: id, isShown: !extras.paneHidden, isFocused: false, isPlaced: !extras.paneWaits })) }
   })
   on('session.start', () => ({ cwd: '/work' }))
+  on('session.root', () => ({ value: '/work' }))
+  on('session.id', () => ({ value: 's1' }))
   on('session.messages', () => ({ value: extras.history ?? [] }))
   on('session.usage', async () => ({ value: extras.usageRead ? await extras.usageRead() : extras.usage ?? { startedAt: 0, context: { window: 200_000 }, rateLimits: [] } }))
   on('session.measure', ($, e) => ({ changed: e.changed }))
@@ -1144,6 +1146,28 @@ test('failing tests make Młot the topic a few turns later', async ($, on) => {
   }
   const entered = await $.prompt.submit({ text: 'i?', wait: false, origin: ORIGIN })
   expect((entered.context ?? []).some(entry => entry.includes('Młocie') && entry.includes('padłe: 1'))).toBe(true)
+})
+
+// Pamięć hordy przeżywa sesję: pierwsza wstawka nowej sesji wspomina poprzednią w tym
+// repo, a ślad nowej sesji spycha stary do `before`.
+test('a new session’s first horde aside recalls the previous session in the same repo', async ($, on) => {
+  const now = Date.UTC(2026, 9, 29, 12)
+  const previous = { session: 's0', at: now - 2 * 86_400_000, testRuns: 3, testFails: 2, builds: 0, buildFails: 0, commits: 0, tears: 0, edits: 4, uiEdits: 0, last: 'test-fail', failure: 'cache expires' }
+  const saved = new Map<string, unknown>([['memory./work', { last: previous, before: null }]])
+  const clock = engine(on, saved, { toolError: '1 failed' })
+  await clock.set(now)
+  await start($)
+  for (const turnId of ['t1', 't2']) {
+    await $.turn.complete({ answer: 'Krux szukać dalej.', durationMs: 10, isAborted: false, turnId, reason: 'answer' })
+  }
+  // Tury bez roboty nie piszą pamięci: ślad poprzedniej sesji stoi nietknięty.
+  expect(saved.get('memory./work')).toEqual({ last: previous, before: null })
+  const note = ((await $.prompt.submit({ text: 'i?', wait: false, origin: ORIGIN })).context ?? []).find(entry => entry.startsWith('Życie hordy'))
+  expect(note).toContain('mową o Młocie')
+  expect(note).toContain('Wspomnienie z poprzedniej sesji w tym repo (dni temu: 2): przebiegi testów: 3, padłe: 2, ostatni czerwony, padły test: cache expires;')
+  await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  await $.turn.complete({ answer: 'Młot burczeć. Krux szukać.', durationMs: 10, isAborted: false, turnId: 't3', reason: 'answer' })
+  expect(saved.get('memory./work')).toMatchObject({ last: { session: 's1', testRuns: 1, testFails: 1, last: 'test-fail' }, before: previous })
 })
 
 test('the mood of a fresh chronicle event reaches the model once, and never on a release question', async ($, on) => {

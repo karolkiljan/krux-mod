@@ -28,7 +28,7 @@ hooks/fidget.ts           gesty wiercenia
 hooks/acts/*.ts           czynności scen dla orków, także test/seal/build/tear/think/write; `rest.ts` to czekanie na hordę
 hooks/mood.ts             humor orków i teksty dymków
 hooks/gauge.ts            miernik głosu odpowiedzi
-hooks/lore.ts             kronika sesji i notka o hordzie
+hooks/lore.ts             kronika sesji, notka o hordzie i pamięć hordy między sesjami
 hooks/outcome.ts          decyzja o nieukończonym Bash: `run_in_background` albo `backgroundTaskId` wyniku
 hooks/terminal-text.ts    szerokość komórek terminala
 hooks/board.ts            tablica Sztolni: `boardAfter`, `testRunOf`, `usageOf`; plan, testy, gotowość
@@ -56,7 +56,7 @@ Macierz mówi, co uruchamia zdarzenie i jakich pułapek silnika pilnować. Progi
 | `prompt.submit` | od człowieka (`fromPerson`), także przełącznik | `lastPrompt = echoPrompt(text)` (spoza Morry `null`), `seenAt`; po przerwie ≥ 30 min toast `returnNote` (pusty nie); nic dla modelu |
 | `prompt.submit` | dokładna fraza `włącz/wyłącz krux/konkret/flow` od człowieka | zapis trybu, neutralna notka, bez kotwicy; `włącz krux` (też `/krux on`, przycisk) zeruje licznik tur, więc wraca pełna kotwica; cytat w raporcie subagenta nie przełącza |
 | `prompt.submit`, `/krux zapisz`, `/krux raport` | pierwszy odczyt historii po starcie, `/resume` albo restarcie | `replay` z `$.session.messages()`: licznik tur, kronika, dryf, tablica (`replayBoard`), wątki (`replayThreads`); wejście narzędzia bez wyniku to nie fakt; sprawdzenie i zapis `replayed` w jednym `update` |
-| `prompt.submit` | inny tekst, persona `on` | kotwica w `context`: pełna w turze 0, co `REFRESH_TURNS` i po dryfie (z poprawką), inaczej `VOICE_SHORT`. Od człowieka dodatkowo: notka o hordzie po `QUIET_TURNS` (`lifeNote`), linia nastroju (`moodNote`, raz na zdarzenie, nie przy ryzyku, planie ani wydaniu), `formatHint`; prośba o ruch nieodwracalny (`riskHint`) dostaje `RISK_HINT` zamiast notki. Raport subagenta, inna sesja, harmonogram: sama kotwica |
+| `prompt.submit` | inny tekst, persona `on` | kotwica w `context`: pełna w turze 0, co `REFRESH_TURNS` i po dryfie (z poprawką), inaczej `VOICE_SHORT`. Od człowieka dodatkowo: notka o hordzie po `QUIET_TURNS` (`lifeNote`; póki w sesji nie padł żaden kumpel, z wspomnieniem z `recallFor`; humor kumpla nie przy planie ani wydaniu), linia nastroju (`moodNote`, raz na zdarzenie, nie przy ryzyku, planie ani wydaniu), `formatHint`; prośba o ruch nieodwracalny (`riskHint`) dostaje `RISK_HINT` zamiast notki. Raport subagenta, inna sesja, harmonogram: sama kotwica |
 | `prompt.submit` | są notki z panelu | notki przed kotwicą, jednorazowo |
 | `session.compact` | wątek główny, persona `on` | `COMPACT_NOTE` w instrukcjach; po kompakcji (nie `precompute`) licznik tur na 0 |
 | zużycie (`applyUsage`) | odczyt `refreshUsage` po `session.start`, potem liczby pchane w `session.measure` (po każdej turze i przy ruchu limitu o pełny punkt); mod nie pyta po narzędziu ani turze | okno limitu ≥ 80% włącza `autoKonkret`, wszystkie poniżej gaszą; toast tylko przy zmianie flagi; `$.store` nietknięty; wyścigi rozstrzyga wersja żądania (niezmienniki) |
@@ -91,6 +91,7 @@ Macierz mówi, co uruchamia zdarzenie i jakich pułapek silnika pilnować. Progi
 | `tool.call` `mcp__krux-mod__watki` | model otwiera albo zamyka wątki | `threadsAfter` w `update`, wynik tekstem (obiekt silnik odrzuca); rejestracja z `isDeferred: false`, więc model widzi pełny opis co turę zamiast samej nazwy za wyszukiwaniem narzędzi (v2.1.293+, test) |
 | `turn.complete` | wątek główny | `turnAt` na zero; `e.durationMs` ≥ 300 s daje toast „Krux skończyć po N min.”; odczyt repo |
 | `turn.complete` | główny, `reason: answer`, persona `on` | werdykt miernika zastępuje `drift` (`null` przy za krótkiej odpowiedzi i ostrzeżeniu przed ruchem nieodwracalnym); kumple z odpowiedzi do kroniki |
+| `turn.complete` | główny, kronika z robotą (`traceOf`) | `remember`: ślad sesji do `$.store` pod `memory.<$.session.root()>` (`rememberAfter`); bez roboty bez zapisu; awaria magazynu do debug logu |
 
 ### Horda
 
@@ -148,8 +149,11 @@ Uzupełniają zasady przekrojowe z `.claude/CLAUDE.md` i ich nie powtarzają. Uz
 
 - Notka o hordzie: imię i fakt z kroniki, bez faktu prośba o coś z dnia kumpla; nigdy robota w repo. Fakt ma każdy fach: testy Młot, commity Piryt, zawał Niuch, budowanie albo edycje Grom, pliki interfejsu Ochra, rozbiórka Lont; spośród kumpli z faktem wybiera seed, nie ostatnie zdarzenie. Charakter (`trait`), miejsce i formę daje kod; miejsca rotują (`pick(PLACES, tura + 1)`), a środek mówi wprost „nie na końcu odpowiedzi”.
 - Ucieczkę kumpla na koniec mierzy `middleClosings` (ostatnie zdanie w turach „w środku”), nie `hordeClosings`. Bench odtwarza tury notek regułą `lifeNote` i `recordAnswer`: kumpel wymieniony bez notki przesuwa harmonogram. Bench i `lore.ts` dzielą `QUIET_TURNS` i rotację miejsc (test skryptów).
+- Piąta forma to spór: wymiana zdań z parą z `ROSTER.spar` o `ROSTER.feud`. Pary symetryczne, spór pary ten sam z obu stron (test).
+- Humor kumpla w notce to jego mina z `moodsAfter` dla ostatniego zdarzenia kroniki, jako czasownik bez rodzaju („burczeć”, „puszyć się”); spokojny kumpel humoru nie dostaje. Plan i wydanie idą bez humoru, ryzyko bez notki.
+- Pamięć hordy: `$.store` pod `memory.<katalog projektu>` trzyma `KruxMemory`, ślad sesji, która pisała ostatnia, i ślad przed nią. Ta sama sesja nadpisuje swój ślad, nowa spycha go do `before`; wznowiona sesja sięga więc do `before`, nie do siebie. Ślad to liczby kroniki, ostatnie zdarzenie bez zawału i pierwszy padły test ostatniego czerwonego przebiegu Kruxa (jeden wiersz, bez cudzysłowów, do 48 znaków). Wspomnienie bierze tylko wstawka, póki w sesji nie padł żaden kumpel (`lastMate === null`), i tylko do 30 dni kalendarza; obcy kształt w magazynie to brak pamięci (test).
 - Charakter kumpla to sam czasownik, notka nie mówi „był” (test). Liczby w tekstach moda stoją przy bezokoliczniku albo w etykiecie („2 na 2 padać”, „padłe: 2”), bez odmiany (test).
-- Humor na ekranie liczy `mood.ts`; model dostaje osobną linię `moodNote` (`lore.ts`): nastrój ostatniego zdarzenia kroniki z faktem, jedno zdanie, raz na zdarzenie (`moodSeen`); zielone bez wcześniejszego smrodu nie daje linii. Forma z kodu: „Krux + bezokolicznik”, bez słowa „nastrój”. Linia mówi, że nastrój nie zmienia ocen ani decyzji, i nie idzie przy wydaniu, planie ani ruchu nieodwracalnym. Po wznowieniu `moodSeen` pusty, więc ostatnie zdarzenie daje linię jeszcze raz. Zmiana tekstu linii to zmiana kotwicy (A/B).
+- Humor na ekranie liczy `mood.ts`; model dostaje osobną linię `moodNote` (`lore.ts`): nastrój ostatniego zdarzenia kroniki z faktem, jedno zdanie, raz na zdarzenie (`moodSeen`); zielone bez wcześniejszego smrodu nie daje linii. Forma z kodu: „Krux + bezokolicznik”, bez słowa „nastrój”. Linia mówi, że nastrój nie zmienia ocen ani decyzji, i nie idzie przy wydaniu, planie ani ruchu nieodwracalnym. Po wznowieniu `moodSeen` pusty, więc ostatnie zdarzenie daje linię jeszcze raz.
 - Kumple: wzorce imienia w benchu (`hordePattern`, `MATE_NAMES`, `MATE_WORDS`) to przyrząd pomiaru, stały między ramionami A/B. Niuch i Młot chodzą na `haiku`, reszta na modelu rodzica. Kolor kumpla (`color`) to najbliższy z 8 kolorów silnika do jego fartucha, każdy inny; Niuch bez `CLAUDE.md` (`omitClaudeMd`, jak wbudowany Explore), Młot z nim, bo tam stoją komendy testów; oboje z `maxTurns` jako bezpiecznikiem (test). Bash tylko do odczytu i czyste pliki Lonta stoją w prompcie, zgody daje silnik (`docs/adr/0001-lont-zakaz-w-prompcie.md`). Opis kumpla: fach, warunek wysłania, granica; bramka korzyści zostaje w skillu `krux-horda`.
 
 ### Stan i tablica
