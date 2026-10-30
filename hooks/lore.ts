@@ -2,9 +2,10 @@
 // powietrza: dostaje jeden fakt i imię, które dawno nie padło. Kumpel
 // komentuje; roboty, której nikt mu nie zlecił, mu nie przypisujemy.
 
-import type { KruxDrift, KruxEvent, KruxLore, KruxMate } from '../types'
+import type { KruxDrift, KruxEvent, KruxLore, KruxMate, KruxMemory, KruxMood, KruxTrace } from '../types'
 import { testPassed } from './board'
 import { gauge, matesNamed } from './gauge'
+import { moodsAfter } from './mood'
 import { MATES, ROSTER } from './roster'
 import { isBackgroundToolCall } from './outcome'
 import { isCommitCommand, parsePhrase, pick, workOf } from './voice'
@@ -78,31 +79,46 @@ export function recordAnswer(lore: KruxLore, mates: readonly KruxMate[]): KruxLo
 // Co kilka tur, nie co turę: wstawka w każdej odpowiedzi to wytarty szablon.
 const QUIET_TURNS = 2
 
+// Liczby kroniki, z których kumple biorą fakty: z tej sesji albo ze śladu poprzedniej.
+type Chronicle = Pick<KruxLore, 'testRuns' | 'testFails' | 'builds' | 'buildFails' | 'commits' | 'tears' | 'edits' | 'uiEdits' | 'last'>
+
 // Fakty z sesji dla kumpli, których fach pasuje do roboty Kruxa. Liczby w formie
-// etykiety („padłe: 2”): bez odmiany, której model by po nas powtarzał.
-function factsOf(lore: KruxLore): Partial<Record<KruxMate, string>> {
+// etykiety („padłe: 2”): bez odmiany, której model by po nas powtarzał. Wspomnienie
+// podaje czas osobno, więc etykieta idzie wtedy bez „w tej sesji”.
+function factsOf(lore: Chronicle, scope = ' w tej sesji'): Partial<Record<KruxMate, string>> {
   const facts: Partial<Record<KruxMate, string>> = {}
   if (lore.testRuns > 0) {
     const lastRun = lore.last === 'test-pass' ? ', ostatni zielony' : lore.last === 'test-fail' ? ', ostatni czerwony' : ''
-    facts.Młot = `przebiegi testów w tej sesji: ${lore.testRuns}, padłe: ${lore.testFails}${lastRun}`
+    facts.Młot = `przebiegi testów${scope}: ${lore.testRuns}, padłe: ${lore.testFails}${lastRun}`
   }
-  if (lore.commits > 0) facts.Piryt = `commity w tej sesji: ${lore.commits}`
+  if (lore.commits > 0) facts.Piryt = `commity${scope}: ${lore.commits}`
   if (lore.last === 'zawał') facts.Niuch = 'ostatnia komenda padła z błędem'
-  if (lore.builds > 0) facts.Grom = `przebiegi budowania, typów i lintu w tej sesji: ${lore.builds}, padłe: ${lore.buildFails}`
-  else if (lore.edits >= 10) facts.Grom = `edycje plików w tej sesji: ${lore.edits}`
-  if (lore.uiEdits > 0) facts.Ochra = `edycje plików interfejsu w tej sesji: ${lore.uiEdits}`
-  if (lore.tears > 0) facts.Lont = `rozbiórki w tej sesji (rm, git clean, reset): ${lore.tears}`
+  if (lore.builds > 0) facts.Grom = `przebiegi budowania, typów i lintu${scope}: ${lore.builds}, padłe: ${lore.buildFails}`
+  else if (lore.edits >= 10) facts.Grom = `edycje plików${scope}: ${lore.edits}`
+  if (lore.uiEdits > 0) facts.Ochra = `edycje plików interfejsu${scope}: ${lore.uiEdits}`
+  if (lore.tears > 0) facts.Lont = `rozbiórki${scope} (rm, git clean, reset): ${lore.tears}`
   return facts
 }
 
 // Forma wstawki z kodu, nie z modelu: sam powtarza raz złapaną budowę
-// („Niuch dziś…”, „Młot dziś…”), a losować nie umie.
+// („Niuch dziś…”, „Młot dziś…”), a losować nie umie. Spór dostaje parę
+// i temat z `ROSTER`, żeby kumple gadali też między sobą, nie tylko do Kruxa.
+const SPAR = 'spór'
 const FORMS = [
   'słowa kumpla w cudzysłowie',
   'coś, co kumpel zrobił w kuźni albo w kopalni',
   'docinek albo pytanie kumpla do Kruxa',
   'krótka scenka: Krux i kumpel przy jednej rzeczy',
+  SPAR,
 ] as const
+
+// Humor kumpla z ostatniego zdarzenia kroniki, ten sam co jego mina na ekranie
+// (`moodsAfter`). Czasownik bez rodzaju: „dumny” zgadywałby, kto on, a kto ona.
+const HUMOR: Record<KruxMood, string | null> = { calm: null, grumpy: 'burczeć', proud: 'puszyć się' }
+
+function humorOf(mate: KruxMate, lore: KruxLore): string | null {
+  return lore.last === null ? null : HUMOR[moodsAfter(lore.last, lore).faces[mate]]
+}
 
 // Miejsce też z kodu: notka bez miejsca kończyła 31 z 32 odpowiedzi benchu, czyli
 // kumpel zajął slot dawnego „Morra powie…” jako stałe zamknięcie. Środek mówi
@@ -110,23 +126,102 @@ const FORMS = [
 // zdaniu w 2 z 11 do 4 z 9 takich tur, a po turach z linią nastroju częściej.
 const PLACES = ['w środku, przy punkcie, do którego pasuje, nie na końcu odpowiedzi', 'na końcu'] as const
 
+// Wspomnienie poprzedniej sesji w tym repo i ile dni kalendarza minęło.
+export type Recall = { trace: KruxTrace; days: number }
+
+// Dodatki notki: wspomnienie (bierze je tylko pierwsza wstawka sesji) i humor
+// kumpla, który wołający gasi przy planie i wydaniu, jak linię nastroju.
+export type Aside = { recall?: Recall | null; humor?: boolean }
+
 // Notka dla modelu albo nic. Neutralna polszczyzna, bo to instrukcja. O tym, czy
 // wstawka ma sens w tej turze, decyduje wołający (prośba o ruch nieodwracalny
 // notki nie dostaje), więc notka nie zostawia modelowi „jeśli pasuje”.
-export function lifeNote(lore: KruxLore, seed: number): string | null {
+export function lifeNote(lore: KruxLore, seed: number, aside: Aside = {}): string | null {
   if (lore.quietTurns < QUIET_TURNS) return null
   const facts = factsOf(lore)
+  const fresh = MATES.filter(name => name !== lore.lastMate)
+  // Pierwsza wstawka sesji sięga do pamięci repo: kumpel wspomina poprzednią sesję.
+  const recall = lore.lastMate === null ? aside.recall ?? null : null
+  const memory = recall ? factsOf(recall.trace, '') : {}
+  if (recall?.trace.failure && memory.Młot) memory.Młot += `, padły test: ${recall.trace.failure}`
+  const remembered = fresh.filter(name => memory[name] !== undefined)
   // Kumpel z faktem ma pierwszeństwo, ale fakty rozkłada seed: inaczej przy
   // częstych commitach gadałby w kółko Piryt.
-  const fresh = MATES.filter(name => name !== lore.lastMate)
   const known = fresh.filter(name => facts[name] !== undefined)
-  const mate = pick(known.length > 0 ? known : fresh, seed)
+  const mate = pick(remembered.length > 0 ? remembered : known.length > 0 ? known : fresh, seed)
   const found = facts[mate]
-  // Fakt z sesji to robota Kruxa: kumpel ją komentuje, nie przejmuje.
-  const why = found ? ` Fakt z sesji: ${found}; to robota Kruxa, kumpel ją tylko komentuje.` : ' Coś z dnia kumpla, bez przypisywania kumplowi roboty w tym repo.'
+  // Fakt z sesji to robota Kruxa: kumpel ją komentuje, nie przejmuje. Wspomnienie tak samo.
+  const why = recall && remembered.length > 0
+    ? ` Wspomnienie z poprzedniej sesji w tym repo (${recall.days === 0 ? 'dziś' : `dni temu: ${recall.days}`}): ${memory[mate]}; to dawna robota Kruxa, kumpel ją tylko wspomina.`
+    : found ? ` Fakt z sesji: ${found}; to robota Kruxa, kumpel ją tylko komentuje.` : ' Coś z dnia kumpla, bez przypisywania kumplowi roboty w tym repo.'
   const avoid = lore.lastMate ? ` Nie ${ROSTER[lore.lastMate].accusative}: o ${ROSTER[lore.lastMate].locative} była ostatnia wstawka.` : ''
-  const { locative, trait, words } = ROSTER[mate]
-  return `Życie hordy: jedno zdanie łamaną mową o ${locative} (${trait}), słowa fachu: ${words}; miejsce: ${pick(PLACES, seed + 1)}; forma: ${pick(FORMS, seed)}.${why}${avoid}`
+  const { locative, trait, words, spar, feud } = ROSTER[mate]
+  const humor = aside.humor === false ? null : humorOf(mate, lore)
+  const form = pick(FORMS, seed)
+  const shape = form === SPAR ? `krótka wymiana zdań z ${ROSTER[spar].instrumental}, spór: ${feud}` : form
+  return `Życie hordy: jedno zdanie łamaną mową o ${locative} (${trait}), słowa fachu: ${words};${humor ? ` humor: ${humor};` : ''} miejsce: ${pick(PLACES, seed + 1)}; forma: ${shape}.${why}${avoid}`
+}
+
+// Pamięć hordy między sesjami: ślad kroniki pod jednym kluczem `$.store` na repo.
+const DAY_MS = 86_400_000
+// Starsze wspomnienie nie wraca: po miesiącu kumpel nie pamięta smrodu.
+const RECALL_DAYS = 30
+// Nazwa testu jedzie do notki dla modelu: jeden wiersz, bez cudzysłowów, krótko.
+const FAILURE_CHARS = 48
+const EVENTS: readonly NonNullable<KruxTrace['last']>[] = ['test-fail', 'test-pass', 'build-fail', 'build-pass', 'commit', 'tear']
+const COUNTS = ['at', 'testRuns', 'testFails', 'builds', 'buildFails', 'commits', 'tears', 'edits', 'uiEdits'] as const
+
+function cleanFailure(name: string): string | null {
+  const chars = Array.from(name.replace(/[\s"'`„”“«»]+/gu, ' ').trim())
+  if (chars.length === 0) return null
+  return chars.length > FAILURE_CHARS ? `${chars.slice(0, FAILURE_CHARS - 1).join('')}…` : chars.join('')
+}
+
+// Ślad sesji albo nic, gdy w kronice nie ma roboty. Zawał zostaje w tej sesji.
+export function traceOf(lore: KruxLore, session: string, at: number, failure: string | null): KruxTrace | null {
+  const { testRuns, testFails, builds, buildFails, commits, tears, edits, uiEdits } = lore
+  if (testRuns + builds + commits + tears + edits === 0) return null
+  const last = lore.last === 'zawał' ? null : lore.last
+  return { session, at, testRuns, testFails, builds, buildFails, commits, tears, edits, uiEdits, last, failure: failure === null ? null : cleanFailure(failure) }
+}
+
+// Magazyn to JSON spoza kodu: obcy albo stary kształt to brak pamięci, nie błąd.
+function traceFrom(value: unknown): KruxTrace | null {
+  if (typeof value !== 'object' || value === null) return null
+  const raw = value as Record<string, unknown>
+  if (typeof raw.session !== 'string' || COUNTS.some(key => typeof raw[key] !== 'number')) return null
+  const last = EVENTS.find(event => event === raw.last) ?? null
+  const failure = typeof raw.failure === 'string' ? cleanFailure(raw.failure) : null
+  const counts = Object.fromEntries(COUNTS.map(key => [key, raw[key] as number])) as Pick<KruxTrace, (typeof COUNTS)[number]>
+  return { session: raw.session, ...counts, last, failure }
+}
+
+function memoryFrom(value: unknown): KruxMemory | null {
+  if (typeof value !== 'object' || value === null) return null
+  const last = traceFrom((value as Record<string, unknown>).last)
+  return last === null ? null : { last, before: traceFrom((value as Record<string, unknown>).before) }
+}
+
+// Zapis po turze: ta sama sesja nadpisuje swój ślad, nowa spycha poprzedni do `before`.
+export function rememberAfter(stored: unknown, trace: KruxTrace): KruxMemory {
+  const memory = memoryFrom(stored)
+  if (memory === null) return { last: trace, before: null }
+  return memory.last.session === trace.session ? { last: trace, before: memory.before } : { last: trace, before: memory.last }
+}
+
+// Dzień kalendarza w strefie procesu: „wczoraj wieczorem” to 1 dzień, nie 0.
+function dayOf(ms: number): number {
+  const date = new Date(ms)
+  return Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()) / DAY_MS
+}
+
+// Co pamięta horda w tej sesji: wznowiona sesja (jej ślad już leży w `last`) sięga do `before`.
+export function recallOf(stored: unknown, session: string, now: number): Recall | null {
+  const memory = memoryFrom(stored)
+  const trace = memory === null ? null : memory.last.session === session ? memory.before : memory.last
+  if (trace === null) return null
+  const days = dayOf(now) - dayOf(trace.at)
+  return days >= 0 && days <= RECALL_DAYS ? { trace, days } : null
 }
 
 // Nastrój Kruxa z ostatniego zdarzenia kroniki: jedna linia dla modelu, a `key`

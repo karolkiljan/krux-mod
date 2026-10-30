@@ -87,6 +87,28 @@ export type KruxLore = {
   quietTurns: number
 }
 
+// Ślad sesji w repo dla pamięci hordy: liczby kroniki, ostatnie zdarzenie (zawał
+// tylko patrzy w tę sesję, więc go nie ma) i pierwszy padły test ostatniego
+// czerwonego przebiegu Kruxa; `at` to ostatni zapis, ms od epoki.
+export type KruxTrace = {
+  session: string
+  at: number
+  testRuns: number
+  testFails: number
+  builds: number
+  buildFails: number
+  commits: number
+  tears: number
+  edits: number
+  uiEdits: number
+  last: Exclude<KruxEvent, 'zawał'> | null
+  failure: string | null
+}
+
+// Pamięć repo w `$.store` pod `memory.<katalog repo>`: ślad sesji, która pisała
+// ostatnia, i ślad sesji przed nią. Wznowiona sesja sięga do `before`, nowa do `last`.
+export type KruxMemory = { last: KruxTrace; before: KruxTrace | null }
+
 // Pozycja planu z `TodoWrite` (bez id) albo z `TaskCreate` (id z wyniku narzędzia).
 // `startedAt`: ms od epoki, gdy zadanie weszło w `in_progress`; z niego znak utknięcia.
 export type KruxTask = { id: string | null; subject: string; status: 'pending' | 'in_progress' | 'completed'; startedAt?: number }

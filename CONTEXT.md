@@ -55,8 +55,16 @@ Zdanie modelu o kumplu, napisane na prośbę notki o hordzie.
 _Avoid_: notka
 
 **Humor**:
-Stan orka na ekranie (brwi, reakcje ciała) po zdarzeniu kroniki; model go nie dostaje.
+Stan orka na ekranie (brwi, reakcje ciała) po zdarzeniu kroniki; model dostaje go tylko w notce o hordzie, jako czasownik przy kumplu.
 _Avoid_: nastrój
+
+**Spór**:
+Forma wstawki: wymiana zdań kumpla z jego stałą parą z hordy o temat, który ich dzieli.
+_Avoid_: kłótnia, konflikt
+
+**Pamięć hordy**:
+Ślad kroniki ostatniej sesji w repo, trwały między sesjami; z niego pierwsza wstawka nowej sesji bierze wspomnienie.
+_Avoid_: historia, log
 
 **Linia nastroju**:
 Jednorazowa instrukcja dla modelu po zdarzeniu kroniki: nastrój Kruxa z faktem i forma zdania, którym go pokazać.

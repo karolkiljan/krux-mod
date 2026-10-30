@@ -728,7 +728,7 @@ test('the bench replays the horde notes by the rule the mod uses', () => {
   assert.equal(quietTurns(fs.readFileSync('scripts/voice-bench.mjs', 'utf8')), quietTurns(lore))
   assert.match(lore, /miejsce: \$\{pick\(PLACES, seed \+ 1\)\}/u)
   assert.match(lore, /^const PLACES = \['w środku[^'\n]*', 'na końcu'\] as const$/mu)
-  assert.match(fs.readFileSync('hooks/register.ts', 'utf8'), /const life = risk === null \? lifeNote\(chronicle, turn\) : null/u)
+  assert.match(fs.readFileSync('hooks/register.ts', 'utf8'), /const life = risk === null \? lifeNote\(chronicle, turn, aside\) : null/u)
   for (const { prompts } of Object.values(vm.runInContext('SCENARIOS', benchContext()))) {
     for (const prompt of prompts) assert.equal(riskHint(prompt), null, prompt)
   }
