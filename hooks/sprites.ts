@@ -178,6 +178,11 @@ export function trackStart(scene: StageScene, key: string, frame: number, start:
   return { scene, face, since, setAt: frame, seed, first: seed, memory: {}, leaving: null }
 }
 
+// Ork doszedł na stanowisko: scena rusza od stójki, nowym epizodem, także ta sama.
+export function trackArrive(track: Track, scene: StageScene, key: string, frame: number): Track {
+  return { ...track, ...episode(track, scene, key, frame), since: frame, setAt: frame, leaving: null }
+}
+
 // Nowa scena po przytrzymaniu: stara schodzi do stójki, dopiero potem wchodzi nowa.
 // Póki ork maszeruje albo schodzi (`frame < since`), oś czeka, więc nic nie skacze.
 // W bezruchu zmiana od razu, bez zejścia.
@@ -241,6 +246,19 @@ export function trackGrid(track: Track, frame: number, variant: 'band' | 'pane',
 }
 
 export type Run = { text: string; color?: string; backgroundColor?: string }
+
+// Wycinek wiersza po kolumnach: pod dymek, który leży na ścianie. Ciągi to znaki blokowe, po jednej kolumnie.
+export function sliceRuns(runs: readonly Run[], from: number, to: number): Run[] {
+  const out: Run[] = []
+  let at = 0
+  for (const run of runs) {
+    const start = Math.max(from - at, 0)
+    const end = Math.min(to - at, run.text.length)
+    if (start < end) out.push({ ...run, text: run.text.slice(start, end) })
+    at += run.text.length
+  }
+  return out
+}
 
 function scaleGrid(grid: readonly string[], scale: number): string[] {
   if (scale === 1) return [...grid]
@@ -315,9 +333,230 @@ export function canvasColumns(count: number, withBubble: boolean): number {
   return Math.max(bandColumns(count), withBubble ? BUBBLE_TEXT + 4 : 0)
 }
 
-// Lewa krawędź prostokąta orka: każdy ma swój slot i w nim robi wszystko.
+// Lewa krawędź orka w miejscu składu: tak stoi w bezruchu i na najwęższym pasie.
 export function slotX(slot: number): number {
   return slot * (ORC_WIDTH + ORC_GAP)
+}
+
+// Wspólna podłoga pasa: stanowiska pracy jako ułamek wolnej szerokości, palenisko
+// na lewym końcu. Kuźnia przy ogniu, stół w środku, próba dalej, sztolnia z prawej.
+type Station = 'forge' | 'table' | 'trial' | 'mine'
+
+const STATION_AT: Record<Station, number> = { forge: 0, table: 0.3, trial: 0.55, mine: 1 }
+
+const STATIONS: Record<StageScene, Station> = {
+  hammer: 'forge', build: 'forge', seal: 'forge', horn: 'forge', lounge: 'forge',
+  read: 'table', plan: 'table', think: 'table', write: 'table', ask: 'table',
+  test: 'trial',
+  pick: 'mine', tear: 'mine', torch: 'mine', scout: 'mine', raven: 'mine',
+}
+
+// Palenisko staje, gdy obok zostaje miejsce na wszystkich orków.
+const HEARTH_ROOM = HEARTH[0]!.length + ORC_GAP
+
+export function hasHearth(floor: number, slots: number): boolean {
+  return slots > 1 && floor >= bandColumns(slots) + HEARTH_ROOM
+}
+
+// Pierwsza kolumna podłogi, na której ork może stanąć: palenisko nie wchodzi pod nogi.
+export function floorStart(hearth: boolean): number {
+  return hearth ? HEARTH_ROOM : 0
+}
+
+// Palenisko jako dekoracja podłogi, z tym samym ogniem co w panelu.
+export function hearthProp(frame: number): Placed {
+  return { rows: HEARTH.map((_, y) => hearthRow(frame, y)), x: 0 }
+}
+
+// Lewa krawędź orka na stanowisku tej sceny.
+export function stationX(scene: StageScene, floor: number, hearth: boolean): number {
+  const left = floorStart(hearth)
+  return left + Math.round(STATION_AT[STATIONS[scene]] * Math.max(0, floor - ORC_WIDTH - left))
+}
+
+// Domy orków na podłodze: każdy jak najbliżej swojego stanowiska, bez nachodzenia
+// na sąsiada. `want` równe wiąże `slot`, więc kolejność nie mruga między rysunkami.
+export function floorHomes(orcs: readonly { key: string; want: number; slot: number }[], floor: number): Record<string, number> {
+  const line = [...orcs].sort((a, b) => a.want - b.want || a.slot - b.slot)
+  const step = ORC_WIDTH + ORC_GAP
+  const xs = line.map(orc => orc.want)
+  xs.forEach((x, i) => { xs[i] = Math.max(x, i === 0 ? 0 : xs[i - 1]! + step) })
+  for (let i = xs.length - 1; i >= 0; i -= 1) xs[i] = Math.min(xs[i]!, i === xs.length - 1 ? floor - ORC_WIDTH : xs[i + 1]! - step)
+  return Object.fromEntries(line.map((orc, i) => [orc.key, xs[i]!]))
+}
+
+// Co ork niesie ze stanowiska: stal z kuźni, zwój ze stołu, rudę ze sztolni.
+const LOADS: Record<Station, Frame | null> = { forge: ['RR'], table: ['hph'], trial: null, mine: ['oS', 'SS'] }
+
+// Ładunek przy dłoni orka idącego ze stanowiska tej sceny, po stronie marszu.
+export function carried(scene: StageScene, x: number, rightward: boolean): Placed | null {
+  const load = LOADS[STATIONS[scene]]
+  if (load === null) return null
+  return { rows: draw([load, 0, 3]), x: rightward ? x + 6 : x - load[0]!.length }
+}
+
+// Pokój za orkami: 12 pikseli wysokości, ściana nad podłogą. Pas ma 6 wierszy,
+// a piksele są kwadratowe, więc scena dostaje głębię bez zabierania ekranu.
+export const ROOM_ROWS = 12
+const WALL_ROWS = 6
+
+// Sprzęty na ścianie: co ork bierze z głębi przy swoim stanowisku. `x` to odstęp od stanowiska.
+const WALL_PROPS: Record<Station, { x: number; rows: Frame }> = {
+  forge: { x: 8, rows: ['', '', 'EEEEEEEEE', '.C..C..C.', '.C..C..C.'] },
+  table: { x: 2, rows: ['', 'U.UU.U.UU.U', 'EEEEEEEEEEE', '.UU.U..UU.U', 'EEEEEEEEEEE'] },
+  trial: { x: 2, rows: ['', '', '', 'EEEEEEEE', 'ECCCCCCE', 'EEEEEEEE'] },
+  mine: { x: 2, rows: ['..EEEEEEEE..', '.EEIIIIIIEE.', '.EIIIIIIIIE.', '.EIIIIIIIIE.', '.EIIIIIIIIE.', '.EIIIIIIIIE.'] },
+}
+
+const SCENE_OF: Record<Station, StageScene> = { forge: 'hammer', table: 'read', trial: 'test', mine: 'pick' }
+
+function wallX(station: Station, floor: number, hearth: boolean): number {
+  const { x, rows } = WALL_PROPS[station]
+  const wide = Math.max(...rows.map(row => row.length))
+  return Math.max(0, Math.min(floor - wide - 1, stationX(SCENE_OF[station], floor, hearth) + x))
+}
+
+// Ściana z fugami, deski zbiegające się w głąb i szyny ze sztolni. Stałe dla szerokości,
+// więc liczone raz; drzewo ma limit znaków, dlatego wzór jest rzadki.
+const roomCache = new Map<string, string[][]>()
+
+function roomBase(width: number, hearth: boolean): string[][] {
+  const key = `${width}:${hearth}`
+  const known = roomCache.get(key)
+  if (known) return known
+  const room = Array.from({ length: ROOM_ROWS }, (_, y) => Array.from({ length: width }, (_, x): string => {
+    if (y >= WALL_ROWS) return 'F'
+    if (y === 0) return 'E'
+    return (y === 2 && x % 34 < 5) || (y === 4 && (x + 17) % 34 < 5) ? 'D' : 'A'
+  }))
+  const put = (x: number, y: number, cell: string) => { if (room[y]?.[x] !== undefined) room[y]![x] = cell }
+  // Deski wychodzą z punktu zbiegu nad środkiem ściany.
+  const middle = width / 2
+  for (let foot = -width; foot < 2 * width; foot += 26) {
+    for (let y = WALL_ROWS; y < ROOM_ROWS; y += 1) put(Math.round(middle + ((foot - middle) * (y - 2)) / (ROOM_ROWS - 3)), y, 'H')
+  }
+  for (const station of Object.keys(WALL_PROPS) as Station[]) {
+    const left = wallX(station, width, hearth)
+    WALL_PROPS[station].rows.forEach((row, y) => [...row].forEach((cell, dx) => { if (cell !== '.') put(left + dx, y, cell) }))
+  }
+  const mouth = wallX('mine', width, hearth) + 6
+  for (let y = WALL_ROWS; y < ROOM_ROWS; y += 1) {
+    const spread = 3 + (y - WALL_ROWS)
+    put(mouth - spread - (y - WALL_ROWS), y, 'C')
+    put(mouth + spread - (y - WALL_ROWS), y, 'C')
+  }
+  roomCache.set(key, room)
+  return room
+}
+
+// Wózek wytacza się ze sztolni ku widzowi i wraca: rośnie jak ork w drodze z głębi.
+const CART: readonly Frame[] = [['CC', 'YY'], ['CCC', 'YYY', 'C.C'], ['CCCC', 'YYYY', 'YYYY', 'C..C']]
+const CART_EVERY = 160
+const CART_TRIP = 20
+const RAT_EVERY = 240
+const RAT_TRIP = 48
+// Pył z zawału: tyle ziaren spada ze stropu.
+const DUST_GRAINS = 9
+
+// Co dzieje się w pokoju samo: dym, kanarek, wózek, szczur. Fazy tak dobrane, że w klatce 0
+// (bezruch) nic nie stoi w pół kroku.
+function roomLife(room: string[][], width: number, frame: number, hearth: boolean): void {
+  const put = (x: number, y: number, cell: string) => { if (room[y]?.[x] !== undefined) room[y]![x] = cell }
+  if (hearth) {
+    for (let i = 0; i < 3; i += 1) {
+      const y = 5 - ((Math.floor(frame / 2) + i * 2) % 5)
+      put(4 + ((y + i) % 2), y, 'V')
+    }
+  }
+  const cage = wallX('trial', width, hearth) + 1
+  for (const dx of [0, 1, 2, 3, 4]) put(cage + dx, 1, 'C')
+  put(cage, 2, 'C')
+  put(cage + 4, 2, 'C')
+  put(cage + 1 + (Math.floor(frame / 4) % 3), 2, 'Z')
+  const trip = (frame + 60) % CART_EVERY
+  const way = trip < CART_TRIP ? trip : trip < 2 * CART_TRIP ? 2 * CART_TRIP - trip : -1
+  if (way >= 0) {
+    const cart = CART[Math.min(CART.length - 1, Math.floor((way * CART.length) / CART_TRIP))]!
+    const left = wallX('mine', width, hearth) + 6 - Math.floor(cart[0]!.length / 2)
+    cart.forEach((row, dy) => [...row].forEach((cell, dx) => { if (cell !== '.') put(left + dx, 4 + dy, cell) }))
+  }
+  const run = (frame + 100) % RAT_EVERY
+  if (run < RAT_TRIP) {
+    const x = width - 1 - run * Math.ceil(width / RAT_TRIP)
+    put(x, 6, 'C')
+    put(x + 1, 6, 'H')
+  }
+}
+
+export type RoomFeel = { kind: KruxEvent | 'handoff'; age: number } | null
+
+// Pokój w klatce `frame`: pochodnie, życie pokoju i reakcja na zdarzenie kroniki.
+export function roomGrid(width: number, frame: number, hearth: boolean, feel: RoomFeel = null): string[] {
+  const room = roomBase(width, hearth).map(row => [...row])
+  roomLife(room, width, frame, hearth)
+  const red = feel?.kind === 'test-fail' || feel?.kind === 'build-fail' || feel?.kind === 'zawał'
+  const bright = feel?.kind === 'test-pass' || feel?.kind === 'build-pass' || feel?.kind === 'commit'
+  for (const at of [0.17, 0.72]) {
+    const x = Math.round(width * at)
+    if (x >= width) continue
+    room[3]![x] = 'E'
+    room[4]![x] = 'E'
+    room[2]![x] = red ? 'R' : bright ? 'Z' : (frame + x) % 3 === 0 ? 'Z' : 'Q'
+    room[1]![x] = red ? 'Q' : bright ? 'Z' : (frame + x) % 4 === 1 ? 'Q' : room[1]![x]!
+  }
+  if (feel?.kind === 'zawał' || feel?.kind === 'tear') {
+    for (let i = 0; i < DUST_GRAINS; i += 1) {
+      const y = 1 + (feel.age + i) % 5
+      const x = Math.round(((i * 37 + 11) % 100) * width / 100)
+      if (room[y]?.[x] !== undefined) room[y]![x] = 'q'
+    }
+  }
+  return room.map(row => row.join(''))
+}
+
+// Prostokąt pikseli wklejony w siatkę; '.' przepuszcza to, co pod spodem.
+export function paint(grid: readonly string[], rows: readonly string[], x: number, y: number): string[] {
+  const out = grid.map(row => [...row])
+  rows.forEach((row, dy) => [...row].forEach((cell, dx) => {
+    if (cell !== '.' && out[y + dy]?.[x + dx] !== undefined) out[y + dy]![x + dx] = cell
+  }))
+  return out.map(row => row.join(''))
+}
+
+// Ork w głębi: im dalej, tym mniejszy i wyżej na podłodze. Stopy na wierszu `FEET`.
+const FAR_ORCS: readonly (readonly [Frame, Frame])[] = [
+  [['.ggg.', 'grgrg', 'bbbbb', '.bGb.', '.G.G.'], ['.ggg.', 'grgrg', 'bbbbb', '.bGb.', '..G..']],
+  [['.gg.', 'rggr', 'bbbb', 'G..G'], ['.gg.', 'rggr', 'bbbb', '.GG.']],
+  [['rgr', 'bbb', 'G.G'], ['rgr', 'bbb', '.G.']],
+]
+const FEET = [10, 8, 7] as const
+
+// Wyprawa w głąb: wejście, chwila przy sprzęcie, powrót z ładunkiem.
+const ERRAND_IN = 9
+const ERRAND_HOLD = 5
+export const ERRAND_FRAMES = 2 * ERRAND_IN + ERRAND_HOLD
+
+// Co ork przynosi z głębi: piksel przy dłoni, od chwili, gdy sięgnął po sprzęt.
+const ERRAND_LOADS: Record<Station, string> = { forge: 'C', table: 'p', trial: 's', mine: 'q' }
+
+// Kolumna orka przy sprzęcie na ścianie.
+export function depthSpot(scene: StageScene, floor: number, hearth: boolean): number {
+  const station = STATIONS[scene]
+  const wide = Math.max(...WALL_PROPS[station].rows.map(row => row.length))
+  return wallX(station, floor, hearth) + Math.floor(wide / 2) - 2
+}
+
+// Poza w klatce `t` wyprawy: skąd do sprzętu i z powrotem, wielkość z głębokości.
+export function errandPose(t: number, from: number, spot: number, scene: StageScene, face: Face): { rows: string[]; x: number; y: number } {
+  const depth = t < ERRAND_IN ? t / ERRAND_IN : t < ERRAND_IN + ERRAND_HOLD ? 1 : Math.max(0, ERRAND_FRAMES - t) / ERRAND_IN
+  const level = Math.max(1, Math.ceil(depth * FAR_ORCS.length)) - 1
+  const rows = FAR_ORCS[level]![t % 2]!
+  const x = Math.round(from + (spot - from) * depth)
+  const y = FEET[level]! - rows.length + 1
+  const dressed = dress(rows, face)
+  if (t < ERRAND_IN + ERRAND_HOLD - 1) return { rows: dressed, x, y }
+  // Ładunek przy dłoni po prawej, na wysokości fartucha.
+  return { rows: dressed.map((row, i) => (i === 1 ? `${row}${ERRAND_LOADS[STATIONS[scene]]}` : row)), x, y }
 }
 
 // Ork w drodze: wbiega z prawej do slotu albo schodzi w prawo; nogi na zmianę.
@@ -343,10 +582,15 @@ export function stageGrid(placed: readonly Placed[], width: number): string[] {
 
 // Trzy wiersze dymka nad slotem `index`, każdy dokładnie na szerokość płótna.
 export function bubbleLines(text: string, index: number, width: number): string[] {
+  return bubbleAt(text, slotX(index), width)
+}
+
+// Dymek nad orkiem stojącym od kolumny `x`; idzie za nim po podłodze.
+export function bubbleAt(text: string, x: number, width: number): string[] {
   const body = terminalText(text, BUBBLE_TEXT)
   const inner = body.columns + 2
   const box = inner + 2
-  const center = slotX(index) + 2
+  const center = x + 2
   const left = Math.max(0, Math.min(width - box, center - Math.floor(box / 2)))
   const tail = Math.max(1, Math.min(inner, center - left))
   const place = (line: string) => `${' '.repeat(left)}${line}${' '.repeat(Math.max(0, width - left - box))}`
@@ -559,14 +803,14 @@ export function tossScroll(t: number, from: number, to: number, flight: number):
   return { rows: draw([['hph'], 0, Math.round(2 * s * s)]), x: Math.round(from + (to - from) * s) }
 }
 
-// Dłoń Kruxa w slocie 0: tu dolatuje zwój.
+// Dłoń Kruxa, licząc od jego lewej krawędzi: tu dolatuje zwój.
 export const CATCH_X = 6
 
 // Po dolocie zwój zostaje w dłoni, potem chowa się pod fartuch.
-export function caughtScroll(t: number, flight: number): Placed | null {
+export function caughtScroll(t: number, flight: number, kruxX = 0): Placed | null {
   const k = t - TOSS_WINDUP.length - flight
   if (k < 0 || k >= TOSS_AFTER) return null
-  return { rows: draw([k === 0 ? ['hph'] : ['hp'], 0, 2 + k]), x: CATCH_X - k }
+  return { rows: draw([k === 0 ? ['hph'] : ['hp'], 0, 2 + k]), x: kruxX + CATCH_X - k }
 }
 
 // Krok chwytu w klatce `t` rzutu: -1 — Krux wyciąga dłoń, 0 — zwój w dłoni,

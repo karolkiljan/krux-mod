@@ -50,7 +50,8 @@ export type KruxHordeMember = { agentId: string; mate: KruxMate | null; scene: K
 export type KruxBubble =
   | { kind: 'step'; key: string; speaker: KruxSpeaker; text: string }
   | { kind: 'thought'; key: string; speaker: KruxSpeaker; text: string }
-  | { kind: 'event'; key: string; speaker: KruxSpeaker; text: string; until: number }
+  // `reply`: odszczekanie pary z hordy, wchodzi na miejsce dymka, gdy ten zgaśnie.
+  | { kind: 'event'; key: string; speaker: KruxSpeaker; text: string; until: number; reply?: { key: string; speaker: KruxSpeaker; text: string } }
 
 // Znak dla płótna, do `until` w ms od epoki: reakcja orka `key` na zdarzenie kroniki
 // z jego roboty albo `handoff` — kumpel skończył i oddaje Kruxowi zwój, zanim zejdzie.
@@ -229,6 +230,8 @@ declare module 'claude-code' {
       seenAt: number | null
       // Ostatnia prośba Morry w jednym wierszu (echo odpowiedzi); po kumplu i harmonogramie `null`.
       lastPrompt: string | null
+      // Tura z prośbą o wyjaśnienie: miernik nie sądzi długości zdań.
+      longAnswer: boolean
       // Dziennik narzędzi (tylko sesja) i karta panelu Sztolni.
       journal: KruxJournal
       shaftTab: KruxShaftTab

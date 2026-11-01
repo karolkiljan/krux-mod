@@ -133,6 +133,24 @@ export function eventLine(event: KruxEvent, lore: KruxLore, seed: number, failur
   }
 }
 
+// Odszczekanie pary na wtręt kumpla, z jej strony sporu z `ROSTER`. Sam tekst na
+// ekranie, bez faktów spoza zdarzenia: para nie przypisuje sobie roboty.
+const SPAR_LINES: Record<KruxEvent, readonly string[]> = {
+  'test-fail': ['Trop czuć. Dowód?', 'Nos mówić: tam robak.'],
+  'test-pass': ['Nos znać to wcześniej.', 'Trop był dobry.'],
+  'build-fail': ['Rysę widać z daleka.', 'Znowu skaza. Grr.'],
+  'build-pass': ['Rysy brak. Na razie.', 'Skaza się schować.'],
+  commit: ['Przekuć od nowa!', 'Stal za zimna!'],
+  tear: ['Krawędź cała? Patrzeć.', 'Brzeg krzywy. Gruz!'],
+  zawał: ['Dowód? Liczyć znowu.', 'Rachunek kłamać.'],
+}
+
+export const SPAR_EVENTS = Object.keys(SPAR_LINES) as KruxEvent[]
+
+export function sparLine(event: KruxEvent, seed: number): string {
+  return pick(SPAR_LINES[event], seed >> 1)
+}
+
 // Krok wysłanego kumpla: opis narzędzia bez „Krux” na początku.
 export function mateStep(doing: KruxActivity): string {
   const verb = doing.verb.replace(/^Krux /u, '')

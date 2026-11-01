@@ -250,8 +250,9 @@ const LIST_MARK = /^\s*(?:[-*+]|\d+[.)]|#{1,6})\s+/u
 
 // Werdykt jednej odpowiedzi: `null`, gdy za krótka, by sądzić, albo gdy
 // ostrzega przed ruchem nieodwracalnym; inaczej lista odstępstw z przykładami,
-// które kotwica zacytuje w następnej turze.
-export function gauge(answer: string): KruxDrift | null {
+// które kotwica zacytuje w następnej turze. `longOk`: prośba o wyjaśnienie, gdzie
+// linia formatu pozwala na dłuższe zdania, więc ich długość nie jest dryfem.
+export function gauge(answer: string, longOk = false): KruxDrift | null {
   if (WARNING.test(answer) || isDestructive(answer)) return null
   const text = prose(answer)
   if (wordCount(text) < MIN_WORDS) return null
@@ -265,7 +266,7 @@ export function gauge(answer: string): KruxDrift | null {
     .split(/(?<=[.!?])\s+|\n+/u)
     .map(line => wordCount(line.replace(LIST_MARK, '')))
     .filter(words => words > 1)
-  if (lengths.length >= 4) {
+  if (!longOk && lengths.length >= 4) {
     const ratio = lengths.filter(words => words <= SHORT_SENTENCE_WORDS).length / lengths.length
     if (ratio < MIN_SHORT_RATIO) issues.push({ kind: 'long-sentences', examples: [] })
   }

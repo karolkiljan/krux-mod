@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import { GESTURES } from '../hooks/fidget'
 import { MATES } from '../hooks/roster'
-import { ACTS, BUBBLE_TEXT, CATCH_X, CUE_FRAMES, FRAME_MS, HOLD_FRAMES, actsFor, routeOf, trackDozing, trackFace, ORC_GAP, ORC_WIDTH, PALETTE, bandColumns, behind, bubbleLines, canvasColumns, catchStep, caughtScroll, dress, frameGrid, forgeColumns, runsOf, slotX, stageGrid, tossFrames, trackGrid, trackOff, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withNap } from '../hooks/sprites'
+import { ACTS, BUBBLE_TEXT, CATCH_X, carried, floorHomes, roomGrid, hasHearth, stationX, CUE_FRAMES, FRAME_MS, HOLD_FRAMES, actsFor, routeOf, trackDozing, trackFace, ORC_GAP, ORC_WIDTH, PALETTE, bandColumns, behind, bubbleLines, canvasColumns, catchStep, caughtScroll, dress, frameGrid, forgeColumns, runsOf, slotX, stageGrid, tossFrames, trackGrid, trackOff, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withNap } from '../hooks/sprites'
 import type { StageScene } from '../hooks/sprites'
 import { H, STAND, W, actFrame, head, legAt, moodOf, pad, stander } from '../hooks/stage'
 
@@ -246,6 +246,40 @@ for (const [name, text, body, top, bottom, padding] of [
     expect(bubbleLines(text, 0, 44)).toEqual([top, `│ ${body} │${padding}`, bottom])
   })
 }
+
+test('homes on the shared floor keep the orcs apart and inside it', () => {
+  expect(stationX('hammer', 140, true)).toBe(12)
+  expect(stationX('pick', 140, true)).toBe(118)
+  expect(stationX('pick', 22, false)).toBe(0)
+  const homes = floorHomes([{ key: 'a', want: 118, slot: 0 }, { key: 'b', want: 118, slot: 1 }, { key: 'c', want: 118, slot: 2 }, { key: 'd', want: 0, slot: 3 }], 140)
+  expect(homes).toEqual({ d: 0, a: 70, b: 94, c: 118 })
+  expect(floorHomes([{ key: 'a', want: 40, slot: 0 }, { key: 'b', want: 41, slot: 1 }], bandColumns(2))).toEqual({ a: 0, b: 24 })
+  expect(hasHearth(bandColumns(3), 3)).toBe(false)
+  expect(hasHearth(140, 3)).toBe(true)
+  expect(hasHearth(140, 1)).toBe(false)
+})
+
+test('the room lives on its own and answers the chronicle', () => {
+  const calm = roomGrid(120, 7, true)
+  expect(calm).toHaveLength(12)
+  expect(calm.every(row => row.length === 120)).toBe(true)
+  expect(calm.join('')).toContain('Z')
+  // Klatka 0 to bezruch: ani wózka, ani szczura w pół drogi.
+  expect(roomGrid(120, 0, true).join('')).not.toContain('Y')
+  const frames = Array.from({ length: 240 }, (_, frame) => roomGrid(120, frame, true).join(''))
+  expect(frames.some(room => room.includes('Y'))).toBe(true)
+  expect(new Set(frames).size).toBeGreaterThan(20)
+  expect(roomGrid(120, 7, true, { kind: 'test-fail', age: 2 }).join('')).toContain('R')
+  expect(roomGrid(120, 7, true, { kind: 'zawał', age: 2 }).join('').split('q').length).toBeGreaterThan(5)
+})
+
+test('a load rides at the hand on the side of the march, and a trial leaves empty-handed', () => {
+  expect(carried('pick', 40, true)).toMatchObject({ x: 46 })
+  expect(carried('pick', 40, false)).toMatchObject({ x: 38 })
+  expect(carried('read', 40, false)).toMatchObject({ x: 37 })
+  expect(carried('test', 40, true)).toBe(null)
+  expect(caughtScroll(7, 3, 50)?.x).toBe(50 + CATCH_X)
+})
 
 test('a wide-text bubble keeps its tail over later slots in a seventy-cell canvas', () => {
   const body = '漢'.repeat(19) + '…'

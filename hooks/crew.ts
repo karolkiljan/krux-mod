@@ -3,8 +3,9 @@
 // register.ts, jednym `update`. Kumpel mówi tylko wtedy, gdy stoi na scenie:
 // o swoim kroku, o wyniku swojej roboty albo o zdarzeniu z kroniki.
 
-import type { KruxActivity, KruxCrew, KruxCue, KruxEvent, KruxHordeMember, KruxLore } from '../types'
-import { EVENT_HOLD_MS, EVENT_SPEAKER, eventLine, mateStep } from './mood'
+import type { KruxActivity, KruxCrew, KruxCue, KruxEvent, KruxHordeMember, KruxLore, KruxMate } from '../types'
+import { EVENT_HOLD_MS, EVENT_SPEAKER, eventLine, mateStep, sparLine } from './mood'
+import { ROSTER } from './roster'
 
 export const EMPTY_CREW: KruxCrew = { members: [], bubble: null, cues: [] }
 
@@ -36,6 +37,16 @@ function cued(crew: KruxCrew, cue: KruxCue, now: number): KruxCue[] {
   return [...cuesOf(crew).filter(old => old.until > now), cue].slice(-CUES_KEPT)
 }
 
+// Co drugie zdarzenie para odszczekuje wtrętowi: stojąca na scenie z własnego
+// dymka, a nieobecna przez Kruxa, „z chodnika”, bo kumpel mówi tylko na scenie.
+function replyTo(members: readonly KruxHordeMember[], mate: KruxMate, event: KruxEvent, seed: number) {
+  if (seed % 2 !== 0) return {}
+  const spar = ROSTER[mate].spar
+  const member = members.find(other => other.mate === spar)
+  const text = sparLine(event, seed)
+  return { reply: member ? { key: member.agentId, speaker: spar, text } : { key: 'krux', speaker: 'Krux' as const, text: `${spar} z chodnika: ${text}` } }
+}
+
 export function crewAfter(crew: KruxCrew, event: CrewEvent, now: number): KruxCrew {
   const { members, bubble } = crew
   switch (event.kind) {
@@ -58,7 +69,8 @@ export function crewAfter(crew: KruxCrew, event: CrewEvent, now: number): KruxCr
       const until = now + EVENT_HOLD_MS
       // Komentuje kumpel z pasującym fachem, ale reaguje ten, kto robił: Krux.
       const cues = cued(crew, { key: 'krux', kind: event.event, until }, now)
-      return { ...crew, cues, bubble: member ? { kind: 'event', key: member.agentId, speaker: mate, text, until } : { kind: 'event', key: 'krux', speaker: 'Krux', text, until } }
+      const reply = replyTo(members, mate, event.event, event.seed)
+      return { ...crew, cues, bubble: member ? { kind: 'event', key: member.agentId, speaker: mate, text, until, ...reply } : { kind: 'event', key: 'krux', speaker: 'Krux', text, until, ...reply } }
     }
     case 'mate-event': {
       const member = members.find(other => other.agentId === event.agentId)
@@ -85,6 +97,14 @@ export function crewAfter(crew: KruxCrew, event: CrewEvent, now: number): KruxCr
       const cues = cuesOf(crew)
       const fresh = cues.filter(cue => cue.until > now)
       const quiet = bubble?.kind === 'event' && bubble.until <= now
+      // Od `until`, nie od `now`: spóźniony zegar nie może przesunąć końca poza drugi zegar.
+      if (quiet && bubble.reply) {
+        // Para zeszła ze sceny przed swoją kolejką: mówi przez Kruxa, jak nieobecna od początku.
+        const { key, speaker, text } = bubble.reply
+        const onStage = key === 'krux' || members.some(other => other.agentId === key)
+        const said = onStage ? { key, speaker, text } : { key: 'krux', speaker: 'Krux' as const, text: `${speaker} z chodnika: ${text}` }
+        return { ...crew, bubble: { kind: 'event', ...said, until: bubble.until + EVENT_HOLD_MS }, cues: fresh }
+      }
       if (!quiet && fresh.length === cues.length) return crew
       return { ...crew, bubble: quiet ? null : bubble, cues: fresh }
     }

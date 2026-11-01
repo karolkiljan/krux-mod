@@ -5,7 +5,9 @@ import { CAPTION_COLUMNS, bandPlan } from '../hooks/band'
 import type { BandInput } from '../hooks/band'
 import { EMPTY_CREW, crewAfter } from '../hooks/crew'
 import { EMPTY_LORE, recordTool } from '../hooks/lore'
-import { CALM, EVENT_HOLD_MS } from '../hooks/mood'
+import { CALM, EVENT_HOLD_MS, SPAR_EVENTS, sparLine } from '../hooks/mood'
+import { MATES } from '../hooks/roster'
+import { BUBBLE_TEXT } from '../hooks/sprites'
 import { describeTool } from '../hooks/voice'
 
 const NIUCH: KruxHordeMember = { agentId: 'a1', mate: 'Niuch', scene: 'hammer', target: '' }
@@ -137,12 +139,40 @@ test('at rest the stage stands still unless a background mate is on it', async (
 
 const failed = recordTool(EMPTY_LORE, 'Bash', { command: 'npm test' }, true)
 
+// Spór w dymkach: co drugie zdarzenie para odszczekuje, ale kumpel dalej mówi tylko na scenie.
+test('the sparring partner answers the event: on stage himself, off stage through Krux', async () => {
+  const offStage = crewAfter(EMPTY_CREW, { kind: 'own-tool', event: 'test-fail', lore: failed, seed: 0 }, 1_000)
+  expect(crewAfter(offStage, { kind: 'expire' }, 2_000)).toBe(offStage)
+  const relayed = crewAfter(offStage, { kind: 'expire' }, 1_000 + EVENT_HOLD_MS)
+  expect(relayed.bubble).toMatchObject({ kind: 'event', key: 'krux', speaker: 'Krux', text: expect.stringMatching(/^Niuch z chodnika: /u), until: 1_000 + 2 * EVENT_HOLD_MS })
+  expect(crewAfter(relayed, { kind: 'expire' }, 1_000 + 2 * EVENT_HOLD_MS).bubble).toBe(null)
+  const niuch = { ...MLOT, agentId: 'a3', mate: 'Niuch' as const }
+  const both = crewAfter(crewAfter(crewAfter(EMPTY_CREW, { kind: 'spawn', member: MLOT }, 0), { kind: 'spawn', member: niuch }, 0), { kind: 'own-tool', event: 'test-fail', lore: failed, seed: 0 }, 1_000)
+  const answered = crewAfter(both, { kind: 'expire' }, 1_000 + EVENT_HOLD_MS)
+  expect(answered.bubble).toMatchObject({ key: 'a3', speaker: 'Niuch' })
+  expect((answered.bubble as { text: string }).text).not.toContain('z chodnika')
+  const quiet = crewAfter(EMPTY_CREW, { kind: 'own-tool', event: 'test-fail', lore: failed, seed: 1 }, 1_000)
+  expect(crewAfter(quiet, { kind: 'expire' }, 1_000 + EVENT_HOLD_MS).bubble).toBe(null)
+})
+
+test('a partner who left before its turn answers through Krux, and a gone mate never talks from the caption', () => {
+  const niuch = { ...MLOT, agentId: 'a3', mate: 'Niuch' as const }
+  const both = crewAfter(crewAfter(EMPTY_CREW, { kind: 'spawn', member: niuch }, 0), { kind: 'own-tool', event: 'test-fail', lore: failed, seed: 0 }, 1_000)
+  const left = crewAfter(both, { kind: 'mate-done', agentId: 'a3' }, 1_500)
+  expect(crewAfter(left, { kind: 'expire' }, 1_000 + EVENT_HOLD_MS).bubble).toMatchObject({ key: 'krux', speaker: 'Krux', text: expect.stringMatching(/^Niuch z chodnika: /u) })
+  for (const mate of MATES) {
+    for (const event of SPAR_EVENTS) {
+      for (const seed of [0, 2]) expect(`${mate} z chodnika: ${sparLine(event, seed)}`.length).toBeLessThanOrEqual(BUBBLE_TEXT)
+    }
+  }
+})
+
 test('a mate step takes the bubble, a fresh event holds it until it expires', async () => {
   let crew: KruxCrew = crewAfter(EMPTY_CREW, { kind: 'spawn', member: MLOT }, 0)
   crew = crewAfter(crew, { kind: 'mate-tool', agentId: 'a2', doing: describeTool('Bash', { command: 'npm test' }, 0) }, 0)
   expect(crew.bubble).toEqual({ kind: 'step', key: 'a2', speaker: 'Młot', text: 'bić próbę stali npm test' })
   expect(crew.members[0]!.scene).toBe('test')
-  crew = crewAfter(crew, { kind: 'own-tool', event: 'test-fail', lore: failed, seed: 0 }, 1_000)
+  crew = crewAfter(crew, { kind: 'own-tool', event: 'test-fail', lore: failed, seed: 1 }, 1_000)
   expect(crew.bubble).toMatchObject({ kind: 'event', key: 'a2', speaker: 'Młot', until: 1_000 + EVENT_HOLD_MS })
   const held = crewAfter(crew, { kind: 'mate-tool', agentId: 'a2', doing: describeTool('Read', { file_path: 'a.ts' }, 0) }, 2_000)
   expect(held.bubble).toBe(crew.bubble)

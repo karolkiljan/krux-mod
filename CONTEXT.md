@@ -62,6 +62,30 @@ _Avoid_: nastrój
 Forma wstawki: wymiana zdań kumpla z jego stałą parą z hordy o temat, który ich dzieli.
 _Avoid_: kłótnia, konflikt
 
+**Podłoga**:
+Wspólna scena pasa, po której orki chodzą między stanowiskami.
+_Avoid_: slot, prostokąt
+
+**Stanowisko**:
+Miejsce na podłodze przypisane rodzajowi roboty: kuźnia, stół, próba albo sztolnia.
+_Avoid_: strefa
+
+**Pokój**:
+Tło pasa: ściana ze sprzętami nad podłogą w perspektywie.
+_Avoid_: tło, backdrop
+
+**Wyprawa**:
+Marsz orka w głąb pokoju po sprzęt; ork maleje, wraca z ładunkiem i dopiero zaczyna robotę.
+_Avoid_: errand
+
+**Stary wróg**:
+Test czerwony teraz i na koniec poprzedniej sesji w repo; Młot woła go stałym przezwiskiem.
+_Avoid_: flaky, regresja
+
+**Odszczekanie**:
+Dymek pary z hordy po wtręcie kumpla, sam tekst na ekranie.
+_Avoid_: wstawka
+
 **Pamięć hordy**:
 Ślad kroniki ostatniej sesji w repo, trwały między sesjami; z niego pierwsza wstawka nowej sesji bierze wspomnienie.
 _Avoid_: historia, log

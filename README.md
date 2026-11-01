@@ -17,7 +17,7 @@ Tylko Claude Code (CLI i zakładka Code w aplikacji Desktop), od wersji 2.1.287.
 | Format odpowiedzi | brak | jedna linia formatu według rodzaju prośby (debug, review, plan, wyjaśnienie, pogawędka), rozpoznanej regexem bez wywołania modelu, z limitem słów; bez rozpoznania sam budżet: do 150 słów; prośba o ruch nieodwracalny (`DROP TABLE`, force push, `git checkout -- .`, `terraform destroy`, `kubectl delete`, „usuń tabelę”) dostaje linię: skutek i droga odwrotu pełnymi zdaniami |
 | Tabliczki | brak | `⚒ Krux` nad odpowiedzią, `Morra` nad promptem; sam rysunek, 0 tokenów |
 | Przełączniki | frazy `włącz krux` itd. | frazy dalej działają, do tego `/krux` bez tury modelu |
-| Interfejs | brak | panel kuźni, kowal nad promptem, słowa spinnera, etykiety w stopce |
+| Interfejs | brak | panel kuźni, pas nad promptem z pokojem w perspektywie (orki chodzą między stanowiskami i idą w głąb po sprzęt), słowa spinnera, etykiety w stopce |
 
 ## Instalacja
 
