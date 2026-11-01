@@ -1,9 +1,9 @@
 import type { ClientModule } from 'claude-code'
 
 import type { KruxCue, KruxEvent, KruxMood, KruxSpeaker } from '../types'
-import { CATCH_X, CUE_FRAMES, ERRAND_FRAMES, FRAME_MS, ORC_GAP, ORC_WIDTH, SPEAKER_COLOR, bandColumns, behind, bubbleAt, canvasColumns, carried, catchStep, caughtScroll, depthSpot, dress, errandPose, floorHomes, floorStart, frameGrid, hasHearth, hearthProp, paint, roomGrid, runsOf, sliceRuns, slotX, stageGrid, stationX, tossFlight, tossFrames, tossGrid, tossScroll, trackArrive, trackDozing, trackFace, trackGrid, trackOff, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withNap } from './sprites'
-import type { Face, Placed, Run, StageScene, Track } from './sprites'
-import { MATES } from './roster'
+import { CATCH_X, CUE_FRAMES, DUET_FRAMES, DUET_GAP, ERRAND_FRAMES, FRAME_MS, ORC_GAP, ORC_WIDTH, SPEAKER_COLOR, bandColumns, behind, bubbleAt, canvasColumns, carried, catchStep, caughtScroll, depthSpot, dayPhase, dress, duetPose, errandPose, floorHomes, floorStart, frameGrid, hasHearth, hearthProp, paint, roomGrid, runsOf, sliceRuns, slotX, stageGrid, stationX, tossFlight, tossFrames, tossGrid, tossScroll, trackArrive, trackDozing, trackFace, trackGrid, trackOff, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withNap } from './sprites'
+import type { DuetKind, Face, Placed, Run, StageScene, Track } from './sprites'
+import { MATES, ROSTER } from './roster'
 import { graphemes } from './terminal-text'
 
 // Moduł powierzchni: rysuje Kruxa, kumpli i dymek na wątku rysującym, z własnym
@@ -60,7 +60,10 @@ type Actor = {
   effortAt?: number
 }
 
-type ForgeState = { frame: number; actors: Record<string, Actor>; idle: boolean; reduced?: boolean; snoozing?: boolean; said?: { id: string; at: number }; laidAt?: number }
+// Scenka: gość idzie do gospodarza, potem grają razem od klatki `at`. `at` null: gość w drodze.
+type Duet = { host: string; guest: string; kind: DuetKind; at: number | null }
+
+type ForgeState = { frame: number; actors: Record<string, Actor>; idle: boolean; reduced?: boolean; snoozing?: boolean; said?: { id: string; at: number }; laidAt?: number; duet?: Duet; duetAt?: number }
 
 // Kolumny na klatkę w marszu: przez całą podłogę w około 3 s, także na szerokim terminalu.
 const WALK_SPEED = 3
@@ -75,6 +78,18 @@ const STAY_FRAMES = 20
 
 // Po głębi ork chodzi najwyżej raz na 15 s: wyprawa to przyprawa, nie etat.
 const ERRAND_EVERY = 100
+
+// Scenka najwyżej co 12 s i dopiero, gdy obaj 6 s stoją przy swojej robocie.
+const DUET_EVERY = 80
+const DUET_SETTLED = 40
+
+// Para ze sporu walczy albo się kłóci, po zielonych przybija piątkę, inaczej podaje sobie sprzęt.
+function duetKind(host: Actor, guest: Actor, seed: number): DuetKind {
+  if (host.mood === 'proud' || guest.mood === 'proud') return 'highfive'
+  const rivals = host.face !== 'Krux' && host.face !== null && ROSTER[host.face].spar === guest.face
+  if (rivals) return seed % 2 === 0 ? 'fence' : 'argue'
+  return seed % 3 === 0 ? 'fence' : 'pass'
+}
 
 // Kumpel dalej niż tyle kolumn od Kruxa podchodzi ze zwojem, zamiast rzucać przez cały pas.
 const TOSS_REACH = 2 * (ORC_WIDTH + ORC_GAP)
@@ -160,6 +175,9 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
   let changed = first
   const present = new Set<string>()
   const born = new Set<string>()
+  let duet = state.duet
+  let duetAt = state.duetAt
+  const inDuet = (key: string) => duet !== undefined && (duet.host === key || duet.guest === key)
   // Domy przestawiamy raz na klatkę: silnik odpina płótno po 3 zapisach stanu bez tyknięcia.
   const layout = state.laidAt !== frame
   let laid = false
@@ -200,7 +218,9 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
     } else {
       let next = was
       // W drodze na stanowisko scena czeka na dojście; oś rusza dopiero tam.
-      if (was.pending !== undefined) {
+      if (inDuet(orc.key)) {
+        // Scenka trzyma orka: nowa scena rusza po niej.
+      } else if (was.pending !== undefined) {
         const track = trackFace(was.track, orc.face, orc.key, frame, true)
         if (was.pending !== orc.scene || track !== was.track) next = { ...next, pending: orc.scene, track }
       } else {
@@ -220,7 +240,7 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
   // Domy na podłodze. Spoczynek i świeżo przybyły ork stoją, gdzie stoją; w bezruchu każdy w swoim slocie.
   const scenes = new Map(props.orcs.map(orc => [orc.key, orc.scene]))
   const standing = Object.entries(actors).filter(([key, actor]) => actor.leftAt === null && scenes.has(key))
-  const pinned = (actor: Actor) => frozen || actor.errand !== undefined || (actor.pending === undefined && frame - actor.arrived < STAY_FRAMES)
+  const pinned = (actor: Actor) => frozen || actor.errand !== undefined || (duet !== undefined && (actors[duet.host] === actor || actors[duet.guest] === actor)) || (actor.pending === undefined && frame - actor.arrived < STAY_FRAMES)
   const bounds = [floorStart(hearth), stage - ORC_WIDTH] as const
   const onFloor = (x: number) => Math.max(bounds[0], Math.min(bounds[1], x))
   const homes = floorHomes(
@@ -259,6 +279,48 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
         const track = trackOff(actor.track, frame)
         actors[key] = { ...actor, track, home, from: x, enter: Math.max(frame, track.since), pending: scenes.get(key)! }
       }
+      changed = true
+    }
+  }
+  // Scenka: koniec albo rozpad wraca orków do roboty, gość odchodzi na swoje stanowisko.
+  if (duet !== undefined) {
+    const { host: hostKey, guest: guestKey } = duet
+    const host = actors[hostKey]
+    const guest = actors[guestKey]
+    const done = duet.at !== null && frame - duet.at >= DUET_FRAMES
+    if (done || props.still || host === undefined || guest === undefined || host.leftAt !== null || guest.leftAt !== null) {
+      if (host !== undefined && host.leftAt === null) actors[hostKey] = { ...host, track: trackArrive(host.track, scenes.get(hostKey) ?? host.track.scene, hostKey, frame), arrived: frame }
+      if (guest !== undefined && guest.leftAt === null) {
+        const scene = scenes.get(guestKey) ?? guest.track.scene
+        const home = onFloor(stationX(scene, stage, hearth))
+        const x = placeOf(guest, frame, stage)?.x ?? guest.home
+        actors[guestKey] = props.still ? { ...guest, track: trackArrive(guest.track, scene, guestKey, frame), home: x, from: x, arrived: frame } : { ...guest, home, from: x, enter: frame, pending: scene }
+      }
+      duet = undefined
+      duetAt = frame
+      changed = true
+    } else if (duet.at === null && frame >= guest.enter && !placeOf(guest, frame, stage)?.walking) {
+      // Gość doszedł: gospodarz odkłada robotę, scenka rusza, gdy obaj stoją.
+      const track = trackOff(host.track, frame)
+      actors[hostKey] = { ...host, track }
+      duet = { ...duet, at: Math.max(frame, track.since) }
+      changed = true
+    }
+  } else if (layout && !frozen && !props.still && frame - (duetAt ?? -DUET_EVERY) >= DUET_EVERY) {
+    const free = standing.map(([key]) => key).filter(key => {
+      const actor = actors[key]
+      return actor !== undefined && !born.has(key) && actor.leftAt === null && actor.pending === undefined && actor.errand === undefined && frame - actor.arrived >= DUET_SETTLED
+    })
+    const guestKey = free.find(key => key !== 'krux')
+    const hostKey = free.find(key => key !== guestKey)
+    const host = hostKey === undefined ? undefined : actors[hostKey]
+    const guest = guestKey === undefined ? undefined : actors[guestKey]
+    if (host !== undefined && guest !== undefined && host.home + DUET_GAP <= stage - ORC_WIDTH) {
+      const track = trackOff(guest.track, frame)
+      const x = placeOf(guest, frame, stage)?.x ?? guest.home
+      actors[guestKey!] = { ...guest, track, home: host.home + DUET_GAP, from: x, enter: Math.max(frame, track.since) }
+      duet = { host: hostKey!, guest: guestKey!, kind: duetKind(host, guest, frame), at: null }
+      laid = true
       changed = true
     }
   }
@@ -333,6 +395,15 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
       actors[key] = actor
       changed = true
     }
+    // Scenka gra obu; rekwizyt między nimi liczy się od gospodarza.
+    if (duet !== undefined && duet.at !== null && (key === duet.guest || (key === duet.host && frame >= duet.at))) {
+      const pose = duetPose(duet.kind, Math.max(0, frame - duet.at))
+      const rows = dress(key === duet.host ? pose.host : pose.guest, actor.face)
+      placed.push({ rows, x: key === duet.host ? at.x : at.x - 2, walking: false })
+      if (key === duet.host && pose.prop.length > 0) loads.push({ rows: [...pose.prop], x: at.x })
+      moving = true
+      continue
+    }
     if (actor.errand !== undefined) {
       const pose = errandPose(frame - actor.errand.at, actor.home, actor.errand.spot, actor.errand.scene, actor.face)
       deep.push(pose)
@@ -373,7 +444,7 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
   const typing = props.bubble !== null && (frame - speech.at + 1) * 3 < Math.min(40, graphemes(props.bubble.text).length)
   const idle = props.still || (frozen && !moving && !typing)
   if (changed || idle !== state.idle || speech !== state.said || state.reduced !== props.still) {
-    surface.setState({ frame, actors, idle, said: speech, reduced: props.still, snoozing: idle ? state.snoozing : false, ...(laid ? { laidAt: frame } : state.laidAt === undefined ? {} : { laidAt: state.laidAt }) })
+    surface.setState({ frame, actors, idle, said: speech, reduced: props.still, snoozing: idle ? state.snoozing : false, ...(laid ? { laidAt: frame } : state.laidAt === undefined ? {} : { laidAt: state.laidAt }), ...(duet === undefined ? {} : { duet }), ...(duetAt === undefined ? {} : { duetAt }) })
   }
   if (first) {
     let quietTicks = 0
@@ -401,7 +472,7 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
   // Pokój czuje to, co Krux: zawał sypie pyłem, smród czerwieni pochodnie, zielone je rozpala.
   const absent = MATES.filter(mate => !props.orcs.some(orc => orc.face === mate))
   const felt = krux?.cue !== undefined && frame - krux.cue.at < CUE_FRAMES ? { kind: krux.cue.kind, age: frame - krux.cue.at } : null
-  const scene = room ? paint(deep.reduce<string[]>((back, orc) => paint(back, orc.rows, orc.x, orc.y), roomGrid(width, frame, hearth, { feel: felt, alive: !frozen, red: props.red === true, seals: props.seals ?? 0, absent })), grid, 0, 6) : grid
+  const scene = room ? paint(deep.reduce<string[]>((back, orc) => paint(back, orc.rows, orc.x, orc.y), roomGrid(width, frame, hearth, { feel: felt, alive: !frozen, red: props.red === true, seals: props.seals ?? 0, absent, phase: dayPhase(new Date(props.now ?? 43_200_000).getHours()) })), grid, 0, 6) : grid
   const { Box, Text } = surface.elements
   const lines = runsOf(scene, props.scale)
   const said = props.variant === 'band' ? props.bubble : null

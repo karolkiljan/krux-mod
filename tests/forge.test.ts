@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import Forge from '../hooks/forge'
 import type { ForgeOrc, ForgeProps } from '../hooks/forge'
-import { ERRAND_FRAMES, PALETTE, carried, trackGrid } from '../hooks/sprites'
+import { DUET_FRAMES, DUET_GAP, ERRAND_FRAMES, PALETTE, carried, trackGrid } from '../hooks/sprites'
 import type { Track } from '../hooks/sprites'
 import { STAND, pad } from '../hooks/stage'
 
@@ -22,7 +22,7 @@ function surfaceOf() {
   return { surface, tick: () => tick?.() }
 }
 
-type Seen = { frame: number; idle: boolean; snoozing?: boolean; actors: Record<string, { leftAt: number | null; slot: number; home: number; arrived: number; from: number; pending?: string; errand?: { at: number; spot: number }; enter: number; track: Track; handoff?: { at: number; flight: number }; cue?: { id: string; at: number }; effortAt?: number }> }
+type Seen = { frame: number; idle: boolean; duet?: { host: string; guest: string; kind: string; at: number | null }; duetAt?: number; snoozing?: boolean; actors: Record<string, { leftAt: number | null; slot: number; home: number; arrived: number; from: number; pending?: string; errand?: { at: number; spot: number }; enter: number; track: Track; handoff?: { at: number; flight: number }; cue?: { id: string; at: number }; effortAt?: number }> }
 
 const KRUX: ForgeOrc = { key: 'krux', face: 'Krux', scene: 'lounge', mood: 'calm' }
 const NIUCH: ForgeOrc = { key: 'a1', face: 'Niuch', scene: 'scout', mood: 'calm' }
@@ -448,4 +448,56 @@ test('the hearth waits until nobody has it underfoot', () => {
   expect(JSON.stringify(draw(wide, surface))).not.toContain(PALETTE.k)
   for (let i = 0; i < 12; i++) { tick(); draw(wide, surface) }
   expect(JSON.stringify(draw(wide, surface))).toContain(PALETTE.k)
+})
+
+const pair: ForgeProps = { ...FLOOR, orcs: [{ ...KRUX, scene: 'read' }, { ...NIUCH, scene: 'pick' }] }
+const untilDuet = (seen: ReturnType<typeof surfaceOf>, props: ForgeProps) => {
+  draw(props, seen.surface)
+  for (let i = 0; i < 120 && (seen.surface.state as Seen).duet === undefined; i++) { seen.tick(); draw(props, seen.surface) }
+  expect((seen.surface.state as Seen).duet).toBeDefined()
+}
+
+test('two settled orcs meet for a scene, play it side by side, then the guest walks back', () => {
+  const seen = surfaceOf()
+  untilDuet(seen, pair)
+  const state = () => seen.surface.state as Seen
+  expect(state().duet).toMatchObject({ host: 'krux', guest: 'a1' })
+  expect(state().actors.a1!.home).toBe(state().actors.krux!.home + DUET_GAP)
+  for (let i = 0; i < 80 && state().duet?.at === null; i++) { seen.tick(); draw(pair, seen.surface) }
+  const started = state().duet!.at!
+  expect(started).toBeGreaterThanOrEqual(state().frame)
+  for (let i = 0; i < DUET_FRAMES + 30 && state().duet !== undefined; i++) { seen.tick(); draw(pair, seen.surface) }
+  expect(state().duet).toBe(undefined)
+  expect(state().duetAt).toBeGreaterThanOrEqual(started + DUET_FRAMES)
+  expect(state().actors.a1!.pending).toBe('pick')
+  for (let i = 0; i < 40 && state().actors.a1!.pending !== undefined; i++) { seen.tick(); draw(pair, seen.surface) }
+  expect(state().actors.a1!.home).toBeGreaterThan(state().actors.krux!.home + DUET_GAP)
+})
+
+test('a guest who finishes mid-scene frees the host, and the host returns to work', () => {
+  const seen = surfaceOf()
+  untilDuet(seen, pair)
+  const alone: ForgeProps = { ...pair, orcs: [{ ...KRUX, scene: 'read' }] }
+  draw(alone, seen.surface)
+  seen.tick()
+  draw(alone, seen.surface)
+  const state = seen.surface.state as Seen
+  expect(state.duet).toBe(undefined)
+  expect(state.actors.krux!.track.scene).toBe('read')
+})
+
+test('reduced motion ends a scene at once, with everybody in a slot', () => {
+  const seen = surfaceOf()
+  untilDuet(seen, pair)
+  draw({ ...pair, still: true }, seen.surface)
+  const state = seen.surface.state as Seen
+  expect(state.duet).toBe(undefined)
+  expect(state.actors.a1!.pending).toBe(undefined)
+})
+
+test('a lone orc never starts a scene', () => {
+  const { surface, tick } = surfaceOf()
+  draw(onFloor('read'), surface)
+  for (let i = 0; i < 200; i++) { tick(); draw(onFloor('read'), surface) }
+  expect((surface.state as Seen).duet).toBe(undefined)
 })
