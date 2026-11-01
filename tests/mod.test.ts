@@ -1188,6 +1188,21 @@ test('a test still red from the previous session comes back as an old enemy', as
   expect(note).toContain('Stary wróg: test cache > drops stale keys padał też w poprzedniej sesji')
 })
 
+test('a mate’s green run does not wipe Krux’s own red test from memory', async ($, on) => {
+  const saved = new Map<string, unknown>()
+  const reply = { result: { exitCode: 1 }, isError: true as const, text: '(fail) cache > drops stale keys [2ms]\n\n 0 pass\n 1 fail\n' }
+  const extras: Extras = { toolReply: reply, agents: [{ id: 'a1', status: 'running' }] }
+  const clock = engine(on, saved, extras)
+  await clock.set(Date.UTC(2026, 9, 29, 12))
+  await start($)
+  await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  await $.agent.spawn(spawnOf({ prompt: 'Młot, testy.', description: 'Młot: testy' }))
+  extras.toolReply = { result: { exitCode: 0 }, text: '3 pass\n0 fail\n' }
+  await $.tool.call(inLoop('a1', { tool: 'Bash', command: 'npm test' }))
+  await $.turn.complete({ answer: 'Krux szukać dalej.', durationMs: 10, isAborted: false, turnId: 't1', reason: 'answer' })
+  expect(saved.get('memory./work')).toMatchObject({ last: { failure: 'cache > drops stale keys' } })
+})
+
 test('long sentences count as drift, but not after a request to explain', async ($, on) => {
   engine(on, new Map())
   await start($)

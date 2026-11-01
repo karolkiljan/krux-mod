@@ -232,6 +232,8 @@ declare module 'claude-code' {
       lastPrompt: string | null
       // Tura z prośbą o wyjaśnienie: miernik nie sądzi długości zdań.
       longAnswer: boolean
+      // Pierwszy padły test ostatniego przebiegu Kruxa, gdy czerwony; kumpel go nie rusza.
+      ownRed: string | null
       // Dziennik narzędzi (tylko sesja) i karta panelu Sztolni.
       journal: KruxJournal
       shaftTab: KruxShaftTab
