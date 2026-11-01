@@ -37,6 +37,18 @@ export const PALETTE: Record<string, string> = {
   j: '#f5f5f5', // biel: pióro, papier, łuska
   d: '#b22222', // czerwony materiał, flaga
   e: '#2e4a7d', // granatowy materiał, obicie fotela
+  A: '#231f1c', // ściana pokoju
+  D: '#2e2823', // spoina ściany
+  E: '#3b2a1c', // belka, półka, oprawa sztolni
+  F: '#2b2420', // podłoga
+  H: '#3a3029', // deska podłogi w perspektywie
+  I: '#0d0b0a', // głąb sztolni
+  C: '#4a4641', // szyna, żelazo na ścianie
+  U: '#6e5a3c', // grzbiety na półce
+  Q: '#c8641e', // płomień pochodni
+  Z: '#e8b23c', // jasny płomień pochodni, kanarek
+  V: '#3f3a36', // dym znad paleniska
+  Y: '#55402a', // skrzynia wózka
 }
 
 // Fartuchy kumpli: tych znaków czynność nie używa, bo kumpel podmienia nimi 'b'.

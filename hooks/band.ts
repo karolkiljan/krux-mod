@@ -15,7 +15,7 @@ export const CAPTION_GAP = 2
 // Krux i do trzech kumpli; reszta hordy liczona w podpisie.
 const STAGE_MATES = 3
 
-// Płótno z dymkiem: 3 wiersze dymka i 3 wiersze sceny. Niskie: sama scena.
+// Płótno z pokojem: 3 wiersze ściany pod dymek i 3 wiersze podłogi. Niskie: sama scena.
 const TALL_ROWS = 6
 const LOW_ROWS = 3
 
@@ -56,7 +56,7 @@ export function bandPlan(input: BandInput): BandPlan {
   const { working, members } = input
   const room = input.columns - CAPTION_COLUMNS - CAPTION_GAP
   const fit = input.hasClient ? Math.floor((room + ORC_GAP) / (ORC_WIDTH + ORC_GAP)) : 0
-  // Stała liczba prostokątów: płótno nie zmienia szerokości, gdy horda przychodzi i odchodzi.
+  // Stała liczba miejsc: płótno nie zmienia szerokości, gdy horda przychodzi i odchodzi.
   const slots = Math.max(1, Math.min(1 + STAGE_MATES, fit))
   const shown = members.slice(0, slots - 1)
   const hidden = members.length - shown.length
@@ -70,7 +70,7 @@ export function bandPlan(input: BandInput): BandPlan {
     ...shown.map(member => ({ key: member.agentId, face: member.mate, scene: member.scene, mood: member.mate ? input.moods.faces[member.mate] : ('calm' as const), ...(member.startedAt === undefined ? {} : { workAt: member.startedAt }) })),
   ]
   // Krok kumpla, którego już nie ma na scenie, nie wisi nad nikim.
-  const gone = input.held?.kind === 'step' && !members.some(member => member.agentId === input.held!.key)
+  const gone = input.held !== null && input.held.key !== 'krux' && !members.some(member => member.agentId === input.held!.key)
   const said = bubbleFor({ now: input.now, held: gone ? null : input.held, working, activity: input.activity, moods: input.moods, seed: input.total })
   const speaker = said === null ? undefined : orcs.find(orc => orc.key === said.key)
   // Wysokość pasa zależy tylko od miejsca, nie od tego, czy ktoś mówi.
@@ -84,6 +84,8 @@ export function bandPlan(input: BandInput): BandPlan {
   // Kreska zabiera wiersz, więc staje tylko nad pasem, który mieści się cały.
   const rule = input.rows >= Math.max(1, height) + 1
   if (height === 0) return { rule, verb, target, tally, stage: null }
+  // Orkowie chodzą po jednej podłodze przez cały pas, od podpisu do prawej krawędzi.
+  const floor = Math.max(bandColumns(slots), room)
   const props: ForgeProps = {
     variant: 'band',
     scale: 1,
@@ -91,11 +93,12 @@ export function bandPlan(input: BandInput): BandPlan {
     // W spoczynku płótno stoi, chyba że na scenie kuje jeszcze agent w tle.
     rest: !working && shown.length === 0,
     slots,
+    floor,
     bubbleRows: tall,
     orcs,
     bubble: inCanvas ? { key: speaker!.key, text: said!.text, speaker: said!.speaker } : null,
     cues: (input.cues ?? []).filter(cue => cue.until > input.now),
     now: input.now,
   }
-  return { rule, verb, target, tally, stage: { props, width: tall ? canvasColumns(slots, true) : bandColumns(slots), height } }
+  return { rule, verb, target, tally, stage: { props, width: tall ? Math.max(canvasColumns(slots, true), floor) : floor, height } }
 }

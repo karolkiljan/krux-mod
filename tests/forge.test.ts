@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import Forge from '../hooks/forge'
 import type { ForgeOrc, ForgeProps } from '../hooks/forge'
-import { trackGrid } from '../hooks/sprites'
+import { ERRAND_FRAMES, PALETTE, carried, trackGrid } from '../hooks/sprites'
 import type { Track } from '../hooks/sprites'
 import { STAND, pad } from '../hooks/stage'
 
@@ -22,7 +22,7 @@ function surfaceOf() {
   return { surface, tick: () => tick?.() }
 }
 
-type Seen = { frame: number; idle: boolean; snoozing?: boolean; actors: Record<string, { leftAt: number | null; slot: number; enter: number; track: Track; handoff?: { at: number; flight: number }; cue?: { id: string; at: number }; effortAt?: number }> }
+type Seen = { frame: number; idle: boolean; snoozing?: boolean; actors: Record<string, { leftAt: number | null; slot: number; home: number; from: number; pending?: string; errand?: { at: number; spot: number }; enter: number; track: Track; handoff?: { at: number; flight: number }; cue?: { id: string; at: number }; effortAt?: number }> }
 
 const KRUX: ForgeOrc = { key: 'krux', face: 'Krux', scene: 'lounge', mood: 'calm' }
 const NIUCH: ForgeOrc = { key: 'a1', face: 'Niuch', scene: 'scout', mood: 'calm' }
@@ -175,4 +175,229 @@ test('reduced motion freezes reactions, typing and naps as well as walking', () 
   for (let i = 0; i < 240; i++) { tick(); draw(props, surface) }
   expect(draw(props, surface)).toEqual(before)
   expect((surface.state as Seen).frame).toBe(0)
+})
+
+const FLOOR: ForgeProps = { ...BAND, slots: 3, floor: 140, orcs: [{ ...KRUX, scene: 'hammer' }] }
+
+test('a new station takes the prop down first, then Krux walks there and only then starts', () => {
+  const { surface, tick } = surfaceOf()
+  draw(FLOOR, surface)
+  const before = (surface.state as Seen).actors.krux!
+  expect(before.home).toBe(12)
+  const mine: ForgeProps = { ...FLOOR, orcs: [{ ...KRUX, scene: 'pick' }] }
+  // Świeżo przy kowadle: 3 s zostaje na miejscu, szybkie narzędzia nie gonią go po podłodze.
+  draw(mine, surface)
+  expect((surface.state as Seen).actors.krux!.pending).toBe(undefined)
+  for (let i = 0; i < 20; i++) { tick(); draw(mine, surface) }
+  const going = (surface.state as Seen).actors.krux!
+  expect(going.pending).toBe('pick')
+  expect(going.home).toBe(118)
+  expect(going.enter).toBeGreaterThanOrEqual((surface.state as Seen).frame)
+  let shrunk = false
+  for (let i = 0; i < 70 && (surface.state as Seen).actors.krux!.pending !== undefined; i++) {
+    tick()
+    // Wyprawa w głąb: mniejszy ork na ścianie, wyżej niż dolna połowa pasa.
+    shrunk ||= (surface.state as Seen).actors.krux!.errand !== undefined
+    draw(mine, surface)
+  }
+  expect(shrunk).toBe(true)
+  const there = surface.state as Seen
+  expect(there.actors.krux!.pending).toBe(undefined)
+  expect(there.actors.krux!.track.scene).toBe('pick')
+  expect(there.actors.krux!.track.since).toBe(there.frame)
+})
+
+test('a render without a tick settles: the floor never writes state in a loop', () => {
+  const { surface } = surfaceOf()
+  const props: ForgeProps = { ...FLOOR, orcs: [{ ...KRUX, scene: 'pick' }, { ...NIUCH, scene: 'torch' }, { ...NIUCH, key: 'a2', face: 'Młot', scene: 'pick' }] }
+  draw(props, surface)
+  draw(props, surface)
+  const settled = surface.state
+  draw(props, surface)
+  expect(surface.state).toBe(settled)
+  draw({ ...props, floor: 80 }, surface)
+  const narrowed = surface.state
+  draw({ ...props, floor: 80 }, surface)
+  expect(surface.state).toBe(narrowed)
+  expect(settled).toBeDefined()
+})
+
+test('with reduced motion everybody keeps a slot and nobody walks', () => {
+  const { surface } = surfaceOf()
+  const still: ForgeProps = { ...FLOOR, still: true, orcs: [{ ...KRUX, scene: 'pick' }] }
+  draw(still, surface)
+  expect((surface.state as Seen).actors.krux!.home).toBe(0)
+  draw({ ...still, orcs: [{ ...KRUX, scene: 'read' }] }, surface)
+  expect((surface.state as Seen).actors.krux).toMatchObject({ home: 0, from: 0 })
+  expect((surface.state as Seen).actors.krux!.pending).toBe(undefined)
+})
+
+test('a mate far from Krux walks up with the scroll before handing it over', () => {
+  const { surface, tick } = surfaceOf()
+  const working: ForgeProps = { ...FLOOR, orcs: [{ ...KRUX, scene: 'hammer' }, { ...NIUCH, scene: 'pick' }] }
+  draw(working, surface)
+  expect((surface.state as Seen).actors.a1!.home).toBe(118)
+  const done: ForgeProps = { ...FLOOR, cues: [{ key: 'a1', kind: 'handoff', until: 4000 }] }
+  draw(done, surface)
+  const out = (surface.state as Seen).actors.a1!
+  expect(out.home).toBe(24)
+  expect(out.from).toBe(118)
+  expect(out.handoff!.at).toBeGreaterThan(out.track.since)
+  const at = out.handoff!.at
+  while ((surface.state as Seen).frame < at) { tick(); draw(done, surface) }
+  const beside = JSON.stringify(draw(done, surface))
+  expect(beside).toMatch(/[▀▄█]/u)
+  expect((surface.state as Seen).actors.a1!.leftAt).toBeGreaterThan(at)
+})
+
+test('nobody stands in the hearth: a floor that grew moves Krux off it, reduced motion draws no hearth', () => {
+  const { surface, tick } = surfaceOf()
+  const narrow: ForgeProps = { ...FLOOR, rest: true, floor: 70 }
+  draw(narrow, surface)
+  expect((surface.state as Seen).actors.krux!.home).toBe(0)
+  const wide: ForgeProps = { ...FLOOR, rest: true }
+  draw(wide, surface)
+  expect((surface.state as Seen).actors.krux!.home).toBe(12)
+  for (let i = 0; i < 30 && (surface.state as Seen).actors.krux!.pending !== undefined; i++) { tick(); draw(wide, surface) }
+  expect((surface.state as Seen).actors.krux!.pending).toBe(undefined)
+  const still = surfaceOf()
+  const frozen = JSON.stringify(draw({ ...FLOOR, still: true }, still.surface))
+  expect(frozen).not.toContain(PALETTE.k)
+})
+
+test('the room stands behind everyone, and the bubble lies on the wall without shifting it', () => {
+  const { surface } = surfaceOf()
+  const props: ForgeProps = { ...FLOOR, bubble: { key: 'krux', text: 'Gotowe.', speaker: 'Krux' }, rest: true }
+  const tree = draw(props, surface) as unknown as { props: { children: { props: { key: string; children: { props: { children: string[] } }[] } }[] } }
+  const rows = tree.props.children
+  expect(rows.map(row => row.props.key)).toEqual(['bubble-0', 'bubble-1', 'bubble-2', 'row-0', 'row-1', 'row-2'])
+  for (const row of rows) expect([...row.props.children.flatMap(text => text.props.children).join('')].length).toBe(140)
+  expect(JSON.stringify(tree)).toContain(PALETTE.A)
+})
+
+test('a low band stays flat: no room where no rows are left for it', () => {
+  const { surface } = surfaceOf()
+  expect(JSON.stringify(draw({ ...FLOOR, bubbleRows: false }, surface))).not.toContain(PALETTE.A)
+})
+
+test('the busiest drawing on a wide terminal keeps well under the engine bounds', () => {
+  const { surface, tick } = surfaceOf()
+  const orc = (key: string, face: ForgeOrc['face'], scene: ForgeOrc['scene']): ForgeOrc => ({ key, face, scene, mood: 'proud' })
+  const props: ForgeProps = { ...FLOOR, slots: 4, floor: 300, orcs: [orc('krux', 'Krux', 'hammer'), orc('a1', 'Niuch', 'torch'), orc('a2', 'Grom', 'build'), orc('a3', 'Lont', 'tear')], bubble: { key: 'krux', text: 'Hmm, długi dymek nad kuźnią hordy.', speaker: 'Krux' } }
+  let longest = 0
+  for (let i = 0; i < 60; i++) {
+    longest = Math.max(longest, JSON.stringify(draw(props, surface)).length)
+    tick()
+  }
+  expect(longest).toBeLessThan(50_000)
+})
+
+test('an errand comes back on its own and goes at most once in fifteen seconds', () => {
+  const { surface, tick } = surfaceOf()
+  const at = (scene: ForgeOrc['scene']): ForgeProps => ({ ...FLOOR, orcs: [{ ...KRUX, scene }] })
+  draw(at('hammer'), surface)
+  for (let i = 0; i < 21 + 40 + ERRAND_FRAMES; i++) { tick(); draw(at('pick'), surface) }
+  const back = (surface.state as Seen).actors.krux!
+  expect(back.pending).toBe(undefined)
+  expect(back.errand).toBe(undefined)
+  for (let i = 0; i < 24; i++) { tick(); draw(at('read'), surface) }
+  for (let i = 0; i < 30 && (surface.state as Seen).actors.krux!.pending !== undefined; i++) {
+    tick()
+    draw(at('read'), surface)
+    expect((surface.state as Seen).actors.krux!.errand).toBe(undefined)
+  }
+  expect((surface.state as Seen).actors.krux!.track.scene).toBe('read')
+})
+
+test('an orc deep in the room has no bubble, so the wall he walks to stays in sight', () => {
+  const { surface, tick } = surfaceOf()
+  const say = { key: 'krux', text: 'Kilof iść.', speaker: 'Krux' as const }
+  const at = (scene: ForgeOrc['scene']): ForgeProps => ({ ...FLOOR, bubble: say, orcs: [{ ...KRUX, scene }] })
+  draw(at('hammer'), surface)
+  for (let i = 0; i < 80 && (surface.state as Seen).actors.krux!.errand === undefined; i++) { tick(); draw(at('pick'), surface) }
+  expect((surface.state as Seen).actors.krux!.errand).toBeDefined()
+  expect(JSON.stringify(draw(at('pick'), surface))).not.toContain('Kilof')
+})
+
+const untilErrand = (at: (scene: ForgeOrc['scene']) => ForgeProps, draws: { surface: ReturnType<typeof surfaceOf>['surface']; tick: () => void }) => {
+  draw(at('hammer'), draws.surface)
+  for (let i = 0; i < 90 && (draws.surface.state as Seen).actors.krux!.errand === undefined; i++) { draws.tick(); draw(at('pick'), draws.surface) }
+  expect((draws.surface.state as Seen).actors.krux!.errand).toBeDefined()
+}
+const onFloor = (scene: ForgeOrc['scene']): ForgeProps => ({ ...FLOOR, orcs: [{ ...KRUX, scene }] })
+
+test('reduced motion switched on deep in the room brings the orc back at once', () => {
+  const seen = surfaceOf()
+  untilErrand(onFloor, seen)
+  draw({ ...onFloor('read'), still: true }, seen.surface)
+  const krux = (seen.surface.state as Seen).actors.krux!
+  expect(krux.errand).toBe(undefined)
+  expect(krux.pending).toBe(undefined)
+  expect(krux).toMatchObject({ home: 0, from: 0 })
+  expect(krux.track.scene).toBe('read')
+})
+
+test('reduced motion switched on mid-march stops the walk even when the slot is the destination', () => {
+  const { surface, tick } = surfaceOf()
+  const low: ForgeProps = { ...FLOOR, slots: 3, floor: 70, orcs: [{ ...KRUX, scene: 'pick' }] }
+  draw(low, surface)
+  const back: ForgeProps = { ...low, orcs: [{ ...KRUX, scene: 'hammer' }] }
+  for (let i = 0; i < 40 && (surface.state as Seen).actors.krux!.pending === undefined; i++) { tick(); draw(back, surface) }
+  expect((surface.state as Seen).actors.krux!.home).toBe(0)
+  draw({ ...back, still: true }, surface)
+  expect((surface.state as Seen).actors.krux).toMatchObject({ home: 0, from: 0 })
+  expect((surface.state as Seen).actors.krux!.pending).toBe(undefined)
+})
+
+test('a floor narrowed at the end of an errand keeps the orc on the canvas', () => {
+  const seen = surfaceOf()
+  untilErrand(onFloor, seen)
+  for (let i = 0; i < ERRAND_FRAMES - 2; i++) { seen.tick(); draw(onFloor('pick'), seen.surface) }
+  draw({ ...onFloor('pick'), floor: 80 }, seen.surface)
+  for (let i = 0; i < 30; i++) {
+    seen.tick()
+    draw({ ...onFloor('pick'), floor: 80 }, seen.surface)
+    const { from, home } = (seen.surface.state as Seen).actors.krux!
+    expect(Math.min(from, home)).toBeGreaterThanOrEqual(0)
+    expect((seen.surface.state as Seen).actors.krux!.errand).toBe(undefined)
+  }
+})
+
+test('a band that flattens mid-errand ends it instead of losing the orc', () => {
+  const seen = surfaceOf()
+  untilErrand(onFloor, seen)
+  draw({ ...onFloor('pick'), bubbleRows: false }, seen.surface)
+  expect((seen.surface.state as Seen).actors.krux!.errand).toBe(undefined)
+  expect(JSON.stringify(draw({ ...onFloor('pick'), bubbleRows: false }, seen.surface))).toContain(PALETTE.g)
+})
+
+test('a load comes from where the orc stood, not from where it is going', () => {
+  const { surface, tick } = surfaceOf()
+  const at = (scene: ForgeOrc['scene']): ForgeProps => ({ ...FLOOR, floor: 200, orcs: [{ ...KRUX, scene }] })
+  draw(at('hammer'), surface)
+  let carriedSteel = false
+  for (let i = 0; i < 60; i++) {
+    tick()
+    const tree = JSON.stringify(draw(at('pick'), surface))
+    const krux = (surface.state as Seen).actors.krux!
+    if (krux.pending !== undefined && krux.errand === undefined && (surface.state as Seen).frame > krux.enter) carriedSteel ||= tree.includes(PALETTE.R!)
+  }
+  expect(carriedSteel).toBe(true)
+  expect(carried('hammer', 0, true)).toMatchObject({ x: 6 })
+})
+
+test('a mate running in fetches its gear from the back before it starts', () => {
+  const { surface, tick } = surfaceOf()
+  draw(FLOOR, surface)
+  const joined: ForgeProps = { ...FLOOR, orcs: [{ ...KRUX, scene: 'hammer' }, { ...NIUCH, scene: 'pick' }] }
+  draw(joined, surface)
+  expect((surface.state as Seen).actors.a1!.pending).toBe('pick')
+  let deep = false
+  for (let i = 0; i < 70 && (surface.state as Seen).actors.a1!.pending !== undefined; i++) {
+    tick()
+    draw(joined, surface)
+    deep ||= (surface.state as Seen).actors.a1!.errand !== undefined
+  }
+  expect(deep).toBe(true)
+  expect((surface.state as Seen).actors.a1!.track.scene).toBe('pick')
 })

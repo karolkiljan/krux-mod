@@ -8,7 +8,7 @@ import { gauge, matesNamed } from './gauge'
 import { moodsAfter } from './mood'
 import { MATES, ROSTER } from './roster'
 import { isBackgroundToolCall } from './outcome'
-import { isCommitCommand, parsePhrase, pick, workOf } from './voice'
+import { hashOf, isCommitCommand, parsePhrase, pick, promptKind, workOf } from './voice'
 
 export const EMPTY_LORE: KruxLore = {
   testRuns: 0,
@@ -131,7 +131,19 @@ export type Recall = { trace: KruxTrace; days: number }
 
 // Dodatki notki: wspomnienie (bierze je tylko pierwsza wstawka sesji) i humor
 // kumpla, który wołający gasi przy planie i wydaniu, jak linię nastroju.
-export type Aside = { recall?: Recall | null; humor?: boolean }
+export type Aside = { recall?: Recall | null; humor?: boolean; foe?: Foe | null }
+
+// Stary wróg: test, który pada teraz i padał na koniec poprzedniej sesji.
+export type Foe = { name: string; nick: string }
+
+const FOE_NICKS = ['Krzywy Wieprz', 'Szczur z Trzeciego Chodnika', 'Zardzewiały Gwóźdź', 'Pleśń ze Sztolni', 'Upiór Kopalni'] as const
+
+// Przezwisko z nazwy testu: ten sam wróg nazywa się tak samo w każdej sesji.
+export function foeOf(failure: string | null, recall: Recall | null): Foe | null {
+  const name = failure === null ? null : cleanFailure(failure)
+  if (name === null || recall?.trace.failure !== name) return null
+  return { name, nick: pick(FOE_NICKS, hashOf(name)) }
+}
 
 // Notka dla modelu albo nic. Neutralna polszczyzna, bo to instrukcja. O tym, czy
 // wstawka ma sens w tej turze, decyduje wołający (prośba o ruch nieodwracalny
@@ -148,18 +160,21 @@ export function lifeNote(lore: KruxLore, seed: number, aside: Aside = {}): strin
   // Kumpel z faktem ma pierwszeństwo, ale fakty rozkłada seed: inaczej przy
   // częstych commitach gadałby w kółko Piryt.
   const known = fresh.filter(name => facts[name] !== undefined)
-  const mate = pick(remembered.length > 0 ? remembered : known.length > 0 ? known : fresh, seed)
+  // Stary wróg to sprawa Młota, chyba że Młot właśnie gadał.
+  const foe = aside.foe && fresh.includes('Młot') ? aside.foe : null
+  const mate = foe ? 'Młot' : pick(remembered.length > 0 ? remembered : known.length > 0 ? known : fresh, seed)
   const found = facts[mate]
   // Fakt z sesji to robota Kruxa: kumpel ją komentuje, nie przejmuje. Wspomnienie tak samo.
-  const why = recall && remembered.length > 0
+  const why = recall && memory[mate]
     ? ` Wspomnienie z poprzedniej sesji w tym repo (${recall.days === 0 ? 'dziś' : `dni temu: ${recall.days}`}): ${memory[mate]}; to dawna robota Kruxa, kumpel ją tylko wspomina.`
     : found ? ` Fakt z sesji: ${found}; to robota Kruxa, kumpel ją tylko komentuje.` : ' Coś z dnia kumpla, bez przypisywania kumplowi roboty w tym repo.'
+  const enemy = foe ? ` Stary wróg: test ${foe.name} padał też w poprzedniej sesji; kumpel woła go przezwiskiem ${foe.nick}.` : ''
   const avoid = lore.lastMate ? ` Nie ${ROSTER[lore.lastMate].accusative}: o ${ROSTER[lore.lastMate].locative} była ostatnia wstawka.` : ''
   const { locative, trait, words, spar, feud } = ROSTER[mate]
   const humor = aside.humor === false ? null : humorOf(mate, lore)
   const form = pick(FORMS, seed)
   const shape = form === SPAR ? `krótka wymiana zdań z ${ROSTER[spar].instrumental}, spór: ${feud}` : form
-  return `Życie hordy: jedno zdanie łamaną mową o ${locative} (${trait}), słowa fachu: ${words};${humor ? ` humor: ${humor};` : ''} miejsce: ${pick(PLACES, seed + 1)}; forma: ${shape}.${why}${avoid}`
+  return `Życie hordy: jedno zdanie łamaną mową o ${locative} (${trait}), słowa fachu: ${words};${humor ? ` humor: ${humor};` : ''} miejsce: ${pick(PLACES, seed + 1)}; forma: ${shape}.${why}${enemy}${avoid}`
 }
 
 // Pamięć hordy między sesjami: ślad kroniki pod jednym kluczem `$.store` na repo.
@@ -277,6 +292,7 @@ export function replay(messages: readonly HistoryMessage[]): Replayed {
   let lore = EMPTY_LORE
   let answer: string | null = null
   let latest: string | null = null
+  let asked = ''
   const closeTurn = () => {
     if (answer !== null) lore = recordAnswer(lore, matesNamed(answer))
     answer = null
@@ -285,6 +301,7 @@ export function replay(messages: readonly HistoryMessage[]): Replayed {
     if (message.role === 'user') {
       if ((message.toolResults?.length ?? 0) > 0 || !message.text.trim()) continue
       closeTurn()
+      asked = message.text
       turns = turnsAfter(turns, message.text, message.toolResults)
       continue
     }
@@ -296,5 +313,5 @@ export function replay(messages: readonly HistoryMessage[]): Replayed {
     if (message.text.trim()) answer = latest = message.text
   }
   closeTurn()
-  return { turns, lore, drift: latest === null ? null : gauge(latest) }
+  return { turns, lore, drift: latest === null ? null : gauge(latest, promptKind(asked) === 'explain') }
 }

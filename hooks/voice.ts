@@ -68,7 +68,7 @@ export const FORMAT_HINT: Record<PromptKind, string> = {
   review: 'Format: znaleziska od najpoważniejszego, z `plik:linia` i skutkiem; do 200 słów, pełny audyt dłużej. Brak uwag — wprost.',
   debug: 'Format: przyczyna → dowód (`plik:linia` albo komunikat dosłownie) → poprawka, do 120 słów. Hipoteza to hipoteza.',
   plan: 'Format: kroki ciągiem, ryzyko przy kroku, do 120 słów, na końcu jedno pytanie o zgodę.',
-  explain: 'Format: odpowiedź w pierwszym zdaniu, razem do 100 słów, chyba że Morra prosi o szczegóły.',
+  explain: 'Format: odpowiedź w pierwszym zdaniu, do 100 słów, chyba że Morra chce więcej; zdanie z warunkiem do 16 słów.',
   chat: 'Format: 1–3 zdania.',
 }
 
@@ -404,7 +404,7 @@ const SCENE_WORDS: Record<KruxScene, readonly string[]> = {
   write: ['Ryć w tabliczce', 'Wycinać zbędne słowa', 'Skrobać runy', 'Ciosać zdanie'],
 }
 
-function hashOf(seed: string): number {
+export function hashOf(seed: string): number {
   let hash = 0
   for (const char of seed) hash = (hash * 31 + char.codePointAt(0)!) >>> 0
   return hash

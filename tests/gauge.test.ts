@@ -1,7 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
 import { gauge, infinitiveHits, matesNamed, orcish, rewrites } from '../hooks/gauge'
-import { EMPTY_LORE, lifeNote, moodNote, recallOf, recordAnswer, recordTool, rememberAfter, replay, traceOf } from '../hooks/lore'
+import { EMPTY_LORE, foeOf, lifeNote, moodNote, recallOf, recordAnswer, recordTool, rememberAfter, replay, traceOf } from '../hooks/lore'
 import { MATES, ROSTER } from '../hooks/roster'
 import { REFRESH_TURNS, VOICE_ANCHOR, VOICE_SHORT, anchorFor } from '../hooks/voice'
 
@@ -241,6 +241,39 @@ test('the first aside of a session reaches back to the previous one, and only th
   const today = recallOf(rememberAfter(undefined, { ...trace, at: NOW }), 's2', NOW)
   expect(lifeNote(quiet, 0, { recall: today })).toContain('(dziś)')
   expect(lifeNote(quiet, 0, { recall: today })).not.toMatch(/[”“«»]/u)
+})
+
+// Stary wróg: ten sam test czerwony teraz i na koniec poprzedniej sesji, zawsze z tym samym przezwiskiem.
+test('a test failing across sessions becomes an old enemy with a stable nickname', () => {
+  const trace = traceOf(recordTool(EMPTY_LORE, 'Bash', { command: 'npm test' }, true), 's1', NOW - DAY, 'cache "expires"')!
+  const recall = recallOf(rememberAfter(undefined, trace), 's2', NOW)
+  expect(foeOf(null, recall)).toBe(null)
+  expect(foeOf('inny test', recall)).toBe(null)
+  expect(foeOf('cache expires', null)).toBe(null)
+  const foe = foeOf('cache\n"expires"', recall)!
+  expect(foe.name).toBe('cache expires')
+  expect(foeOf('cache expires', recall)).toEqual(foe)
+  const quiet = { ...EMPTY_LORE, quietTurns: 2, lastMate: 'Grom' as const }
+  const note = lifeNote(quiet, 3, { foe })!
+  expect(note).toContain('mową o Młocie')
+  expect(note).toContain(`Stary wróg: test cache expires padał też w poprzedniej sesji; kumpel woła go przezwiskiem ${foe.nick}.`)
+  // Młot dopiero co gadał: wróg czeka, kumple się nie powtarzają.
+  expect(lifeNote({ ...quiet, lastMate: 'Młot' }, 3, { foe })).not.toContain('Stary wróg')
+})
+
+// Wyjaśnienie może mieć dłuższe zdania, reszta odstępstw dalej liczy się jako dryf.
+test('a resumed session judges the last answer by the request it answered', () => {
+  const long = 'Krux widzieć, że ta funkcja zwracać wynik dopiero po przejściu przez całą listę elementów w pamięci. '.repeat(5)
+  const history = (text: string) => [{ role: 'user' as const, text, toolUses: [] }, { role: 'assistant' as const, text: long, toolUses: [] }]
+  expect(replay(history('jak działa B-tree')).drift).toEqual({ issues: [] })
+  expect(replay(history('dodaj kolumnę email do users')).drift?.issues.map(issue => issue.kind)).toContain('long-sentences')
+})
+
+test('the gauge forgives long sentences on an explanation, and only those', () => {
+  const long = 'Krux widzieć, że ta funkcja zwracać wynik dopiero po przejściu przez całą listę elementów w pamięci. '.repeat(5)
+  expect(gauge(long)?.issues.map(issue => issue.kind)).toContain('long-sentences')
+  expect(gauge(long, true)).toEqual({ issues: [] })
+  expect(gauge(`${SMOOTH}`, true)?.issues.map(issue => issue.kind)).toContain('first-person')
 })
 
 // Kontrakt każe ostrzegać pełnymi zdaniami; miernik nie może za to ciąć następnej tury.

@@ -7,7 +7,7 @@ import type { BandInput } from './band'
 import { EMPTY_CREW, crewAfter } from './crew'
 import type { CrewEvent } from './crew'
 import { gauge, matesNamed } from './gauge'
-import { EMPTY_LORE, lifeNote, moodNote, recallOf, recordAnswer, recordTool, rememberAfter, replay, traceOf, turnsAfter } from './lore'
+import { EMPTY_LORE, foeOf, lifeNote, moodNote, recallOf, recordAnswer, recordTool, rememberAfter, replay, traceOf, turnsAfter } from './lore'
 import type { Recall } from './lore'
 import { CALM, EVENT_HOLD_MS, eventOf, mateIn, mateMoodAfter, mateOfType, moodsAfter, moodsTick } from './mood'
 import { MATES, ROSTER } from './roster'
@@ -93,6 +93,7 @@ const autoKonkret = atom({ plugin: 'krux-mod', key: 'autoKonkret' } as const, fa
 const turnAt = atom({ plugin: 'krux-mod', key: 'turnAt' } as const, null)
 const seenAt = atom({ plugin: 'krux-mod', key: 'seenAt' } as const, null)
 const lastPrompt = atom({ plugin: 'krux-mod', key: 'lastPrompt' } as const, null)
+const longAnswer = atom({ plugin: 'krux-mod', key: 'longAnswer' } as const, false)
 const journal = atom({ plugin: 'krux-mod', key: 'journal' } as const, { entries: [] })
 const shaftTab = atom({ plugin: 'krux-mod', key: 'shaftTab' } as const, 'stan')
 
@@ -263,13 +264,16 @@ async function memoryKey($: EngineInterface): Promise<string> {
   return `memory.${await $.session.root()}`
 }
 
+// Pierwszy padły test ostatniego przebiegu Kruxa, gdy ten przebieg czerwony.
+function redTest({ test: run }: KruxBoard): string | null {
+  return run !== null && !run.ok && run.who === 'Krux' ? run.failures[0] ?? null : null
+}
+
 // Ślad sesji do pamięci repo po każdej turze z robotą. Awaria magazynu kosztuje
 // tylko wspomnienie, więc idzie do debug logu.
 async function remember($: EngineInterface): Promise<void> {
   try {
-    const run = (await read($, board)).test
-    const failure = run !== null && !run.ok && run.who === 'Krux' ? run.failures[0] ?? null : null
-    const trace = traceOf(await read($, lore), await $.session.id(), await $.clock.now(), failure)
+    const trace = traceOf(await read($, lore), await $.session.id(), await $.clock.now(), redTest(await read($, board)))
     if (trace === null) return
     const key = await memoryKey($)
     await $.store.set(key, rememberAfter(await $.store.get(key), trace))
@@ -357,7 +361,11 @@ async function afterOwnTool($: EngineInterface, tool: string, input: Record<stri
   }
   await crewStep($, { kind: 'own-tool', event, lore: after, seed: await read($, sessionStrikes), failure })
   // Timer startuje po zapisie dymka, więc nigdy nie wyprzedzi jego `until`.
-  if (event !== null) $.clock.after(EVENT_HOLD_MS, () => void crewStep($, { kind: 'expire' }))
+  if (event !== null) {
+    $.clock.after(EVENT_HOLD_MS, () => void crewStep($, { kind: 'expire' }))
+    // Odszczekanie pary wisi drugie tyle; bez niego ten zegar nic nie zmienia.
+    $.clock.after(2 * EVENT_HOLD_MS, () => void crewStep($, { kind: 'expire' }))
+  }
   return event
 }
 
@@ -724,6 +732,7 @@ export const register: Register = on => {
     await restore($)
     // Echo dotyczy tylko tury z prośbą Morry; raport kumpla czy harmonogram go nie dostają.
     await update($, lastPrompt, () => fromPerson(e.origin) ? echoPrompt(e.text) : null)
+    await update($, longAnswer, () => fromPerson(e.origin) && promptKind(e.text) === 'explain')
     if (fromPerson(e.origin)) {
       let returned = false
       await update($, seenAt, previous => { returned = previous !== null && now - previous >= 1_800_000; return now })
@@ -747,8 +756,11 @@ export const register: Register = on => {
         // Decyzja o wydaniu, plan i ruch nieodwracalny idą samymi faktami: tam nastrój
         // przechylał wybór, więc przepada linia nastroju i humor kumpla w notce.
         const decides = promptKind(e.text) === 'plan' || asksRelease(e.text)
-        // Wspomnienie bierze tylko pierwsza wstawka sesji, więc magazyn czytamy do niej.
-        const aside = { recall: risk === null && chronicle.lastMate === null ? await recallFor($) : null, humor: !decides }
+        // Wspomnienie bierze tylko pierwsza wstawka sesji, a starego wroga czerwony test,
+        // więc magazyn czytamy tylko wtedy.
+        const failing = redTest(await read($, board))
+        const recalled = risk === null && (chronicle.lastMate === null || failing !== null) ? await recallFor($) : null
+        const aside = { recall: recalled, foe: foeOf(failing, recalled), humor: !decides }
         const life = risk === null ? lifeNote(chronicle, turn, aside) : null
         if (life) extra.push(life)
         // Nastrój z ostatniego zdarzenia, raz na zdarzenie.
@@ -966,7 +978,7 @@ export const register: Register = on => {
     await refreshGit($)
     if (e.reason === 'answer' && (await read($, modes)).persona) {
       // Poprawka jedzie raz: krótka odpowiedź nie świadczy o dryfie, więc stary werdykt gaśnie.
-      const verdict = gauge(e.answer)
+      const verdict = gauge(e.answer, await read($, longAnswer))
       await update($, drift, () => verdict)
       await update($, lore, now => recordAnswer(now, matesNamed(e.answer)))
     }
@@ -1123,7 +1135,11 @@ export const register: Register = on => {
     const lines = digestExtra === null ? [] : shaftDigest(await read($, board), await read($, usage), digestExtra)
     let plan = bandPlan(input)
     if (lines.length > 0 && plan.stage !== null) {
-      const narrow = bandPlan({ ...input, columns: input.columns - DIGEST_COLUMNS - CAPTION_GAP })
+      // Podłoga zajmuje cały pas: skrót wycina z niej trzecią część, a gdy to kosztowałoby
+      // miejsce na orka, tylko swoje minimum.
+      const tight = bandPlan({ ...input, columns: input.columns - DIGEST_COLUMNS - CAPTION_GAP })
+      const roomy = bandPlan({ ...input, columns: input.columns - Math.min(DIGEST_MAX, Math.max(DIGEST_COLUMNS, Math.floor(input.columns / 3))) - CAPTION_GAP })
+      const narrow = roomy.stage?.props.slots === tight.stage?.props.slots && roomy.stage?.height === tight.stage?.height ? roomy : tight
       if (narrow.stage !== null && narrow.stage.height === plan.stage.height && narrow.stage.props.slots > members.length) plan = narrow
     }
     const theirs = await next(e)

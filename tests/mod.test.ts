@@ -528,7 +528,8 @@ test('a new scene waits out a second and a half, so quick tools do not flicker',
   await start($)
   await $.turn.start({ text: 'czytaj', turnId: 't1' })
   await $.tool.call({ tool: 'Read', file_path: '/repo/src/app.ts' })
-  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  // Wąsko, bez paleniska na podłodze: jego kolory to też kolory rekwizytów.
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal', props: { ...BAND.props, bodyColumns: 80 } })
   expect(await showsScene(ui, 'pick', 'read')).toBe(false)
   await ui.advance(600)
   await $.tool.call({ tool: 'Bash', command: 'npm test' })
@@ -1168,6 +1169,36 @@ test('a new session’s first horde aside recalls the previous session in the sa
   await $.tool.call({ tool: 'Bash', command: 'npm test' })
   await $.turn.complete({ answer: 'Młot burczeć. Krux szukać.', durationMs: 10, isAborted: false, turnId: 't3', reason: 'answer' })
   expect(saved.get('memory./work')).toMatchObject({ last: { session: 's1', testRuns: 1, testFails: 1, last: 'test-fail' }, before: previous })
+})
+
+// Ten sam test czerwony teraz i na koniec poprzedniej sesji: Młot woła go przezwiskiem.
+test('a test still red from the previous session comes back as an old enemy', async ($, on) => {
+  const now = Date.UTC(2026, 9, 29, 12)
+  const previous = { session: 's0', at: now - 86_400_000, testRuns: 1, testFails: 1, builds: 0, buildFails: 0, commits: 0, tears: 0, edits: 0, uiEdits: 0, last: 'test-fail', failure: 'cache > drops stale keys' }
+  const saved = new Map<string, unknown>([['memory./work', { last: previous, before: null }]])
+  const clock = engine(on, saved, { toolReply: { result: { exitCode: 1 }, isError: true, text: '(fail) cache > drops stale keys [2ms]\n\n 0 pass\n 1 fail\n' } })
+  await clock.set(now)
+  await start($)
+  await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  for (const turnId of ['t1', 't2']) {
+    await $.turn.complete({ answer: 'Krux szukać dalej.', durationMs: 10, isAborted: false, turnId, reason: 'answer' })
+  }
+  const note = ((await $.prompt.submit({ text: 'i?', wait: false, origin: ORIGIN })).context ?? []).find(entry => entry.startsWith('Życie hordy'))
+  expect(note).toContain('mową o Młocie')
+  expect(note).toContain('Stary wróg: test cache > drops stale keys padał też w poprzedniej sesji')
+})
+
+test('long sentences count as drift, but not after a request to explain', async ($, on) => {
+  engine(on, new Map())
+  await start($)
+  const long = 'Krux widzieć, że ta funkcja zwracać wynik dopiero po przejściu przez całą listę elementów w pamięci. '.repeat(5)
+  await $.prompt.submit({ text: 'dodaj kolumnę email do users', wait: false, origin: ORIGIN })
+  await $.turn.complete({ answer: long, durationMs: 10, isAborted: false, turnId: 't1', reason: 'answer' })
+  const drifted = await $.prompt.submit({ text: 'jak działa B-tree', wait: false, origin: ORIGIN })
+  expect(drifted.context?.[0]).not.toBe(VOICE_SHORT)
+  await $.turn.complete({ answer: long, durationMs: 10, isAborted: false, turnId: 't2', reason: 'answer' })
+  const next = await $.prompt.submit({ text: 'dalej', wait: false, origin: ORIGIN })
+  expect(next.context?.[0]).toBe(VOICE_SHORT)
 })
 
 test('the mood of a fresh chronicle event reaches the model once, and never on a release question', async ($, on) => {
