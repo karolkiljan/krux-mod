@@ -2,8 +2,8 @@ import { expect, test } from 'claude-code/testing'
 
 import { GESTURES } from '../hooks/fidget'
 import { MATES } from '../hooks/roster'
-import { ACTS, BUBBLE_TEXT, CATCH_X, carried, floorHomes, roomGrid, hasHearth, stationX, CUE_FRAMES, FRAME_MS, HOLD_FRAMES, actsFor, routeOf, trackDozing, trackFace, ORC_GAP, ORC_WIDTH, PALETTE, bandColumns, behind, bubbleLines, canvasColumns, catchStep, caughtScroll, dress, frameGrid, forgeColumns, runsOf, slotX, stageGrid, tossFrames, trackGrid, trackOff, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withNap } from '../hooks/sprites'
-import type { StageScene } from '../hooks/sprites'
+import { ACTS, BUBBLE_TEXT, CATCH_X, DUET_FRAMES, carried, dayPhase, duetPose, floorHomes, roomGrid, hasHearth, stationX, CUE_FRAMES, FRAME_MS, HOLD_FRAMES, actsFor, routeOf, trackDozing, trackFace, ORC_GAP, ORC_WIDTH, PALETTE, bandColumns, behind, bubbleLines, canvasColumns, catchStep, caughtScroll, dress, frameGrid, forgeColumns, runsOf, slotX, stageGrid, tossFrames, trackGrid, trackOff, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withNap } from '../hooks/sprites'
+import type { DayPhase, StageScene } from '../hooks/sprites'
 import { H, STAND, W, actFrame, head, legAt, moodOf, pad, stander } from '../hooks/stage'
 
 test('every forge frame is a rectangle and two pixels make one cell', async () => {
@@ -274,6 +274,30 @@ test('the room lives on its own and answers the chronicle', () => {
   // Spoczynek zatrzymuje zegar: wózek i szczur nie stają w pół drogi.
   const atRest = Array.from({ length: 240 }, (_, frame) => roomGrid(120, frame, true, { alive: false }).join(''))
   expect(atRest.some(room => room.includes('Y'))).toBe(false)
+})
+
+test('the sky in the shaft follows the clock, with a beam of light by day', () => {
+  expect([0, 4, 5, 7, 8, 17, 18, 21, 22].map(dayPhase)).toEqual(['night', 'night', 'dawn', 'dawn', 'day', 'day', 'dusk', 'dusk', 'night'])
+  const room = (phase: DayPhase) => roomGrid(160, 8, true, { phase }).join('')
+  expect(room('day')).toContain('9')
+  expect(room('day')).toContain('J')
+  expect(room('night')).toContain('7')
+  expect(room('night')).not.toContain('J')
+  expect(room('dusk')).toContain('0')
+  expect(room('dawn')).toContain('K')
+})
+
+test('duet poses stay in the palette, keep both eyes and open with the partner in reach', () => {
+  for (const kind of ['fence', 'pass', 'highfive', 'argue'] as const) {
+    for (let t = 0; t < DUET_FRAMES; t += 1) {
+      const { host, guest, prop } = duetPose(kind, t)
+      for (const rows of [host, guest, prop]) expect([...rows.join('')].every(cell => cell === '.' || PALETTE[cell] !== undefined)).toBe(true)
+      expect(host.join('').split('r').length - 1).toBe(2)
+      expect(guest.join('').split('r').length - 1).toBe(2)
+    }
+  }
+  expect(duetPose('fence', 0).prop.join('')).toContain('s')
+  expect(duetPose('pass', 2).prop.join('')).toContain('R')
 })
 
 test('the wall shows the state of the work: canary, aprons on pegs, seals', () => {

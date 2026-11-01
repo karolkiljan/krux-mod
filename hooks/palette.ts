@@ -48,6 +48,12 @@ export const PALETTE: Record<string, string> = {
   Q: '#c8641e', // płomień pochodni
   Z: '#e8b23c', // jasny płomień pochodni, kanarek
   V: '#3f3a36', // dym znad paleniska
+  7: '#141a33', // niebo w szybie: noc
+  8: '#c4845a', // niebo w szybie: świt
+  9: '#7aa6c8', // niebo w szybie: dzień
+  0: '#a8562e', // niebo w szybie: zmierzch
+  J: '#3b3a33', // smuga dziennego światła
+  K: '#40302a', // smuga światła o świcie
   1: '#2f524f', // fartuch Niucha na haku, w cieniu
   2: '#7a2c20', // fartuch Groma na haku
   3: '#97791d', // fartuch Piryta na haku

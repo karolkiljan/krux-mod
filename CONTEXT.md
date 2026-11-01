@@ -78,6 +78,10 @@ _Avoid_: tło, backdrop
 Marsz orka w głąb pokoju po sprzęt; ork maleje, wraca z ładunkiem i dopiero zaczyna robotę.
 _Avoid_: errand
 
+**Scenka**:
+Zabawa dwóch orków na podłodze: szermierka, podanie stali, piątka albo kłótnia.
+_Avoid_: animacja, duet
+
 **Stary wróg**:
 Test czerwony teraz i na koniec poprzedniej sesji w repo; Młot woła go stałym przezwiskiem.
 _Avoid_: flaky, regresja

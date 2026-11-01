@@ -491,7 +491,7 @@ function roomLife(room: string[][], width: number, frame: number, hearth: boolea
   const wax = wallX('table', width, hearth) + 13
   for (let i = 0; i < Math.min(state.seals, MAX_SEALS); i += 1) {
     const cell = room[5]?.[wax + 2 * i]
-    if (cell === 'A' || cell === 'D') put(wax + 2 * i, 5, 'd')
+    if (cell === 'A' || cell === 'D' || cell === 'J' || cell === 'K') put(wax + 2 * i, 5, 'd')
   }
   // W spoczynku zegar stoi: wózek i szczur nie zamarzają w pół drogi.
   if (!state.alive) return
@@ -511,15 +511,34 @@ function roomLife(room: string[][], width: number, frame: number, hearth: boolea
 }
 
 // Co pokój wie o robocie: zdarzenie, którym żyje Krux, ruch, czerwone testy, pieczęcie, nieobecni.
-export type RoomState = { feel: { kind: KruxEvent | 'handoff'; age: number } | null; alive: boolean; red: boolean; seals: number; absent: readonly KruxMate[] }
+export type RoomState = { feel: { kind: KruxEvent | 'handoff'; age: number } | null; alive: boolean; red: boolean; seals: number; absent: readonly KruxMate[]; phase: DayPhase }
 
-const ROOM_AT_REST: RoomState = { feel: null, alive: true, red: false, seals: 0, absent: [] }
+const ROOM_AT_REST: RoomState = { feel: null, alive: true, red: false, seals: 0, absent: [], phase: 'day' }
+
+// Szyb w stropie: niebo u góry, a za dnia smuga światła na ścianę i podłogę.
+function roomSky(room: string[][], width: number, phase: DayPhase): void {
+  const left = Math.round(width * 0.42)
+  for (let dx = 0; dx < 8; dx += 1) if (room[0]?.[left + dx] !== undefined) room[0]![left + dx] = SKY[phase]
+  if (phase === 'night') {
+    if (room[0]?.[left + 2] !== undefined) room[0]![left + 2] = 'j'
+    return
+  }
+  if (phase === 'day' || phase === 'dawn') {
+    for (let y = 1; y < ROOM_ROWS; y += 1) {
+      for (let dx = 0; dx < 8; dx += 2) {
+        const x = left + dx + Math.floor(y / 2)
+        if (room[y]?.[x] === 'A' || room[y]?.[x] === 'F' || room[y]?.[x] === 'D') room[y]![x] = phase === 'day' ? 'J' : 'K'
+      }
+    }
+  }
+}
 
 // Pokój w klatce `frame`: pochodnie, życie pokoju i reakcja na zdarzenie kroniki.
 export function roomGrid(width: number, frame: number, hearth: boolean, state: Partial<RoomState> = {}): string[] {
   const full = { ...ROOM_AT_REST, ...state }
   const { feel } = full
   const room = roomBase(width, hearth).map(row => [...row])
+  roomSky(room, width, full.phase)
   roomLife(room, width, frame, hearth, full)
   const red = feel?.kind === 'test-fail' || feel?.kind === 'build-fail' || feel?.kind === 'zawał'
   const bright = feel?.kind === 'test-pass' || feel?.kind === 'build-pass' || feel?.kind === 'commit'
@@ -585,6 +604,55 @@ export function errandPose(t: number, from: number, spot: number, scene: StageSc
   // Ładunek przy dłoni po prawej, na wysokości fartucha.
   return { rows: dressed.map((row, i) => (i === 1 ? `${row}${ERRAND_LOADS[STATIONS[scene]]}` : row)), x, y }
 }
+
+// Scenka dwóch orków: gospodarz z lewej, gość z prawej, twarzą w twarz, między nimi miejsce na rekwizyt.
+export type DuetKind = 'fence' | 'pass' | 'highfive' | 'argue'
+export const DUET_GAP = 14
+export const DUET_FRAMES = 32
+
+// Gość patrzy w lewo: lustro stójki z ręką; rama 8 kolumn, więc ręka wchodzi między orków.
+function facing(look: 'mid' | 'right', arm: string): string[] {
+  return pad(stander(look, arm)).map(row => [...row.padEnd(8, '.').slice(0, 8)].reverse().join('').replace(/\.+$/u, ''))
+}
+
+type DuetFrame = { host: string[]; guest: string[]; prop: Frame }
+
+const RIGHT = (arm: string) => pad(stander('right', arm))
+const HIGH_HOST = pad(draw([stander('right'), 0, 0], at('g', 6, 2), at('g', 7, 1)))
+const raised = (rows: readonly string[]): string[] => rows.map(row => [...row.padEnd(8, '.').slice(0, 8)].reverse().join('').replace(/\.+$/u, ''))
+const HIGH_GUEST = raised(pad(draw([stander('right'), 0, 0], at('g', 6, 2), at('g', 7, 1))))
+
+// Klatka scenki `t`. Współrzędne rekwizytu od lewej krawędzi gospodarza.
+export function duetPose(kind: DuetKind, t: number): DuetFrame {
+  const step = Math.floor(t / 3)
+  if (kind === 'fence') {
+    const up = step % 2 === 1
+    const low = draw(at('s', 8, 3), at('s', 9, 3), at('S', 10, 3), at('S', 11, 3))
+    const high = draw(at('s', 8, 2), at('s', 9, 1), at('S', 11, 2), at('S', 10, 1), at('y', 9, 0), at('o', 10, 0))
+    return { host: RIGHT('gg'), guest: facing('right', 'gg'), prop: up ? high : low }
+  }
+  if (kind === 'pass') {
+    const x = Math.round(8 + Math.max(0, Math.min(1, (t - 8) / 14)) * 2)
+    return { host: RIGHT(t < 22 ? 'gg' : ''), guest: facing('right', t > 8 ? 'gg' : ''), prop: t < 26 ? draw([['RR'], x, 3]) : [] }
+  }
+  if (kind === 'highfive') {
+    const touch = step % 3 === 2
+    return { host: touch ? HIGH_HOST : RIGHT(''), guest: touch ? HIGH_GUEST : facing('right', ''), prop: touch ? draw(at('y', 9, 0), at('y', 10, 1), at('o', 8, 1)) : [] }
+  }
+  const shout = step % 2 === 0
+  return { host: shout ? HIGH_HOST : RIGHT('g'), guest: shout ? facing('right', 'g') : HIGH_GUEST, prop: draw(at('R', 8 + (step % 3), 1), at('y', 10 - (step % 3), 0)) }
+}
+
+// Pora dnia z godziny: pokój ma szyb w stropie, przez który widać niebo.
+export type DayPhase = 'night' | 'dawn' | 'day' | 'dusk'
+
+export function dayPhase(hour: number): DayPhase {
+  if (hour >= 22 || hour < 5) return 'night'
+  if (hour < 8) return 'dawn'
+  return hour < 18 ? 'day' : 'dusk'
+}
+
+const SKY: Record<DayPhase, string> = { night: '7', dawn: '8', day: '9', dusk: '0' }
 
 // Ork w drodze: wbiega z prawej do slotu albo schodzi w prawo; nogi na zmianę.
 export function walkerRows(step: number, face: Face): string[] {
