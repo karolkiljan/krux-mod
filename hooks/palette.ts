@@ -48,6 +48,12 @@ export const PALETTE: Record<string, string> = {
   Q: '#c8641e', // płomień pochodni
   Z: '#e8b23c', // jasny płomień pochodni, kanarek
   V: '#3f3a36', // dym znad paleniska
+  1: '#2f524f', // fartuch Niucha na haku, w cieniu
+  2: '#7a2c20', // fartuch Groma na haku
+  3: '#97791d', // fartuch Piryta na haku
+  4: '#99591a', // fartuch Ochry na haku
+  5: '#505860', // fartuch Młota na haku
+  6: '#665466', // fartuch Lonta na haku
   Y: '#55402a', // skrzynia wózka
 }
 

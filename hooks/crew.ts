@@ -47,6 +47,13 @@ function replyTo(members: readonly KruxHordeMember[], mate: KruxMate, event: Kru
   return { reply: member ? { key: member.agentId, speaker: spar, text } : { key: 'krux', speaker: 'Krux' as const, text: `${spar} z chodnika: ${text}` } }
 }
 
+// Mówca zszedł ze sceny, więc jego wtręt gaśnie: bez niego odszczekanie nie ma na co odpowiadać.
+function withoutReply(bubble: KruxCrew['bubble'], left: (key: string) => boolean): KruxCrew['bubble'] {
+  if (bubble?.kind !== 'event' || bubble.reply === undefined || !left(bubble.key)) return bubble
+  const { reply: _unsaid, ...rest } = bubble
+  return rest
+}
+
 export function crewAfter(crew: KruxCrew, event: CrewEvent, now: number): KruxCrew {
   const { members, bubble } = crew
   switch (event.kind) {
@@ -84,14 +91,14 @@ export function crewAfter(crew: KruxCrew, event: CrewEvent, now: number): KruxCr
       if (left.length === members.length) return crew
       return {
         members: left,
-        bubble: bubble?.kind === 'step' && bubble.key === event.agentId ? null : bubble,
+        bubble: bubble?.kind === 'step' && bubble.key === event.agentId ? null : withoutReply(bubble, key => key === event.agentId),
         cues: cued(crew, { key: event.agentId, kind: 'handoff', until: now + EVENT_HOLD_MS }, now),
       }
     }
     case 'running': {
       const left = members.filter(other => event.ids.has(other.agentId))
       if (left.length === members.length) return crew
-      return { ...crew, members: left, bubble: bubble?.kind === 'step' && !event.ids.has(bubble.key) ? null : bubble }
+      return { ...crew, members: left, bubble: bubble?.kind === 'step' && !event.ids.has(bubble.key) ? null : withoutReply(bubble, key => key !== 'krux' && !event.ids.has(key)) }
     }
     case 'expire': {
       const cues = cuesOf(crew)

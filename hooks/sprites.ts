@@ -1,4 +1,4 @@
-import type { KruxEvent, KruxMood, KruxScene, KruxSpeaker } from '../types'
+import type { KruxEvent, KruxMate, KruxMood, KruxScene, KruxSpeaker } from '../types'
 import { ASK_ACTS } from './acts/ask'
 import { BUILD_ACTS } from './acts/build'
 import { HAMMER_ACTS } from './acts/hammer'
@@ -457,10 +457,12 @@ const RAT_EVERY = 240
 const RAT_TRIP = 48
 // Pył z zawału: tyle ziaren spada ze stropu.
 const DUST_GRAINS = 9
+// Tyle pieczęci mieści się na ścianie.
+const MAX_SEALS = 12
 
 // Co dzieje się w pokoju samo: dym, kanarek, wózek, szczur. Fazy tak dobrane, że w klatce 0
 // (bezruch) nic nie stoi w pół kroku.
-function roomLife(room: string[][], width: number, frame: number, hearth: boolean): void {
+function roomLife(room: string[][], width: number, frame: number, hearth: boolean, state: RoomState): void {
   const put = (x: number, y: number, cell: string) => { if (room[y]?.[x] !== undefined) room[y]![x] = cell }
   if (hearth) {
     for (let i = 0; i < 3; i += 1) {
@@ -472,7 +474,27 @@ function roomLife(room: string[][], width: number, frame: number, hearth: boolea
   for (const dx of [0, 1, 2, 3, 4]) put(cage + dx, 1, 'C')
   put(cage, 2, 'C')
   put(cage + 4, 2, 'C')
-  put(cage + 1 + (Math.floor(frame / 4) % 3), 2, 'Z')
+  // Kanarek to monitoring: przy czerwonych testach szarzeje i przestaje skakać.
+  if (state.red) put(cage + 2, 2, 'V')
+  else put(cage + 1 + (state.alive ? Math.floor(frame / 4) % 3 : 1), 2, 'Z')
+  // Haki hordy: fartuch wisi, gdy kumpla nie ma na scenie. Ciemniejszy niż noszony, bo w cieniu ściany.
+  const pegs = cage + 9
+  if (pegs + 2 * MATES.length < wallX('mine', width, hearth)) {
+    MATES.forEach((mate, i) => {
+      put(pegs + 2 * i, 1, 'C')
+      if (!state.absent.includes(mate)) return
+      put(pegs + 2 * i, 2, String(i + 1))
+      put(pegs + 2 * i, 3, String(i + 1))
+    })
+  }
+  // Pieczęcie: każdy commit sesji to czerwona kropka wosku na ścianie, na wolnym kamieniu.
+  const wax = wallX('table', width, hearth) + 13
+  for (let i = 0; i < Math.min(state.seals, MAX_SEALS); i += 1) {
+    const cell = room[5]?.[wax + 2 * i]
+    if (cell === 'A' || cell === 'D') put(wax + 2 * i, 5, 'd')
+  }
+  // W spoczynku zegar stoi: wózek i szczur nie zamarzają w pół drogi.
+  if (!state.alive) return
   const trip = (frame + 60) % CART_EVERY
   const way = trip < CART_TRIP ? trip : trip < 2 * CART_TRIP ? 2 * CART_TRIP - trip : -1
   if (way >= 0) {
@@ -488,16 +510,21 @@ function roomLife(room: string[][], width: number, frame: number, hearth: boolea
   }
 }
 
-export type RoomFeel = { kind: KruxEvent | 'handoff'; age: number } | null
+// Co pokój wie o robocie: zdarzenie, którym żyje Krux, ruch, czerwone testy, pieczęcie, nieobecni.
+export type RoomState = { feel: { kind: KruxEvent | 'handoff'; age: number } | null; alive: boolean; red: boolean; seals: number; absent: readonly KruxMate[] }
+
+const ROOM_AT_REST: RoomState = { feel: null, alive: true, red: false, seals: 0, absent: [] }
 
 // Pokój w klatce `frame`: pochodnie, życie pokoju i reakcja na zdarzenie kroniki.
-export function roomGrid(width: number, frame: number, hearth: boolean, feel: RoomFeel = null): string[] {
+export function roomGrid(width: number, frame: number, hearth: boolean, state: Partial<RoomState> = {}): string[] {
+  const full = { ...ROOM_AT_REST, ...state }
+  const { feel } = full
   const room = roomBase(width, hearth).map(row => [...row])
-  roomLife(room, width, frame, hearth)
+  roomLife(room, width, frame, hearth, full)
   const red = feel?.kind === 'test-fail' || feel?.kind === 'build-fail' || feel?.kind === 'zawał'
   const bright = feel?.kind === 'test-pass' || feel?.kind === 'build-pass' || feel?.kind === 'commit'
-  for (const at of [0.17, 0.72]) {
-    const x = Math.round(width * at)
+  // Druga pochodnia świeci przy wejściu do sztolni, obok haków.
+  for (const x of [Math.round(width * 0.17), wallX('mine', width, hearth) - 1]) {
     if (x >= width) continue
     room[3]![x] = 'E'
     room[4]![x] = 'E'

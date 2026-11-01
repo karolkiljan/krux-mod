@@ -3,6 +3,7 @@ import type { ClientModule } from 'claude-code'
 import type { KruxCue, KruxEvent, KruxMood, KruxSpeaker } from '../types'
 import { CATCH_X, CUE_FRAMES, ERRAND_FRAMES, FRAME_MS, ORC_GAP, ORC_WIDTH, SPEAKER_COLOR, bandColumns, behind, bubbleAt, canvasColumns, carried, catchStep, caughtScroll, depthSpot, dress, errandPose, floorHomes, floorStart, frameGrid, hasHearth, hearthProp, paint, roomGrid, runsOf, sliceRuns, slotX, stageGrid, stationX, tossFlight, tossFrames, tossGrid, tossScroll, trackArrive, trackDozing, trackFace, trackGrid, trackOff, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withNap } from './sprites'
 import type { Face, Placed, Run, StageScene, Track } from './sprites'
+import { MATES } from './roster'
 import { graphemes } from './terminal-text'
 
 // Moduł powierzchni: rysuje Kruxa, kumpli i dymek na wątku rysującym, z własnym
@@ -22,6 +23,9 @@ export type ForgeProps = {
   slots: number
   // Szerokość wspólnej podłogi w kolumnach; bez niej tyle, ile zajmują orkowie.
   floor?: number
+  // Stan roboty na ścianie: czerwone testy, liczba pieczęci w tej sesji.
+  red?: boolean
+  seals?: number
   // Trzy wiersze nad sceną na dymek, puste, gdy nikt nie mówi: wysokość stoi.
   bubbleRows: boolean
   orcs: ForgeOrc[]
@@ -56,7 +60,7 @@ type Actor = {
   effortAt?: number
 }
 
-type ForgeState = { frame: number; actors: Record<string, Actor>; idle: boolean; reduced?: boolean; snoozing?: boolean; said?: { id: string; at: number } }
+type ForgeState = { frame: number; actors: Record<string, Actor>; idle: boolean; reduced?: boolean; snoozing?: boolean; said?: { id: string; at: number }; laidAt?: number }
 
 // Kolumny na klatkę w marszu: przez całą podłogę w około 3 s, także na szerokim terminalu.
 const WALK_SPEED = 3
@@ -121,8 +125,9 @@ function depart(actor: Actor, frame: number, still: boolean, handoff: boolean, s
   if (still) return null
   const x = placeOf(actor, frame, stage)?.x ?? actor.home
   const track = trackOff(actor.track, frame)
-  const at = Math.max(frame, track.since)
-  const stopped = { ...actor, home: x, from: x, pending: undefined, errand: undefined }
+  // Kumpel w głębi najpierw wraca z wyprawy: skok z małej pozy byłby widać.
+  const at = Math.max(frame, track.since, actor.errand === undefined ? 0 : actor.errand.at + ERRAND_FRAMES)
+  const stopped = { ...actor, home: x, from: x, pending: undefined }
   return { ...stopped, track, leftAt: at, ...(handoff ? tossFrom(stopped, at, kruxX, stage) : {}) }
 }
 
@@ -155,6 +160,9 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
   let changed = first
   const present = new Set<string>()
   const born = new Set<string>()
+  // Domy przestawiamy raz na klatkę: silnik odpina płótno po 3 zapisach stanu bez tyknięcia.
+  const layout = state.laidAt !== frame
+  let laid = false
   // Kto zszedł ze sceny, zaczyna schodzić przed rozdaniem slotów, więc czekający widzi, że slot się zwolni.
   const leave = (key: string, actor: Actor) => {
     const next = depart(actor, frame, props.still, props.variant === 'band' && (props.cues ?? []).some(cue => cue.key === key && cue.kind === 'handoff'), stage, kruxAt())
@@ -237,7 +245,8 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
         actors[key] = { ...rest, home, from: home, enter: frame, ...(pending === undefined ? {} : { track: trackArrive(actor.track, pending, key, frame), worked: pending }) }
         changed = true
       }
-    } else if (home !== actor.home && (!pinned(actor) || onFloor(actor.home) !== actor.home)) {
+    } else if (layout && home !== actor.home && (!pinned(actor) || onFloor(actor.home) !== actor.home)) {
+      laid = true
       // Przypięty ork nie ustępuje sąsiadowi, chyba że stoi poza podłogą albo na palenisku:
       // inaczej dom skakałby między rysunkami bez jednego tyknięcia zegara.
       const x = placeOf(actor, frame, stage)?.x ?? actor.home
@@ -309,11 +318,20 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
         actors[key] = actor
         changed = true
       } else if (actor.errand === undefined || frame - actor.errand.at >= ERRAND_FRAMES) {
-        const { pending, errand: _done, ...rest } = actor
-        actor = { ...rest, track: trackArrive(actor.track, pending, key, frame), arrived: frame, worked: pending }
+        const { pending, errand, ...rest } = actor
+        // Zdarzenie w głębi nie przepada: reakcja gra po powrocie.
+        const cue = errand !== undefined && actor.cue !== undefined && actor.cue.at >= errand.at ? { cue: { ...actor.cue, at: frame } } : {}
+        actor = { ...rest, ...cue, track: trackArrive(actor.track, pending, key, frame), arrived: frame, worked: pending }
         actors[key] = actor
         changed = true
       }
+    }
+    // Kumpel skończył w głębi: wyprawa dobiega końca, potem marsz.
+    if (actor.errand !== undefined && actor.pending === undefined && frame - actor.errand.at >= ERRAND_FRAMES) {
+      const { errand: _back, ...rest } = actor
+      actor = rest
+      actors[key] = actor
+      changed = true
     }
     if (actor.errand !== undefined) {
       const pose = errandPose(frame - actor.errand.at, actor.home, actor.errand.spot, actor.errand.scene, actor.face)
@@ -355,7 +373,7 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
   const typing = props.bubble !== null && (frame - speech.at + 1) * 3 < Math.min(40, graphemes(props.bubble.text).length)
   const idle = props.still || (frozen && !moving && !typing)
   if (changed || idle !== state.idle || speech !== state.said || state.reduced !== props.still) {
-    surface.setState({ frame, actors, idle, said: speech, reduced: props.still, snoozing: idle ? state.snoozing : false })
+    surface.setState({ frame, actors, idle, said: speech, reduced: props.still, snoozing: idle ? state.snoozing : false, ...(laid ? { laidAt: frame } : state.laidAt === undefined ? {} : { laidAt: state.laidAt }) })
   }
   if (first) {
     let quietTicks = 0
@@ -373,20 +391,25 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
   // Zwój leci za głowami: łapie go dłoń, a policzki i oczy zostają na wierzchu.
   const flying = scrolls.map(scroll => placed.reduce((prop, orc) => behind(prop, orc), scroll))
   const krux = actors.krux
+  // Podłoga urosła pod orkiem: palenisko staje dopiero, gdy nikt nie ma go pod nogami.
+  const hearthFree = hearth && placed.every(orc => orc.x >= floorStart(true))
   const grid =
     props.variant === 'pane'
       ? dress(krux === undefined ? frameGrid(frame, 'pane') : trackGrid(krux.track, frame, 'pane', krux.mood, frozen), 'Krux')
-      : stageGrid([...(hearth ? [hearthProp(frame)] : []), ...placed, ...loads, ...flying], stage)
+      : stageGrid([...(hearthFree ? [hearthProp(frame)] : []), ...placed, ...loads, ...flying], stage)
   const width = Math.max(canvasColumns(slots, true), stage)
   // Pokój czuje to, co Krux: zawał sypie pyłem, smród czerwieni pochodnie, zielone je rozpala.
+  const absent = MATES.filter(mate => !props.orcs.some(orc => orc.face === mate))
   const felt = krux?.cue !== undefined && frame - krux.cue.at < CUE_FRAMES ? { kind: krux.cue.kind, age: frame - krux.cue.at } : null
-  const scene = room ? paint(deep.reduce<string[]>((back, orc) => paint(back, orc.rows, orc.x, orc.y), roomGrid(width, frame, hearth, felt)), grid, 0, 6) : grid
+  const scene = room ? paint(deep.reduce<string[]>((back, orc) => paint(back, orc.rows, orc.x, orc.y), roomGrid(width, frame, hearth, { feel: felt, alive: !frozen, red: props.red === true, seals: props.seals ?? 0, absent })), grid, 0, 6) : grid
   const { Box, Text } = surface.elements
   const lines = runsOf(scene, props.scale)
   const said = props.variant === 'band' ? props.bubble : null
   const speaker = said === null ? undefined : actors[said.key]
   // W głębi pomieszczenia ork nie gada: dymek zasłoniłby ścianę, do której właśnie idzie.
-  const talking = said !== null && speaker !== undefined && speaker.leftAt === null && speaker.errand === undefined ? said : null
+  // Wyjątek to wtręt po zdarzeniu: tego przemilczeć nie wolno.
+  const quiet = speaker?.errand !== undefined && !(props.cues ?? []).some(cue => cue.key === said?.key && cue.kind !== 'handoff')
+  const talking = said !== null && speaker !== undefined && speaker.leftAt === null && !quiet ? said : null
   const spoken = talking === null ? '' : props.still ? talking.text : graphemes(talking.text).slice(0, Math.max(1, (frame - speech.at + 1) * 3)).join('')
   const bubbleText = talking !== null ? bubbleAt(spoken, standsAt[said!.key] ?? speaker!.home, width) : props.variant === 'band' && props.bubbleRows ? [' ', ' ', ' '] : []
   const bubbleColor = talking === null ? {} : { color: SPEAKER_COLOR[talking.speaker] }

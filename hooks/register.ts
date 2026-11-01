@@ -94,6 +94,7 @@ const turnAt = atom({ plugin: 'krux-mod', key: 'turnAt' } as const, null)
 const seenAt = atom({ plugin: 'krux-mod', key: 'seenAt' } as const, null)
 const lastPrompt = atom({ plugin: 'krux-mod', key: 'lastPrompt' } as const, null)
 const longAnswer = atom({ plugin: 'krux-mod', key: 'longAnswer' } as const, false)
+const ownRed = atom({ plugin: 'krux-mod', key: 'ownRed' } as const, null)
 const journal = atom({ plugin: 'krux-mod', key: 'journal' } as const, { entries: [] })
 const shaftTab = atom({ plugin: 'krux-mod', key: 'shaftTab' } as const, 'stan')
 
@@ -246,7 +247,9 @@ async function restoreOnce($: EngineInterface): Promise<void> {
   try {
     const messages = await $.session.messages()
     if (messages.length === 0) return
-    await update($, board, () => replayBoard(messages))
+    const restored = replayBoard(messages)
+    await update($, board, () => restored)
+    await update($, ownRed, () => redTest(restored))
     await update($, threads, () => replayThreads(messages))
     const found = replay(messages)
     await update($, turns, () => found.turns)
@@ -273,7 +276,7 @@ function redTest({ test: run }: KruxBoard): string | null {
 // tylko wspomnienie, więc idzie do debug logu.
 async function remember($: EngineInterface): Promise<void> {
   try {
-    const trace = traceOf(await read($, lore), await $.session.id(), await $.clock.now(), redTest(await read($, board)))
+    const trace = traceOf(await read($, lore), await $.session.id(), await $.clock.now(), await read($, ownRed))
     if (trace === null) return
     const key = await memoryKey($)
     await $.store.set(key, rememberAfter(await $.store.get(key), trace))
@@ -758,7 +761,7 @@ export const register: Register = on => {
         const decides = promptKind(e.text) === 'plan' || asksRelease(e.text)
         // Wspomnienie bierze tylko pierwsza wstawka sesji, a starego wroga czerwony test,
         // więc magazyn czytamy tylko wtedy.
-        const failing = redTest(await read($, board))
+        const failing = await read($, ownRed)
         const recalled = risk === null && (chronicle.lastMate === null || failing !== null) ? await recallFor($) : null
         const aside = { recall: recalled, foe: foeOf(failing, recalled), humor: !decides }
         const life = risk === null ? lifeNote(chronicle, turn, aside) : null
@@ -932,6 +935,8 @@ export const register: Register = on => {
       await update($, journal, current => journalAfter(current, { tool, input, result: result.result, text: result.text, isError, tool_use_id: e.tool_use_id, agentId: e.agentId, who, at }))
       if (e.agentId === undefined) {
         const run = await boardStep($, tool, input, result.result, { text, isError, who: 'Krux' })
+        // Własny czerwony test Kruxa: przebieg kumpla nie kasuje starego wroga.
+        if (run) await update($, ownRed, () => (run.ok ? null : run.failures[0] ?? null))
         await afterOwnTool($, tool, input, isError, text, run?.failures[0], result.result)
       } else {
         const agentId = e.agentId
@@ -1124,6 +1129,8 @@ export const register: Register = on => {
       columns: e.props.bodyColumns,
       rows: e.props.maxRows,
       hasClient: 'Client' in table && !forgeFault,
+      red: (await read($, board)).test?.ok === false,
+      seals: (await read($, lore)).commits,
     }
     // Skrót Sztolni za płótnem, gdy jej panelu nie widać: zamknięty, czeka na
     // szerszy terminal (bez pytania silnik stawia go od 144 kolumn) albo stoi

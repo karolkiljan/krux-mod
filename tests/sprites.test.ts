@@ -269,8 +269,23 @@ test('the room lives on its own and answers the chronicle', () => {
   const frames = Array.from({ length: 240 }, (_, frame) => roomGrid(120, frame, true).join(''))
   expect(frames.some(room => room.includes('Y'))).toBe(true)
   expect(new Set(frames).size).toBeGreaterThan(20)
-  expect(roomGrid(120, 7, true, { kind: 'test-fail', age: 2 }).join('')).toContain('R')
-  expect(roomGrid(120, 7, true, { kind: 'zawał', age: 2 }).join('').split('q').length).toBeGreaterThan(5)
+  expect(roomGrid(120, 7, true, { feel: { kind: 'test-fail', age: 2 } }).join('')).toContain('R')
+  expect(roomGrid(120, 7, true, { feel: { kind: 'zawał', age: 2 } }).join('').split('q').length).toBeGreaterThan(5)
+  // Spoczynek zatrzymuje zegar: wózek i szczur nie stają w pół drogi.
+  const atRest = Array.from({ length: 240 }, (_, frame) => roomGrid(120, frame, true, { alive: false }).join(''))
+  expect(atRest.some(room => room.includes('Y'))).toBe(false)
+})
+
+test('the wall shows the state of the work: canary, aprons on pegs, seals', () => {
+  const count = (rows: string[], cell: string) => rows.join('').split(cell).length - 1
+  const well = roomGrid(160, 8, true)
+  const faint = roomGrid(160, 8, true, { red: true })
+  expect(count(faint, 'V')).toBeGreaterThan(count(well, 'V'))
+  expect(count(faint, 'Z')).toBeLessThan(count(well, 'Z'))
+  expect(count(roomGrid(160, 8, true, { absent: ['Niuch'] }), '1')).toBe(2)
+  expect(count(well, '1')).toBe(0)
+  expect(count(roomGrid(160, 8, true, { seals: 3 }), 'd')).toBe(3)
+  expect(count(roomGrid(160, 8, true, { seals: 99 }), 'd')).toBeLessThanOrEqual(12)
 })
 
 test('a load rides at the hand on the side of the march, and a trial leaves empty-handed', () => {

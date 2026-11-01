@@ -39,6 +39,9 @@ export type BandInput = {
   rows: number
   // Czy powierzchnia potrafi narysować płótno `Client`.
   hasClient: boolean
+  // Stan roboty na ścianie pokoju: czerwone testy, commity sesji.
+  red?: boolean
+  seals?: number
 }
 
 export type BandPlan = {
@@ -94,6 +97,8 @@ export function bandPlan(input: BandInput): BandPlan {
     rest: !working && shown.length === 0,
     slots,
     floor,
+    red: input.red === true,
+    seals: input.seals ?? 0,
     bubbleRows: tall,
     orcs,
     bubble: inCanvas ? { key: speaker!.key, text: said!.text, speaker: said!.speaker } : null,

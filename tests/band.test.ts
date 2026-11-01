@@ -167,6 +167,15 @@ test('a partner who left before its turn answers through Krux, and a gone mate n
   }
 })
 
+test('a speaker who leaves takes the partner’s answer along', () => {
+  const stage = crewAfter(EMPTY_CREW, { kind: 'spawn', member: MLOT }, 0)
+  const spoken = crewAfter(stage, { kind: 'own-tool', event: 'test-fail', lore: failed, seed: 0 }, 1_000)
+  const gone = crewAfter(spoken, { kind: 'mate-done', agentId: 'a2' }, 1_500)
+  expect(crewAfter(gone, { kind: 'expire' }, 1_000 + EVENT_HOLD_MS).bubble).toBe(null)
+  const pruned = crewAfter(spoken, { kind: 'running', ids: new Set<string>() }, 1_500)
+  expect(crewAfter(pruned, { kind: 'expire' }, 1_000 + EVENT_HOLD_MS).bubble).toBe(null)
+})
+
 test('a mate step takes the bubble, a fresh event holds it until it expires', async () => {
   let crew: KruxCrew = crewAfter(EMPTY_CREW, { kind: 'spawn', member: MLOT }, 0)
   crew = crewAfter(crew, { kind: 'mate-tool', agentId: 'a2', doing: describeTool('Bash', { command: 'npm test' }, 0) }, 0)
