@@ -395,8 +395,8 @@ export function carried(scene: StageScene, x: number, rightward: boolean): Place
   return { rows: draw([load, 0, 3]), x: rightward ? x + 6 : x - load[0]!.length }
 }
 
-// Pokój za orkami: 12 pikseli wysokości, ściana nad podłogą. Pas ma 6 wierszy,
-// a piksele są kwadratowe, więc scena dostaje głębię bez zabierania ekranu.
+// Pokój za orkami: 12 pikseli wysokości, sprzęty na górze, orki na dole. Pas ma 6 wierszy,
+// a piksele są kwadratowe, więc scena dostaje głębię bez zabierania ekranu i bez tła.
 export const ROOM_ROWS = 12
 const WALL_ROWS = 6
 
@@ -416,34 +416,19 @@ function wallX(station: Station, floor: number, hearth: boolean): number {
   return Math.max(0, Math.min(floor - wide - 1, stationX(SCENE_OF[station], floor, hearth) + x))
 }
 
-// Ściana z fugami, deski zbiegające się w głąb i szyny ze sztolni. Stałe dla szerokości,
-// więc liczone raz; drzewo ma limit znaków, dlatego wzór jest rzadki.
+// Sprzęty na ścianie, bez tła: pusta komórka zostaje kolorem terminala. Stałe dla szerokości, liczone raz.
 const roomCache = new Map<string, string[][]>()
 
 function roomBase(width: number, hearth: boolean): string[][] {
   const key = `${width}:${hearth}`
   const known = roomCache.get(key)
   if (known) return known
-  const room = Array.from({ length: ROOM_ROWS }, (_, y) => Array.from({ length: width }, (_, x): string => {
-    if (y >= WALL_ROWS) return 'F'
-    if (y === 0) return 'E'
-    return (y === 2 && x % 34 < 5) || (y === 4 && (x + 17) % 34 < 5) ? 'D' : 'A'
-  }))
-  const put = (x: number, y: number, cell: string) => { if (room[y]?.[x] !== undefined) room[y]![x] = cell }
-  // Deski wychodzą z punktu zbiegu nad środkiem ściany.
-  const middle = width / 2
-  for (let foot = -width; foot < 2 * width; foot += 26) {
-    for (let y = WALL_ROWS; y < ROOM_ROWS; y += 1) put(Math.round(middle + ((foot - middle) * (y - 2)) / (ROOM_ROWS - 3)), y, 'H')
-  }
+  const room = Array.from({ length: ROOM_ROWS }, () => Array.from({ length: width }, (): string => '.'))
   for (const station of Object.keys(WALL_PROPS) as Station[]) {
     const left = wallX(station, width, hearth)
-    WALL_PROPS[station].rows.forEach((row, y) => [...row].forEach((cell, dx) => { if (cell !== '.') put(left + dx, y, cell) }))
-  }
-  const mouth = wallX('mine', width, hearth) + 6
-  for (let y = WALL_ROWS; y < ROOM_ROWS; y += 1) {
-    const spread = 3 + (y - WALL_ROWS)
-    put(mouth - spread - (y - WALL_ROWS), y, 'C')
-    put(mouth + spread - (y - WALL_ROWS), y, 'C')
+    WALL_PROPS[station].rows.forEach((row, y) => [...row].forEach((cell, dx) => {
+      if (cell !== '.' && room[y]?.[left + dx] !== undefined) room[y]![left + dx] = cell
+    }))
   }
   roomCache.set(key, room)
   return room
@@ -491,7 +476,7 @@ function roomLife(room: string[][], width: number, frame: number, hearth: boolea
   const wax = wallX('table', width, hearth) + 13
   for (let i = 0; i < Math.min(state.seals, MAX_SEALS); i += 1) {
     const cell = room[5]?.[wax + 2 * i]
-    if (cell === 'A' || cell === 'D' || cell === 'J' || cell === 'K') put(wax + 2 * i, 5, 'd')
+    if (cell === '.') put(wax + 2 * i, 5, 'd')
   }
   // W spoczynku zegar stoi: wózek i szczur nie zamarzają w pół drogi.
   if (!state.alive) return
@@ -505,8 +490,8 @@ function roomLife(room: string[][], width: number, frame: number, hearth: boolea
   const run = (frame + 100) % RAT_EVERY
   if (run < RAT_TRIP) {
     const x = width - 1 - run * Math.ceil(width / RAT_TRIP)
-    put(x, 6, 'C')
-    put(x + 1, 6, 'H')
+    put(x, 11, 'C')
+    put(x + 1, 11, 'C')
   }
 }
 
@@ -515,22 +500,18 @@ export type RoomState = { feel: { kind: KruxEvent | 'handoff'; age: number } | n
 
 const ROOM_AT_REST: RoomState = { feel: null, alive: true, red: false, seals: 0, absent: [], phase: 'day' }
 
-// Szyb w stropie: niebo u góry, a za dnia smuga światła na ścianę i podłogę.
-function roomSky(room: string[][], width: number, phase: DayPhase): void {
-  const left = Math.round(width * 0.42)
-  for (let dx = 0; dx < 8; dx += 1) if (room[0]?.[left + dx] !== undefined) room[0]![left + dx] = SKY[phase]
-  if (phase === 'night') {
-    if (room[0]?.[left + 2] !== undefined) room[0]![left + 2] = 'j'
-    return
-  }
-  if (phase === 'day' || phase === 'dawn') {
-    for (let y = 1; y < ROOM_ROWS; y += 1) {
-      for (let dx = 0; dx < 8; dx += 2) {
-        const x = left + dx + Math.floor(y / 2)
-        if (room[y]?.[x] === 'A' || room[y]?.[x] === 'F' || room[y]?.[x] === 'D') room[y]![x] = phase === 'day' ? 'J' : 'K'
-      }
+// Okienko na ścianie: drewniana rama, w środku niebo o tej porze; nocą gwiazda.
+function roomSky(room: string[][], width: number, hearth: boolean, phase: DayPhase): void {
+  // Za wejściem do sztolni, gdzie nic innego nie wisi; bez miejsca okienka nie ma.
+  const left = wallX('mine', width, hearth) + 13
+  if (left + 6 > width) return
+  for (let dx = 0; dx < 6; dx += 1) {
+    for (let y = 0; y < 3; y += 1) {
+      const frame = dx === 0 || dx === 5 || y === 0 || y === 2
+      if (room[y]?.[left + dx] === '.') room[y]![left + dx] = frame ? 'E' : SKY[phase]
     }
   }
+  if (phase === 'night' && room[1]?.[left + 2] !== undefined) room[1]![left + 2] = 'j'
 }
 
 // Pokój w klatce `frame`: pochodnie, życie pokoju i reakcja na zdarzenie kroniki.
@@ -538,7 +519,7 @@ export function roomGrid(width: number, frame: number, hearth: boolean, state: P
   const full = { ...ROOM_AT_REST, ...state }
   const { feel } = full
   const room = roomBase(width, hearth).map(row => [...row])
-  roomSky(room, width, full.phase)
+  roomSky(room, width, hearth, full.phase)
   roomLife(room, width, frame, hearth, full)
   const red = feel?.kind === 'test-fail' || feel?.kind === 'build-fail' || feel?.kind === 'zawał'
   const bright = feel?.kind === 'test-pass' || feel?.kind === 'build-pass' || feel?.kind === 'commit'
@@ -643,7 +624,7 @@ export function duetPose(kind: DuetKind, t: number): DuetFrame {
   return { host: shout ? HIGH_HOST : RIGHT('g'), guest: shout ? facing('right', 'g') : HIGH_GUEST, prop: draw(at('R', 8 + (step % 3), 1), at('y', 10 - (step % 3), 0)) }
 }
 
-// Pora dnia z godziny: pokój ma szyb w stropie, przez który widać niebo.
+// Pora dnia z godziny: w okienku na ścianie widać niebo.
 export type DayPhase = 'night' | 'dawn' | 'day' | 'dusk'
 
 export function dayPhase(hour: number): DayPhase {

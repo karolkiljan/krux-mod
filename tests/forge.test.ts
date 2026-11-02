@@ -265,19 +265,19 @@ test('nobody stands in the hearth: a floor that grew moves Krux off it, reduced 
   expect(frozen).not.toContain(PALETTE.k)
 })
 
-test('the room stands behind everyone, and the bubble lies on the wall without shifting it', () => {
+test('wall gear stands behind everyone, with no filled background, and the bubble keeps every row its width', () => {
   const { surface } = surfaceOf()
   const props: ForgeProps = { ...FLOOR, bubble: { key: 'krux', text: 'Gotowe.', speaker: 'Krux' }, rest: true }
   const tree = draw(props, surface) as unknown as { props: { children: { props: { key: string; children: { props: { children: string[] } }[] } }[] } }
   const rows = tree.props.children
   expect(rows.map(row => row.props.key)).toEqual(['bubble-0', 'bubble-1', 'bubble-2', 'row-0', 'row-1', 'row-2'])
   for (const row of rows) expect([...row.props.children.flatMap(text => text.props.children).join('')].length).toBe(140)
-  expect(JSON.stringify(tree)).toContain(PALETTE.A)
+  expect(JSON.stringify(tree)).toContain(PALETTE.E)
 })
 
 test('a low band stays flat: no room where no rows are left for it', () => {
   const { surface } = surfaceOf()
-  expect(JSON.stringify(draw({ ...FLOOR, bubbleRows: false }, surface))).not.toContain(PALETTE.A)
+  expect(JSON.stringify(draw({ ...FLOOR, bubbleRows: false }, surface))).not.toContain(PALETTE.E)
 })
 
 test('the busiest drawing on a wide terminal keeps well under the engine bounds', () => {

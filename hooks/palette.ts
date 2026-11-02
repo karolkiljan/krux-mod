@@ -37,11 +37,7 @@ export const PALETTE: Record<string, string> = {
   j: '#f5f5f5', // biel: pióro, papier, łuska
   d: '#b22222', // czerwony materiał, flaga
   e: '#2e4a7d', // granatowy materiał, obicie fotela
-  A: '#231f1c', // ściana pokoju
-  D: '#2e2823', // spoina ściany
   E: '#3b2a1c', // belka, półka, oprawa sztolni
-  F: '#2b2420', // podłoga
-  H: '#3a3029', // deska podłogi w perspektywie
   I: '#0d0b0a', // głąb sztolni
   C: '#4a4641', // szyna, żelazo na ścianie
   U: '#6e5a3c', // grzbiety na półce
@@ -52,8 +48,6 @@ export const PALETTE: Record<string, string> = {
   8: '#c4845a', // niebo w szybie: świt
   9: '#7aa6c8', // niebo w szybie: dzień
   0: '#a8562e', // niebo w szybie: zmierzch
-  J: '#3b3a33', // smuga dziennego światła
-  K: '#40302a', // smuga światła o świcie
   1: '#2f524f', // fartuch Niucha na haku, w cieniu
   2: '#7a2c20', // fartuch Groma na haku
   3: '#97791d', // fartuch Piryta na haku
