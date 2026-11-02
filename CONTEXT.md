@@ -71,7 +71,7 @@ Miejsce na podłodze przypisane rodzajowi roboty: kuźnia, stół, próba albo s
 _Avoid_: strefa
 
 **Pokój**:
-Tło pasa: ściana ze sprzętami nad podłogą w perspektywie.
+Sprzęty na ścianie za orkami, bez wypełnionego tła.
 _Avoid_: tło, backdrop
 
 **Wyprawa**:

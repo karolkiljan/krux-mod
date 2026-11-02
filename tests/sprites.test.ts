@@ -276,15 +276,15 @@ test('the room lives on its own and answers the chronicle', () => {
   expect(atRest.some(room => room.includes('Y'))).toBe(false)
 })
 
-test('the sky in the shaft follows the clock, with a beam of light by day', () => {
+test('the window shows the sky of the hour, and the room has no background', () => {
   expect([0, 4, 5, 7, 8, 17, 18, 21, 22].map(dayPhase)).toEqual(['night', 'night', 'dawn', 'dawn', 'day', 'day', 'dusk', 'dusk', 'night'])
   const room = (phase: DayPhase) => roomGrid(160, 8, true, { phase }).join('')
   expect(room('day')).toContain('9')
-  expect(room('day')).toContain('J')
   expect(room('night')).toContain('7')
-  expect(room('night')).not.toContain('J')
   expect(room('dusk')).toContain('0')
-  expect(room('dawn')).toContain('K')
+  expect(room('dawn')).toContain('8')
+  // Tła nie ma: większość pokoju to puste komórki terminala.
+  expect(room('day').split('.').length - 1).toBeGreaterThan(160 * 12 * 0.8)
 })
 
 test('duet poses stay in the palette, keep both eyes and open with the partner in reach', () => {
