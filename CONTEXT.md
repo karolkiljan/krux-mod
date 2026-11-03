@@ -71,7 +71,7 @@ Miejsce na podłodze przypisane rodzajowi roboty: kuźnia, stół, próba albo s
 _Avoid_: strefa
 
 **Pokój**:
-Sprzęty na ścianie za orkami i prycze pod ścianą, bez wypełnionego tła.
+Sprzęty na ścianie za orkami i drzwi kwater, bez wypełnionego tła.
 _Avoid_: tło, backdrop
 
 **Rekwizyt**:
@@ -82,9 +82,21 @@ _Avoid_: prop, kit (w tekstach dla Morry)
 Marsz orka w głąb pokoju po rekwizyt albo z rekwizytem; ork maleje razem z nim, odkłada, bierze następny i dopiero zaczyna robotę.
 _Avoid_: errand
 
-**Prycza**:
-Miejsce orka pod ścianą: kto nie pracuje, leży tu przyciemniony, a wezwany wstaje i idzie do roboty. Ork bez imienia pryczy nie ma, wychodzi ze sztolni.
-_Avoid_: łóżko, spawn
+**Trofea**:
+Robota sesji na ścianie pokoju: pieczęcie za commity, kamienie za zielone przebiegi testów, sztabki za udane budowania.
+_Avoid_: punkty, odznaki
+
+**Skarbnik**:
+Duch kopalni ze śląskiej legendy: staje z lampą w otworze sztolni, gdy robota zazieleni się po padłych.
+_Avoid_: easter egg
+
+**Kwatery**:
+Miejsce hordy za drzwiami w ścianie pokoju: kto nie pracuje, odpoczywa tam niewidoczny, a wezwany wychodzi drzwiami do roboty. Ork bez imienia wychodzi ze sztolni.
+_Avoid_: prycza, łóżko, spawn
+
+**Czuwanie**:
+Spoczynek Kruxa przy palenisku, gdy nie ma roboty ani hordy na scenie.
+_Avoid_: idle, sen
 
 **Scenka**:
 Zabawa dwóch orków na podłodze: szermierka, podanie stali, piątka albo kłótnia.

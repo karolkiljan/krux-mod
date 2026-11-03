@@ -237,6 +237,8 @@ declare module 'claude-code' {
       // Dziennik narzędzi (tylko sesja) i karta panelu Sztolni.
       journal: KruxJournal
       shaftTab: KruxShaftTab
+      // Tyknięcie zegara płótna na Desktopie: zapis przerysowuje pas i panel z klatką `Svg`.
+      deskFrame: number
     }
   }
 }
