@@ -5,7 +5,7 @@
 import type { KruxActivity, KruxBubble, KruxCue, KruxHordeMember, KruxMoods } from '../types'
 import type { ForgeOrc, ForgeProps } from './forge'
 import { bubbleFor } from './mood'
-import { ORC_GAP, ORC_WIDTH, bandColumns, canvasColumns } from './sprites'
+import { ORC_GAP, ORC_WIDTH, bandColumns, canvasColumns, hasHearth } from './sprites'
 import { restVerb } from './voice'
 
 // Podpis z lewej, przerwa 2 kolumny, za nim płótno.
@@ -39,12 +39,8 @@ export type BandInput = {
   rows: number
   // Czy powierzchnia potrafi narysować płótno `Client`.
   hasClient: boolean
-  // Stan roboty na ścianie pokoju: czerwone testy, commity, zielone przebiegi testów, udane
-  // budowania; `blessed`: w sesji coś już padło.
+  // Stan roboty na ścianie pokoju: czerwone testy; `blessed`: w sesji coś już padło.
   red?: boolean
-  seals?: number
-  gems?: number
-  ingots?: number
   blessed?: boolean
 }
 
@@ -64,7 +60,13 @@ export function bandPlan(input: BandInput): BandPlan {
   const room = input.columns - CAPTION_COLUMNS - CAPTION_GAP
   const fit = input.hasClient ? Math.floor((room + ORC_GAP) / (ORC_WIDTH + ORC_GAP)) : 0
   // Stała liczba miejsc: płótno nie zmienia szerokości, gdy horda przychodzi i odchodzi.
-  const slots = Math.max(1, Math.min(1 + STAGE_MATES, fit))
+  // Palenisko ma pierwszeństwo przed ostatnim miejscem kumpla: przy nim Krux czuwa w spoczynku,
+  // a kumpel bez miejsca i tak liczy się w podpisie.
+  // W bezruchu palenisko nie staje, więc miejsca nie zabiera.
+  const most = Math.max(1, Math.min(1 + STAGE_MATES, fit))
+  let slots = most
+  while (!input.still && slots > 2 && !hasHearth(room, slots)) slots -= 1
+  if (!hasHearth(room, slots)) slots = most
   const shown = members.slice(0, slots - 1)
   const hidden = members.length - shown.length
   // Krux czeka na wyniki hordy: w spoczynku albo w trakcie `Agent` na pierwszym planie.
@@ -103,9 +105,6 @@ export function bandPlan(input: BandInput): BandPlan {
     slots,
     floor,
     red: input.red === true,
-    seals: input.seals ?? 0,
-    gems: input.gems ?? 0,
-    ingots: input.ingots ?? 0,
     blessed: input.blessed === true,
     bubbleRows: tall,
     orcs,
