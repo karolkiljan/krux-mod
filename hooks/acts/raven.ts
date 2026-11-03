@@ -75,13 +75,13 @@ function smokeLoop(t: number, frame: number): Frame {
 
 const smoke: Act = {
   name: 'dym',
+  kit: draw(...bonfire(FIRE_X, 0, 0), [['dd'], 7, 3]),
   intro: [
-    // Polana układają się i zajmują ogniem, a ork podchodzi ze zwiniętym kocem.
-    ...[-1, 0, 0, 1, 2, 2].map((size, i) => {
-      const x = i + 1
-      const logs: Layer[] = size < 0 ? [at('x', FIRE_X + 1, 4)] : bonfire(FIRE_X, i, size)
-      const spark: Layer[] = i === 2 ? [at('y', FIRE_X + 1, 3)] : []
-      return draw(...logs, ...spark, [walker(i, 'right'), x, 0], [['dd'], x + 6, 3])
+    // Polana zajmują się ogniem, a ork podchodzi ze zwiniętym kocem.
+    ...[0, 0, 1, 2, 2].map((size, i) => {
+      const x = i + 2
+      const spark: Layer[] = i === 1 ? [at('y', FIRE_X + 1, 3)] : []
+      return draw(...bonfire(FIRE_X, i, size), ...spark, [walker(i, 'right'), x, 0], [['dd'], x + 6, 3])
     }),
     // Unieść koc nad ogień i rozwinąć.
     draw(...bonfire(FIRE_X, 6, 2), [SMOKER_BODY, SMOKER, 0], at('g', SMOKER + 6, 2), [['dd'], SMOKER + 6, 1]),
@@ -131,10 +131,11 @@ function bowLoop(t: number): Frame {
 
 const archery: Act = {
   name: 'łuk',
+  kit: draw(...bow(BOW_X, 0), ...arrow(9, 4)),
   intro: [
-    // Łuk wysuwa się zza pleców, potem strzała z listem.
-    ...[3, 5, 7].map(x => draw(...bow(x, 0), [x < 7 ? stander('right') : ARCHER, 0, 0])),
-    ...[3, 5].map(x => draw(...arrow(x, 2), [ARCHER, 0, 0], ...bow(BOW_X, 0))),
+    // Chwycić łuk, potem strzałę z listem i założyć ją na cięciwę.
+    draw([ARCHER, 0, 0], ...bow(BOW_X, 0), ...arrow(9, 4)),
+    ...[[7, 3], [5, 2]].map(([x, y]) => draw(...arrow(x!, y!), [ARCHER, 0, 0], ...bow(BOW_X, 0))),
   ],
   length: 32,
   loop: bowLoop,

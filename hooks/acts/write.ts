@@ -1,4 +1,4 @@
-import { SLIDE, STAND, at, draw, line, pingPong, pusher, stander, stroll } from '../stage'
+import { STAND, at, draw, line, pingPong, pusher, stander, stroll } from '../stage'
 import type { Act, Frame, Layer, Point } from '../stage'
 
 // Odpowiedź: pióro zapisuje runy, siekiera usuwa zbędne litery, dłonie zwijają zwój.
@@ -8,8 +8,8 @@ import type { Act, Frame, Layer, Point } from '../stage'
 const DESK: Frame = ['hhhhhhhhhhhh', '.x........x.', '.x........x.']
 const PAPER: Frame = ['pppppppppp', 'pppppppppp']
 const INK: readonly Point[] = [[11, 2], [12, 2], [14, 2], [15, 2], [17, 2], [18, 2]]
-function desk(dx = 0): Layer[] {
-  return [[DESK, 9 + dx, 3], [PAPER, 10 + dx, 1], [['nn', 'xx'], 19 + dx, 1]]
+function desk(): Layer[] {
+  return [[DESK, 9, 3], [PAPER, 10, 1], [['nn', 'xx'], 19, 1]]
 }
 function quillFrame(t: number): Frame {
   const writing = t < 18
@@ -24,18 +24,20 @@ function quillFrame(t: number): Frame {
 }
 const quill: Act = {
   name: 'skrobanie run',
-  intro: [STAND, ...SLIDE.map(dx => draw(...desk(dx), [stander('right'), 0, 0])),
-    ...stroll(2, desk()), quillFrame(0)],
+  kit: draw(...desk()),
+  intro: [...stroll(2, desk()), quillFrame(0)],
   length: 25,
   loop: quillFrame,
 }
 
 // ——— Siekiera tnie zbędne litery ———
 const LETTERS = [12, 14, 16, 18]
-function strip(dx = 0, remaining = 4): Layer[] {
-  return [[['ppppppppppp', 'xxxxxxxxxxx'], 10 + dx, 4],
-    ...LETTERS.slice(4 - remaining).map(x => [['nn', 'n.'], x + dx, 2] as Layer)]
+function strip(remaining = 4): Layer[] {
+  return [[['ppppppppppp', 'xxxxxxxxxxx'], 10, 4],
+    ...LETTERS.slice(4 - remaining).map(x => [['nn', 'n.'], x, 2] as Layer)]
 }
+// Siekiera wbita w pieniek stoi na kartce, zanim ork po nią sięgnie.
+const AXE: readonly Layer[] = [[['SS', 'Ss'], 11, 0], ...line([10, 2], [11, 1], 'h')]
 function axeFrame(t: number): Frame {
   const stroke = Math.floor(t / 6)
   const phase = t % 6
@@ -47,40 +49,40 @@ function axeFrame(t: number): Frame {
   const bladeY = cutting && phase === 3 ? 3 : cutting && phase === 2 ? 1 : 0
   const bladeX = cutting && phase >= 2 && phase <= 4 ? target : orcX + 9
   const chips: Layer[] = cutting && phase === 4 ? [at('n', target + 1, 1), at('n', target - 1, 4)] : []
-  return draw(...strip(0, remaining), [pusher(t, ''), orcX, 0],
+  return draw(...strip(remaining), [pusher(t, ''), orcX, 0],
     ...line([orcX + 6, 3], grip, 'g'), ...line(grip, [bladeX, bladeY + 1], 'h'),
     [['SS', 'Ss'], bladeX, bladeY], ...chips)
 }
 const trimming: Act = {
   name: 'cięcie zbędnych liter',
-  intro: [STAND, ...SLIDE.map(dx => draw(...strip(dx), [stander('right'), 0, 0])),
-    ...stroll(2, strip()),
-    draw(...strip(), [stander('right'), 2, 0], ...line([8, 3], [10, 2], 'g'), [['h'], 10, 2]),
+  kit: draw(...strip(), ...AXE),
+  intro: [...stroll(2, [...strip(), ...AXE]),
+    draw(...strip(), ...AXE, [stander('right'), 2, 0], ...line([8, 3], [10, 2], 'g')),
     axeFrame(0)],
   length: 40,
   loop: axeFrame,
 }
 
 // ——— Zwijanie zapisanego zwoju ———
-function scroll(dx: number, edge: number): Layer[] {
+function scroll(edge: number): Layer[] {
   const body = Math.max(0, 18 - edge)
   return [
-    [Array.from({ length: 2 }, () => 'p'.repeat(body)), edge + 1 + dx, 2],
-    [['jj', 'pp', 'jj'], edge + dx, 1],
-    [['j', 'p', 'j'], 20 + dx, 1],
-    ...[12, 14, 16, 18].filter(x => x > edge + 1).map(x => at('n', x + dx, 2)),
+    [Array.from({ length: 2 }, () => 'p'.repeat(body)), edge + 1, 2],
+    [['jj', 'pp', 'jj'], edge, 1],
+    [['j', 'p', 'j'], 20, 1],
+    ...[12, 14, 16, 18].filter(x => x > edge + 1).map(x => at('n', x, 2)),
   ]
 }
 function scrollFrame(t: number): Frame {
   const edge = 9 + Math.floor(pingPong(t, 12) / 2)
   const orcX = edge - 9
-  return draw(...scroll(0, edge), [pusher(t, ''), orcX, 0],
+  return draw(...scroll(edge), [pusher(t, ''), orcX, 0],
     ...line([orcX + 6, 3], [edge - 1, 3], 'g'), at('g', edge, 3))
 }
 const rolling: Act = {
   name: 'zwijanie zwoju',
-  intro: [STAND, ...SLIDE.map(dx => draw(...scroll(dx, 9), [stander('right'), 0, 0])),
-    draw(...scroll(0, 9), [stander('right', 'g'), 0, 0]), scrollFrame(0)],
+  kit: draw(...scroll(9)),
+  intro: [draw(...scroll(9), [stander('right', 'g'), 0, 0]), scrollFrame(0)],
   length: 24,
   loop: scrollFrame,
 }
@@ -98,14 +100,14 @@ const DIPPED: Frame = ['n', 'h']
 const RUNES: readonly Point[] = [[9, 1], [9, 2], [11, 1], [11, 2], [13, 1], [14, 2]]
 const STRAIGHT: Point = [13, 2]
 
-// Sztaluga z kałamarzem przesunięta o `dx`; `marks` to już położone piksele run, `scrolled` —
+// Sztaluga z kałamarzem; `marks` to już położone piksele run, `scrolled` —
 // o ile wierszy arkusz przewinął się pod wałek.
-function easel(dx: number, marks: readonly Point[] = [], scrolled = 0): Layer[] {
+function easel(marks: readonly Point[] = [], scrolled = 0): Layer[] {
   return [
-    at('q', POT_AT + dx, 5),
-    [SHEET, EASEL_AT + 1 + dx, 1],
-    ...marks.map(([x, y]) => at('n', x + dx, y - scrolled)),
-    [EASEL, EASEL_AT + dx, 0],
+    at('q', POT_AT, 5),
+    [SHEET, EASEL_AT + 1, 1],
+    ...marks.map(([x, y]) => at('n', x, y - scrolled)),
+    [EASEL, EASEL_AT, 0],
   ]
 }
 
@@ -121,36 +123,35 @@ const RAISED: Layer[] = [at('g', 6, 3), at('h', 7, 2), at('n', 7, 1)]
 function calligraphy(t: number): Frame {
   const orc = (look: 'mid' | 'right'): Layer => [stander(look), 0, 0]
   // 0–5: runa po runie, piksel na klatkę; przy szóstym ręka się omsknęła.
-  if (t < 6) return draw(...easel(0, RUNES.slice(0, t)), orc('right'), ...brushAt(RUNES[t]!))
+  if (t < 6) return draw(...easel(RUNES.slice(0, t)), orc('right'), ...brushAt(RUNES[t]!))
   const fixed = [...RUNES.slice(0, 5), STRAIGHT]
   // 6–7: unieść pędzel i przyjrzeć się krzywej runie.
-  if (t < 8) return draw(...easel(0, RUNES), orc('right'), ...RAISED)
+  if (t < 8) return draw(...easel(RUNES), orc('right'), ...RAISED)
   // 8: zetrzeć krzywy piksel czystym pędzlem; 9: położyć go prosto.
-  if (t === 8) return draw(...easel(0, RUNES.slice(0, 5)), orc('right'), ...brushAt(RUNES[5]!, 'j'))
-  if (t === 9) return draw(...easel(0, fixed), orc('right'), ...brushAt(STRAIGHT))
+  if (t === 8) return draw(...easel(RUNES.slice(0, 5)), orc('right'), ...brushAt(RUNES[5]!, 'j'))
+  if (t === 9) return draw(...easel(fixed), orc('right'), ...brushAt(STRAIGHT))
   // 10–11: teraz dobrze, Ochra spogląda z zadowoleniem.
-  if (t < 12) return draw(...easel(0, fixed), orc(t === 10 ? 'right' : 'mid'), ...RAISED)
+  if (t < 12) return draw(...easel(fixed), orc(t === 10 ? 'right' : 'mid'), ...RAISED)
   // 12–13: arkusz przewija się pod wałek, 14: wychodzi czysty.
-  return draw(...easel(0, fixed, t - 11), orc('right'), ...RAISED)
+  return draw(...easel(fixed, t - 11), orc('right'), ...RAISED)
 }
 
 const calligraphyAct: Act = {
   name: 'kaligrafia',
   who: ['Ochra'],
+  kit: draw(...easel(), [DIPPED, POT_AT, 3]),
   intro: [
-    // Sztaluga z kałamarzem wjeżdża z prawej, pędzel stoi w kałamarzu.
-    ...SLIDE.map(dx => draw(...easel(dx), [DIPPED, POT_AT + dx, 3], [STAND, 0, 0])),
     // Sięgnąć po pędzel i unieść go przy twarzy.
-    draw(...easel(0), [DIPPED, POT_AT, 3], [stander('right'), 0, 0], at('g', POT_AT, 4)),
-    draw(...easel(0), [DIPPED, POT_AT, 2], [stander('right'), 0, 0], at('g', POT_AT, 3)),
-    draw(...easel(0), [stander('right'), 0, 0], ...RAISED),
+    draw(...easel(), [DIPPED, POT_AT, 3], [stander('right'), 0, 0], at('g', POT_AT, 4)),
+    draw(...easel(), [DIPPED, POT_AT, 2], [stander('right'), 0, 0], at('g', POT_AT, 3)),
+    draw(...easel(), [stander('right'), 0, 0], ...RAISED),
   ],
   length: 15,
   loop: calligraphy,
 }
 
 // ——— Dobór kolorów Ochry ———
-// Tablica z niebieskim polem i dwustronny próbnik wjeżdżają razem. Ochra przykłada czerwoną
+// Tablica z niebieskim polem i dwustronny próbnik stoją razem. Ochra przykłada czerwoną
 // stronę, obraca kartonik na niebieską i zrównuje brzegi, potem cofa się po kolejne porównanie.
 const COLOR_BOARD: Frame = ['xxxxxxx', 'xWWWWWx', 'xWWWWWx', 'xxxxxxx', '.x...x.', '.x...x.']
 const COLOR_BOARD_AT = 15
@@ -173,9 +174,8 @@ function matchingColor(t: number): Frame {
 const colorMatch: Act = {
   name: 'dobór kolorów',
   who: ['Ochra'],
+  kit: draw([COLOR_BOARD, COLOR_BOARD_AT, 0], sampleAt(SAMPLE_AT, 3, 'd')),
   intro: [
-    // Tablica i próbnik oparty trzonkiem o ziemię wjeżdżają z prawej.
-    ...SLIDE.map(dx => draw([COLOR_BOARD, COLOR_BOARD_AT + dx, 0], sampleAt(SAMPLE_AT + dx, 3, 'd'), [STAND, 0, 0])),
     draw([COLOR_BOARD, COLOR_BOARD_AT, 0], sampleAt(SAMPLE_AT, 3, 'd'), [stander('right', 'g'), 0, 0]),
     // Chwycić próbnik od dołu, podnieść go na wysokość kolorowego pola.
     draw([COLOR_BOARD, COLOR_BOARD_AT, 0], [stander('right'), 0, 0],

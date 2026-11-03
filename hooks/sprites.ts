@@ -1,4 +1,4 @@
-import type { KruxEvent, KruxMate, KruxMood, KruxScene, KruxSpeaker } from '../types'
+import type { KruxEvent, KruxMood, KruxScene, KruxSpeaker } from '../types'
 import { ASK_ACTS } from './acts/ask'
 import { BUILD_ACTS } from './acts/build'
 import { HAMMER_ACTS } from './acts/hammer'
@@ -21,7 +21,7 @@ import { PALETTE } from './palette'
 import { MATES, ROSTER } from './roster'
 import { GESTURES } from './fidget'
 import { terminalText } from './terminal-text'
-import { H, W, actFrame, at, dots, draw, finalLoop, flame, leadIn, legAt, moodOf, noise, pad, restFrame, rotation, settleFrames, stander, walker } from './stage'
+import { H, STAND, W, actFrame, at, dots, draw, entryOf, finalLoop, flame, kitLead, leadIn, legAt, legDone, lerp, moodOf, noise, pad, restFrame, rotation, settleFrames, stander, walker } from './stage'
 import type { Act, Frame, Layer, Leg, Route } from './stage'
 
 // Siatki pikseli kowala i hordy. Czyste funkcje: płótno `forge.ts` tylko je rysuje.
@@ -106,11 +106,15 @@ function waitLegs(seed: number): Leg[] {
 // Przy ognisku Krux zasypia po minucie.
 const DOZE_FRAMES = Math.round(60 * SECOND)
 
-// Trasa orka w scenie: `first` to czynność, od której rusza epizod roboty.
-export function routeOf(scene: StageScene, face: Face, seed: number, first = seed): Route {
+// Trasa orka w scenie: `first` to czynność, od której rusza epizod roboty; `done` to odcinki
+// czekania już zagrane, bo między nimi ork chodzi po nowy mebel.
+export function routeOf(scene: StageScene, face: Face, seed: number, first = seed, done = 0): Route {
   const gestures = gesturesFor(face)
   const every = 3 + (seed % 2)
-  if (scene === 'lounge') return { legs: waitLegs(seed), cyclic: false, gestures, every, seed }
+  if (scene === 'lounge') {
+    const legs = waitLegs(seed)
+    return { legs: legs.slice(Math.min(done, legs.length - 1)), cyclic: false, gestures, every, seed }
+  }
   return { legs: rotation(actsFor(scene, face), first, WORK_FRAMES), cyclic: true, gestures, every, seed }
 }
 
@@ -136,15 +140,21 @@ export type Track = {
   seed: number
   // Czynność, od której rusza epizod roboty.
   first: number
+  // Odcinki czekania już zagrane.
+  done: number
+  // Klatki czynności sprzed scenki: liczą się do jej 30 s, inaczej scenki nie dałyby jej skończyć.
+  spent: number
   // Czynność, od której ruszy następny epizod każdej sceny: epizody się różnią.
   memory: Partial<Record<StageScene, number>>
-  // Przerwana scena, która jeszcze schodzi do stójki; `fast`, gdy czeka już nowa.
+  // Przerwana scena, która jeszcze schodzi do stójki; `fast`, gdy czeka już nowa; `kept`, gdy kończy przy rekwizycie.
   // `face` z chwili przerwania: kumpel, który w trakcie zejścia dostał imię, schodzi tą samą trasą.
-  leaving: { scene: StageScene; face: Face; seed: number; first: number; step: number; at: number; fast?: boolean } | null
+  leaving: { scene: StageScene; face: Face; seed: number; first: number; done: number; step: number; at: number; fast?: boolean; kept?: boolean } | null
+  // Ork skończył i czeka na następny epizod: przy rekwizycie na ziemi albo z pustymi rękami.
+  stops?: 'kit' | 'bare'
 }
 
-function routeOfTrack(track: Pick<Track, 'scene' | 'face' | 'seed' | 'first'>): Route {
-  return routeOf(track.scene, track.face, track.seed, track.first)
+function routeOfTrack(track: Pick<Track, 'scene' | 'face' | 'seed' | 'first' | 'done'>): Route {
+  return routeOf(track.scene, track.face, track.seed, track.first, track.done)
 }
 
 // Przed zmianą sceny: następny epizod tej sceny ruszy od czynności po obecnej.
@@ -153,11 +163,35 @@ function remember(track: Track, frame: number): Track['memory'] {
   return { ...track.memory, [track.scene]: track.first + legAt(routeOfTrack(track), Math.max(0, frame - track.since)) + 1 }
 }
 
-// Nowy epizod sceny: los z klatki, czynność z pamięci albo z losu.
-function episode(track: Track, scene: StageScene, key: string, frame: number): Pick<Track, 'scene' | 'seed' | 'first' | 'memory'> {
+// Nowy epizod sceny: los z klatki, czynność z pamięci albo z losu. Dalszy ciąg czekania
+// trzyma los, bo od niego zależą odcinki, i przechodzi do następnego.
+export type Episode = Pick<Track, 'scene' | 'seed' | 'first' | 'done' | 'memory'>
+
+export function nextEpisode(track: Track, scene: StageScene, key: string, frame: number): Episode {
+  if (scene === 'lounge' && track.scene === 'lounge') return { scene, seed: track.seed, first: track.first, done: track.done + 1, memory: track.memory }
   const memory = remember(track, frame)
   const seed = seedOf(key, frame)
-  return { scene, seed, first: memory[scene] ?? seed, memory }
+  return { scene, seed, first: memory[scene] ?? seed, done: 0, memory }
+}
+
+// Rekwizyt, którego wymaga epizod: po niego ork idzie, zanim zacznie.
+export function episodeKit(episode: Episode, face: Face): Frame | undefined {
+  return routeOf(episode.scene, face, episode.seed, episode.first, episode.done).legs[0]!.act.kit
+}
+
+// Rekwizyt, który stoi na ziemi przy orku czekającym na następny epizod.
+export function trackKit(track: Track): Frame | undefined {
+  return track.stops === 'kit' ? routeOfTrack(track).legs[0]!.act.kit : undefined
+}
+
+// Scena, której sprzęt jest poza ścianą: gra albo stoi przy orku.
+export function trackOut(track: Track): StageScene | null {
+  return track.stops === 'bare' || routeOfTrack(track).legs[0]!.act.kit === undefined ? null : track.scene
+}
+
+// Czynność zagrała swoje: pora odnieść rekwizyt i przynieść następny.
+export function trackDue(track: Track, frame: number): boolean {
+  return track.stops === undefined && frame >= track.since && legDone(routeOfTrack(track), frame - track.since + track.spent)
 }
 
 // Scena gra co najmniej 1,5 s: szybkie Read, Grep, Read nie mogą mrugać co klatkę.
@@ -175,12 +209,27 @@ function seedOf(key: string, frame: number): number {
 export function trackStart(scene: StageScene, key: string, frame: number, start: 'in-loop' | number, face: Face = key === 'krux' ? 'Krux' : null): Track {
   const seed = seedOf(key, frame)
   const since = start === 'in-loop' ? frame - leadIn(routeOf(scene, face, seed)) : frame + start
-  return { scene, face, since, setAt: frame, seed, first: seed, memory: {}, leaving: null }
+  return { scene, face, since, setAt: frame, seed, first: seed, done: 0, spent: 0, memory: {}, leaving: null }
 }
 
 // Ork doszedł na stanowisko: scena rusza od stójki, nowym epizodem, także ta sama.
-export function trackArrive(track: Track, scene: StageScene, key: string, frame: number): Track {
-  return { ...track, ...episode(track, scene, key, frame), since: frame, setAt: frame, leaving: null }
+// `set`: przyniósł rekwizyt, więc rusza od klatki z rekwizytem na ziemi.
+export function trackArrive(track: Track, episode: Episode, frame: number, set = false): Track {
+  const { act } = routeOf(episode.scene, track.face, episode.seed, episode.first, episode.done).legs[0]!
+  const { stops: _done, ...rest } = track
+  return { ...rest, ...episode, spent: 0, since: set ? frame - kitLead(act) : frame, setAt: frame, leaving: null }
+}
+
+// Ork wraca do tej samej czynności przy rekwizycie, który został na ziemi.
+export function trackResume(track: Track, frame: number): Track {
+  const { act } = routeOfTrack(track).legs[0]!
+  const { stops: _done, ...rest } = track
+  return { ...rest, since: frame - (track.stops === 'kit' ? kitLead(act) : 0), setAt: frame, leaving: null }
+}
+
+// Rekwizyt wrócił na ścianę: ork stoi z pustymi rękami.
+export function trackBare(track: Track): Track {
+  return { ...track, stops: 'bare' }
 }
 
 // Nowa scena po przytrzymaniu: stara schodzi do stójki, dopiero potem wchodzi nowa.
@@ -188,9 +237,10 @@ export function trackArrive(track: Track, scene: StageScene, key: string, frame:
 // W bezruchu zmiana od razu, bez zejścia.
 export function trackTo(track: Track, scene: StageScene, key: string, frame: number, still: boolean): Track {
   if (scene === track.scene) return track
-  if (still) return { ...track, ...episode(track, scene, key, frame), since: frame, setAt: frame, leaving: null }
+  const { stops: _done, ...rest } = track
+  if (still) return { ...rest, ...nextEpisode(track, scene, key, frame), since: frame, setAt: frame, leaving: null }
   if (frame < track.since || frame - track.setAt < HOLD_FRAMES) return track
-  return { ...track, ...settle(track, frame, true), ...episode(track, scene, key, frame), setAt: frame }
+  return { ...rest, ...settle(track, frame, true), ...nextEpisode(track, scene, key, frame), setAt: frame }
 }
 
 // Kumpel dostał imię: jego czynności się zmieniają, więc obecna schodzi do stójki,
@@ -198,7 +248,7 @@ export function trackTo(track: Track, scene: StageScene, key: string, frame: num
 export function trackFace(track: Track, face: Face, key: string, frame: number, still: boolean): Track {
   if (face === track.face) return track
   if (still || frame < track.since) return { ...track, face }
-  return { ...track, ...settle(track, frame, true), ...episode(track, track.scene, key, frame), face, setAt: frame }
+  return { ...track, ...settle(track, frame, true), ...nextEpisode(track, track.scene, key, frame), face, setAt: frame }
 }
 
 // Krux drzemie przy ognisku, gdy czekanie na hordę trwa długo.
@@ -214,22 +264,29 @@ function hurried(frames: Frame[]): Frame[] {
 }
 
 function settleOf(left: NonNullable<Track['leaving']>): Frame[] {
-  const frames = settleFrames(routeOfTrack(left), left.step)
+  const frames = settleFrames(routeOfTrack(left), left.step, left.kept)
   return left.fast === true ? hurried(frames) : frames
 }
 
 // Obecna scena schodzi do stójki od klatki `frame`: `since` to klatka, w której ork stoi.
-function settle(track: Track, frame: number, fast: boolean): Pick<Track, 'since' | 'leaving'> {
-  const left = { scene: track.scene, face: track.face, seed: track.seed, first: track.first, step: frame - track.since, at: frame, fast }
+function settle(track: Track, frame: number, fast: boolean, kept = false): Pick<Track, 'since' | 'leaving'> {
+  const left = { scene: track.scene, face: track.face, seed: track.seed, first: track.first, done: track.done, step: frame - track.since, at: frame, fast, kept }
   const back = settleOf(left).length
   return { since: frame + back, leaving: back > 0 ? left : null }
 }
 
 // Ork kończy robotę: scena schodzi do stójki, a `since` mówi, od której klatki może ruszyć w marsz.
 // W marszu do slotu albo w trakcie zejścia oś już zmierza do stójki w `since`, więc zostaje.
-export function trackOff(track: Track, frame: number): Track {
-  if (frame < track.since) return track
-  return { ...track, ...settle(track, frame, false) }
+// `kept`: w pokoju rekwizyt zostaje na ziemi, aż ork go odniesie.
+export function trackOff(track: Track, frame: number, kept = false): Track {
+  if (frame < track.since || track.stops !== undefined) return track
+  if (!kept) return { ...track, ...settle(track, frame, false) }
+  const route = routeOfTrack(track)
+  const leg = legAt(route, frame - track.since)
+  const settled = { ...track, ...settle(track, frame, false, true) }
+  // Oś trzyma odcinek, przy którym ork stoi: rekwizyt na ziemi to rekwizyt tej czynności.
+  const playing = track.scene === 'lounge' ? { done: track.done + leg } : { first: track.first + leg }
+  return { ...settled, ...playing, spent: track.spent + frame - track.since, stops: route.legs[leg]!.act.kit === undefined ? 'bare' : 'kit' }
 }
 
 // Siatka orka w klatce: w bezruchu poza z rekwizytem (pierwsza klatka pętli), w trakcie
@@ -240,6 +297,10 @@ export function trackGrid(track: Track, frame: number, variant: 'band' | 'pane',
   if (left !== null && frame < track.since) {
     const rows = settleOf(left)[frame - left.at]
     if (rows !== undefined) return finish(rows, variant, mood, false, frame)
+  }
+  if (track.stops !== undefined) {
+    const { act } = routeOfTrack(track).legs[0]!
+    return finish(track.stops === 'kit' ? entryOf(act)[kitLead(act) - 1]! : STAND, variant, mood, false, frame)
   }
   const step = Math.max(0, frame - track.since)
   return finish(actFrame(routeOfTrack(track), step, frame), variant, mood, step % BLINK_EVERY === BLINK_EVERY - 1, frame)
@@ -385,6 +446,11 @@ export function floorHomes(orcs: readonly { key: string; want: number; slot: num
   return Object.fromEntries(line.map((orc, i) => [orc.key, xs[i]!]))
 }
 
+// Czy dwie sceny mają sprzęt na tym samym meblu: wymiana bez chodzenia po podłodze.
+export function sameStation(a: StageScene, b: StageScene): boolean {
+  return STATIONS[a] === STATIONS[b]
+}
+
 // Co ork niesie ze stanowiska: stal z kuźni, zwój ze stołu, rudę ze sztolni.
 const LOADS: Record<Station, Frame | null> = { forge: ['RR'], table: ['hph'], trial: null, mine: ['oS', 'SS'] }
 
@@ -398,25 +464,75 @@ export function carried(scene: StageScene, x: number, rightward: boolean): Place
 // Pokój za orkami: 12 pikseli wysokości, sprzęty na górze, orki na dole. Pas ma 6 wierszy,
 // a piksele są kwadratowe, więc scena dostaje głębię bez zabierania ekranu i bez tła.
 export const ROOM_ROWS = 12
-const WALL_ROWS = 6
 
-// Sprzęty na ścianie: co ork bierze z głębi przy swoim stanowisku. `x` to odstęp od stanowiska.
+// Meble na ścianie. `x` to odstęp od stanowiska; meble rozsuwa `wallSpots`, żeby się nie wpychały.
 const WALL_PROPS: Record<Station, { x: number; rows: Frame }> = {
-  forge: { x: 8, rows: ['', '', 'EEEEEEEEE', '.C..C..C.', '.C..C..C.'] },
-  table: { x: 2, rows: ['', 'U.UU.U.UU.U', 'EEEEEEEEEEE', '.UU.U..UU.U', 'EEEEEEEEEEE'] },
+  forge: { x: 1, rows: ['', '', 'EEEEEEEEEEEEEE'] },
+  table: { x: 2, rows: ['', '', 'EEEEEEEEEEEEE', '.UU.U..UU.U..', '.UU.U..UU.U..', 'EEEEEEEEEEEEE'] },
   trial: { x: 2, rows: ['', '', '', 'EEEEEEEE', 'ECCCCCCE', 'EEEEEEEE'] },
   mine: { x: 2, rows: ['..EEEEEEEE..', '.EEIIIIIIEE.', '.EIIIIIIIIE.', '.EIIIIIIIIE.', '.EIIIIIIIIE.', '.EIIIIIIIIE.'] },
 }
 
+const WALL_ORDER: readonly Station[] = ['forge', 'table', 'trial', 'mine']
+
 const SCENE_OF: Record<Station, StageScene> = { forge: 'hammer', table: 'read', trial: 'test', mine: 'pick' }
 
-function wallX(station: Station, floor: number, hearth: boolean): number {
-  const { x, rows } = WALL_PROPS[station]
-  const wide = Math.max(...rows.map(row => row.length))
-  return Math.max(0, Math.min(floor - wide - 1, stationX(SCENE_OF[station], floor, hearth) + x))
+// Miejsce sprzętu każdej sceny na meblu jej stanowiska: stąd ork go bierze, tu odnosi.
+// `x`, `y` liczą się od lewego górnego rogu mebla; zdjęty sprzęt zostawia puste miejsce.
+const STASH: Record<StageScene, { x: number; y: number; rows: Frame }> = {
+  hammer: { x: 0, y: 3, rows: ['SS', '.h', '.h'] },
+  build: { x: 3, y: 3, rows: ['.h', '.h', 'ss'] },
+  seal: { x: 6, y: 3, rows: ['.h', 'SS', 'dd'] },
+  horn: { x: 9, y: 3, rows: ['t.', '.t', 'tt'] },
+  lounge: { x: 12, y: 3, rows: ['vv', 'vv', 'hh'] },
+  read: { x: 0, y: 0, rows: ['BU', 'BU'] },
+  plan: { x: 3, y: 0, rows: ['pp', 'hh'] },
+  think: { x: 6, y: 0, rows: ['.y', 'ss'] },
+  write: { x: 8, y: 0, rows: ['j.', 'nn'] },
+  ask: { x: 11, y: 0, rows: ['pn', '.h'] },
+  test: { x: 2, y: 4, rows: ['iWfd'] },
+  pick: { x: 2, y: 3, rows: ['SS', '.h', '.h'] },
+  tear: { x: 5, y: 4, rows: ['dd', 'hh'] },
+  torch: { x: -1, y: 1, rows: [] },
+  scout: { x: 8, y: 2, rows: ['S', 'h', 'h', 'h'] },
+  raven: { x: 5, y: 1, rows: ['wy', 'ww'] },
 }
 
-// Sprzęty na ścianie, bez tła: pusta komórka zostaje kolorem terminala. Stałe dla szerokości, liczone raz.
+const wallCache = new Map<string, Record<Station, number>>()
+
+// Lewe krawędzie mebli: każdy jak najbliżej stanowiska, bez nachodzenia na sąsiada.
+function wallSpots(floor: number, hearth: boolean): Record<Station, number> {
+  const key = `${floor}:${hearth}`
+  const known = wallCache.get(key)
+  if (known) return known
+  const wide = WALL_ORDER.map(station => Math.max(...WALL_PROPS[station].rows.map(row => row.length)))
+  const xs = WALL_ORDER.map(station => stationX(SCENE_OF[station], floor, hearth) + WALL_PROPS[station].x)
+  xs.forEach((x, i) => { xs[i] = i === 0 ? x : Math.max(x, xs[i - 1]! + wide[i - 1]! + 1) })
+  for (let i = xs.length - 1; i >= 0; i -= 1) xs[i] = Math.max(0, Math.min(xs[i]!, i === xs.length - 1 ? floor - wide[i]! - 1 : xs[i + 1]! - wide[i]! - 1))
+  const spots = Object.fromEntries(WALL_ORDER.map((station, i) => [station, xs[i]!])) as Record<Station, number>
+  wallCache.set(key, spots)
+  return spots
+}
+
+function wallX(station: Station, floor: number, hearth: boolean): number {
+  return wallSpots(floor, hearth)[station]
+}
+
+// Prycze hordy pod ścianą, od paleniska po sztolnię: kumpel śpi przy swoim fachu.
+const BEDS: readonly Exclude<Face, null>[] = ['Krux', 'Grom', 'Ochra', 'Piryt', 'Młot', 'Niuch', 'Lont']
+const COT: Frame = ['', '', 'hhhhhhh', 'x.....x']
+const COT_Y = 6
+const SLEEPER: Frame = ['.gg....', 'gGgbbGG']
+
+// Lewa krawędź pryczy; ork bez imienia wychodzi ze sztolni i tam wraca.
+export function bedX(face: Face, floor: number, hearth: boolean): number {
+  if (face === null) return depthSpot('pick', floor, hearth)
+  const left = floorStart(hearth)
+  const step = (floor - left) / BEDS.length
+  return left + Math.max(0, Math.floor(step * BEDS.indexOf(face) + (step - COT[2]!.length) / 2))
+}
+
+// Meble i prycze, bez tła: pusta komórka zostaje kolorem terminala. Stałe dla szerokości, liczone raz.
 const roomCache = new Map<string, string[][]>()
 
 function roomBase(width: number, hearth: boolean): string[][] {
@@ -424,12 +540,11 @@ function roomBase(width: number, hearth: boolean): string[][] {
   const known = roomCache.get(key)
   if (known) return known
   const room = Array.from({ length: ROOM_ROWS }, () => Array.from({ length: width }, (): string => '.'))
-  for (const station of Object.keys(WALL_PROPS) as Station[]) {
-    const left = wallX(station, width, hearth)
-    WALL_PROPS[station].rows.forEach((row, y) => [...row].forEach((cell, dx) => {
-      if (cell !== '.' && room[y]?.[left + dx] !== undefined) room[y]![left + dx] = cell
-    }))
-  }
+  const stamp = (rows: Frame, left: number, top: number) => rows.forEach((row, y) => [...row].forEach((cell, dx) => {
+    if (cell !== '.' && room[top + y]?.[left + dx] !== undefined) room[top + y]![left + dx] = cell
+  }))
+  for (const station of WALL_ORDER) stamp(WALL_PROPS[station].rows, wallX(station, width, hearth), 0)
+  for (const face of BEDS) stamp(COT, bedX(face, width, hearth), COT_Y)
   roomCache.set(key, room)
   return room
 }
@@ -462,18 +577,20 @@ function roomLife(room: string[][], width: number, frame: number, hearth: boolea
   // Kanarek to monitoring: przy czerwonych testach szarzeje i przestaje skakać.
   if (state.red) put(cage + 2, 2, 'V')
   else put(cage + 1 + (state.alive ? Math.floor(frame / 4) % 3 : 1), 2, 'Z')
-  // Haki hordy: fartuch wisi, gdy kumpla nie ma na scenie. Ciemniejszy niż noszony, bo w cieniu ściany.
-  const pegs = cage + 9
-  if (pegs + 2 * MATES.length < wallX('mine', width, hearth)) {
-    MATES.forEach((mate, i) => {
-      put(pegs + 2 * i, 1, 'C')
-      if (!state.absent.includes(mate)) return
-      put(pegs + 2 * i, 2, String(i + 1))
-      put(pegs + 2 * i, 3, String(i + 1))
-    })
+  // Horda śpi na pryczach, gdy nie ma jej w robocie.
+  for (const face of state.absent) {
+    const left = bedX(face, width, hearth)
+    const shade = face === 'Krux' ? 'b' : String(MATES.indexOf(face) + 1)
+    SLEEPER.forEach((row, dy) => [...row].forEach((cell, dx) => { if (cell !== '.') put(left + dx, COT_Y + dy, cell === 'b' ? shade : cell) }))
+    if (state.alive && face !== 'Krux' && (frame + left) % 24 < 8) put(left - 1, COT_Y - 1 - Math.floor(((frame + left) % 24) / 4), 'm')
+  }
+  // Runa snu nad Kruxem, gdy cały pokój dawno zamarł.
+  if (state.nap) {
+    const left = bedX('Krux', width, hearth)
+    ;(['mmm', '..m', '.m.'] as const).forEach((row, dy) => [...row].forEach((cell, dx) => { if (cell !== '.') put(left + 8 + dx, COT_Y - 2 + dy, cell) }))
   }
   // Pieczęcie: każdy commit sesji to czerwona kropka wosku na ścianie, na wolnym kamieniu.
-  const wax = wallX('table', width, hearth) + 13
+  const wax = wallX('table', width, hearth) + 14
   for (let i = 0; i < Math.min(state.seals, MAX_SEALS); i += 1) {
     const cell = room[5]?.[wax + 2 * i]
     if (cell === '.') put(wax + 2 * i, 5, 'd')
@@ -495,10 +612,11 @@ function roomLife(room: string[][], width: number, frame: number, hearth: boolea
   }
 }
 
-// Co pokój wie o robocie: zdarzenie, którym żyje Krux, ruch, czerwone testy, pieczęcie, nieobecni.
-export type RoomState = { feel: { kind: KruxEvent | 'handoff'; age: number } | null; alive: boolean; red: boolean; seals: number; absent: readonly KruxMate[]; phase: DayPhase }
+// Co pokój wie o robocie: zdarzenie, którym żyje Krux, ruch, czerwone testy, pieczęcie, kto śpi,
+// czyj sprzęt zszedł ze ściany.
+export type RoomState = { feel: { kind: KruxEvent | 'handoff'; age: number } | null; alive: boolean; red: boolean; seals: number; absent: readonly Exclude<Face, null>[]; phase: DayPhase; taken: readonly StageScene[]; nap: boolean }
 
-const ROOM_AT_REST: RoomState = { feel: null, alive: true, red: false, seals: 0, absent: [], phase: 'day' }
+const ROOM_AT_REST: RoomState = { feel: null, alive: true, red: false, seals: 0, absent: [], phase: 'day', taken: [], nap: false }
 
 // Okienko na ścianie: drewniana rama, w środku niebo o tej porze; nocą gwiazda.
 function roomSky(room: string[][], width: number, hearth: boolean, phase: DayPhase): void {
@@ -519,15 +637,24 @@ export function roomGrid(width: number, frame: number, hearth: boolean, state: P
   const full = { ...ROOM_AT_REST, ...state }
   const { feel } = full
   const room = roomBase(width, hearth).map(row => [...row])
+  for (const scene of Object.keys(STASH) as StageScene[]) {
+    if (full.taken.includes(scene)) continue
+    const { x, y, rows } = STASH[scene]
+    const left = wallX(STATIONS[scene], width, hearth) + x
+    rows.forEach((row, dy) => [...row].forEach((cell, dx) => { if (cell !== '.' && room[y + dy]?.[left + dx] !== undefined) room[y + dy]![left + dx] = cell }))
+  }
   roomSky(room, width, hearth, full.phase)
   roomLife(room, width, frame, hearth, full)
   const red = feel?.kind === 'test-fail' || feel?.kind === 'build-fail' || feel?.kind === 'zawał'
   const bright = feel?.kind === 'test-pass' || feel?.kind === 'build-pass' || feel?.kind === 'commit'
-  // Druga pochodnia świeci przy wejściu do sztolni, obok haków.
-  for (const x of [Math.round(width * 0.17), wallX('mine', width, hearth) - 1]) {
-    if (x >= width) continue
+  // Pierwsza pochodnia świeci między kuźnią a regałem, druga przy wejściu do sztolni:
+  // tę ork bierze ze sobą, gdy idzie szukać.
+  const between = Math.round((wallX('forge', width, hearth) + WALL_PROPS.forge.rows[2]!.length + wallX('table', width, hearth)) / 2)
+  for (const x of [between, wallX('mine', width, hearth) - 1]) {
+    if (x >= width || x < 0) continue
     room[3]![x] = 'E'
     room[4]![x] = 'E'
+    if (x !== between && full.taken.includes('torch')) continue
     room[2]![x] = red ? 'R' : bright ? 'Z' : (frame + x) % 3 === 0 ? 'Z' : 'Q'
     room[1]![x] = red ? 'Q' : bright ? 'Z' : (frame + x) % 4 === 1 ? 'Q' : room[1]![x]!
   }
@@ -558,32 +685,62 @@ const FAR_ORCS: readonly (readonly [Frame, Frame])[] = [
 ]
 const FEET = [10, 8, 7] as const
 
-// Wyprawa w głąb: wejście, chwila przy sprzęcie, powrót z ładunkiem.
-const ERRAND_IN = 9
-const ERRAND_HOLD = 5
-export const ERRAND_FRAMES = 2 * ERRAND_IN + ERRAND_HOLD
+export type Far = { rows: readonly string[]; x: number; y: number }
 
-// Co ork przynosi z głębi: piksel przy dłoni, od chwili, gdy sięgnął po sprzęt.
-const ERRAND_LOADS: Record<Station, string> = { forge: 'C', table: 'p', trial: 's', mine: 'q' }
-
-// Kolumna orka przy sprzęcie na ścianie.
-export function depthSpot(scene: StageScene, floor: number, hearth: boolean): number {
-  const station = STATIONS[scene]
-  const wide = Math.max(...WALL_PROPS[station].rows.map(row => row.length))
-  return wallX(station, floor, hearth) + Math.floor(wide / 2) - 2
+function levelOf(depth: number): number {
+  return Math.max(1, Math.ceil(depth * FAR_ORCS.length)) - 1
 }
 
-// Poza w klatce `t` wyprawy: skąd do sprzętu i z powrotem, wielkość z głębokości.
-export function errandPose(t: number, from: number, spot: number, scene: StageScene, face: Face): { rows: string[]; x: number; y: number } {
-  const depth = t < ERRAND_IN ? t / ERRAND_IN : t < ERRAND_IN + ERRAND_HOLD ? 1 : Math.max(0, ERRAND_FRAMES - t) / ERRAND_IN
-  const level = Math.max(1, Math.ceil(depth * FAR_ORCS.length)) - 1
-  const rows = FAR_ORCS[level]![t % 2]!
-  const x = Math.round(from + (spot - from) * depth)
-  const y = FEET[level]! - rows.length + 1
-  const dressed = dress(rows, face)
-  if (t < ERRAND_IN + ERRAND_HOLD - 1) return { rows: dressed, x, y }
-  // Ładunek przy dłoni po prawej, na wysokości fartucha.
-  return { rows: dressed.map((row, i) => (i === 1 ? `${row}${ERRAND_LOADS[STATIONS[scene]]}` : row)), x, y }
+// Ork w drodze przez głąb pokoju: `depth` 0 tuż przy widzu, 1 przy ścianie.
+export function farPose(depth: number, x: number, step: number, face: Face): Far {
+  const level = levelOf(depth)
+  const rows = FAR_ORCS[level]![step % 2]!
+  return { rows: dress(rows, face), x, y: FEET[level]! - rows.length + 1 }
+}
+
+// Wstawanie z pryczy: otwiera oczy, siada, staje przy niej.
+const RISING: readonly Frame[] = [['.gg....', 'grgbbGG'], ['gg.', 'rg.', 'bbG']]
+export const RISE_FRAMES = RISING.length + 1
+
+export function risePose(t: number, bed: number, face: Face): Far {
+  const rows = RISING[t]
+  return rows === undefined ? farPose(1, bed, t, face) : { rows: dress(rows, face), x: bed, y: COT_Y + 2 - rows.length }
+}
+
+// Wyprawa do ściany: wejście, chwila przy sprzęcie, powrót.
+const ERRAND_IN = 7
+const ERRAND_HOLD = 3
+export const ERRAND_FRAMES = 2 * ERRAND_IN + ERRAND_HOLD
+// Przy sprzęcie, w tej klatce wyprawy, ork odkłada jedno i bierze drugie.
+export const ERRAND_SWAP = ERRAND_IN + Math.floor(ERRAND_HOLD / 2)
+
+// Kolumna orka przy miejscu sprzętu tej sceny na ścianie.
+export function depthSpot(scene: StageScene, floor: number, hearth: boolean): number {
+  const station = STATIONS[scene]
+  return wallX(station, floor, hearth) + STASH[scene].x - 1
+}
+
+// Rekwizyt zmniejszony do `size` wierszy: komórka bierze pierwszy niepusty piksel swojego pola.
+function shrunk(kit: Frame, size: number): string[] {
+  const grid = pad(kit)
+  const ratio = H / size
+  return Array.from({ length: size }, (_, y) => Array.from({ length: Math.ceil(W / ratio) }, (_, x) => {
+    const cells = grid.slice(Math.floor(y * ratio), Math.ceil((y + 1) * ratio)).flatMap(row => [...row.slice(Math.floor(x * ratio), Math.ceil((x + 1) * ratio))])
+    return cells.find(cell => cell !== '.') ?? '.'
+  }).join(''))
+}
+
+export type ErrandRoute = { spot: number; back: number; took?: Frame; brings?: Frame }
+
+// Poza w klatce `t` wyprawy: do sprzętu i z powrotem, wielkość z głębokości, rekwizyt razem z orkiem.
+export function errandPose(t: number, from: number, route: ErrandRoute, face: Face): Far[] {
+  const going = t < ERRAND_IN
+  const holding = !going && t < ERRAND_IN + ERRAND_HOLD
+  const depth = going ? t / ERRAND_IN : holding ? 1 : Math.max(0, ERRAND_FRAMES - t) / ERRAND_IN
+  const x = holding ? lerp(route.spot, route.back, (t - ERRAND_IN) / ERRAND_HOLD) : lerp(from, going ? route.spot : route.back, depth)
+  const orc = farPose(depth, x, t, face)
+  const kit = t < ERRAND_SWAP ? route.took : route.brings
+  return kit === undefined ? [orc] : [{ rows: shrunk(kit, orc.rows.length), x, y: orc.y }, orc]
 }
 
 // Scenka dwóch orków: gospodarz z lewej, gość z prawej, twarzą w twarz, między nimi miejsce na rekwizyt.
@@ -635,7 +792,7 @@ export function dayPhase(hour: number): DayPhase {
 
 const SKY: Record<DayPhase, string> = { night: '7', dawn: '8', day: '9', dusk: '0' }
 
-// Ork w drodze: wbiega z prawej do slotu albo schodzi w prawo; nogi na zmianę.
+// Ork w drodze po podłodze: nogi na zmianę.
 export function walkerRows(step: number, face: Face): string[] {
   return dress(walker(step), face)
 }

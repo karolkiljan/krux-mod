@@ -1,8 +1,8 @@
-import { SLIDE, at, croucher, draw, flame, head, lerp, line, pingPong, stander, stroll, walker } from '../stage'
+import { at, croucher, draw, flame, head, lerp, line, pingPong, stander, stroll, walker } from '../stage'
 import type { Act, Frame, Layer, Look, Point } from '../stage'
 
 // Czytanie: zwój, księga na pulpicie, kamienna tablica z runami, książka przy świecy.
-// Każdy rekwizyt wyjmuje się, wjeżdża albo wyrasta na oczach; przy zejściu wraca tą samą drogą.
+// Każdy rekwizyt ork przynosi z regału i tam go odnosi.
 
 // Stojący ork z rękami przy bokach albo z ręką wyciągniętą w wierszu 3.
 
@@ -37,8 +37,9 @@ function scrollLoop(t: number): Frame {
 
 const scrollAct: Act = {
   name: 'zwój',
+  kit: draw(scroll(0, 3)),
   intro: [
-    // Wyjąć zwinięty zwój zza fartucha, podnieść do oczu, rozwinąć.
+    // Podnieść zwinięty zwój do oczu, rozwinąć.
     ...[3, 2, 1].map(y => draw([stander('right', 'g'), 0, 0], scroll(0, y))),
     ...[2, 4, 6, 8, 10].map(open => draw([stander('right', 'g'), 0, 0], scroll(open, 1))),
   ],
@@ -59,8 +60,8 @@ const PAGES: readonly Frame[] = [
 const CLOSED: Frame = ['', 'BBBBB', 'jjjjB', 'BBBBB']
 const SHELF = 3
 
-function lectern(dx: number, book: readonly Layer[]): Layer[] {
-  return [[LECTERN, LX + dx, 0], ...book.map(([s, x, y]) => [s, x + dx, y] as Layer)]
+function lectern(book: readonly Layer[]): Layer[] {
+  return [[LECTERN, LX, 0], ...book]
 }
 
 function openBook(left: number, right: number): Layer[] {
@@ -83,17 +84,17 @@ function bookLoop(t: number): Frame {
   const right = turning ? left + 3 : left + 1
   const look: Look = turning ? 'right' : p < 5 ? 'mid' : 'right'
   const flip = turning ? FLIP[p - 10]! : []
-  return draw(...lectern(0, openBook(left, right)), ...flip, [stander(look, 'g'), SHELF, 0])
+  return draw(...lectern(openBook(left, right)), ...flip, [stander(look, 'g'), SHELF, 0])
 }
 
 const book: Act = {
   name: 'księga',
+  kit: draw(...lectern([[CLOSED, LX + 4, 0]])),
   intro: [
-    // Pulpit z zamkniętą księgą wjeżdża z prawej, Krux podchodzi i otwiera okładkę.
-    ...[12, 8, 4, 0].map(dx => draw(...lectern(dx, [[CLOSED, LX + 4, 0]]), [stander('right'), 0, 0])),
-    ...stroll(SHELF, lectern(0, [[CLOSED, LX + 4, 0]])),
-    draw(...lectern(0, [[PAGES[1]!, LX + 5, 1], [['BBBBB'], LX + 4, 3], [['B', 'B', 'B'], LX + 4, 0]]), [stander('right', 'g'), SHELF, 0]),
-    draw(...lectern(0, [[PAGES[1]!, LX + 5, 1], [['BBBBB'], LX + 4, 3], [['BB', '..B'], LX + 2, 1]]), [stander('mid', 'g'), SHELF, 0]),
+    // Krux podchodzi do pulpitu i otwiera okładkę.
+    ...stroll(SHELF, lectern([[CLOSED, LX + 4, 0]])),
+    draw(...lectern([[PAGES[1]!, LX + 5, 1], [['BBBBB'], LX + 4, 3], [['B', 'B', 'B'], LX + 4, 0]]), [stander('right', 'g'), SHELF, 0]),
+    draw(...lectern([[PAGES[1]!, LX + 5, 1], [['BBBBB'], LX + 4, 3], [['BB', '..B'], LX + 2, 1]]), [stander('mid', 'g'), SHELF, 0]),
   ],
   length: 26,
   loop: bookLoop,
@@ -131,9 +132,9 @@ function runesLoop(t: number): Frame {
 
 const runes: Act = {
   name: 'tablica',
+  kit: draw(...tablet(0, () => false, 'n')),
   intro: [
-    // Tablica wyrasta z ziemi wiersz po wierszu, Krux podchodzi i unosi palec.
-    ...[5, 4, 3, 2, 1, 0].map(y => draw(...tablet(y, () => false, 'n'), [stander('right'), 0, 0])),
+    // Krux podchodzi do tablicy i unosi palec.
     ...stroll(TRACE, tablet(0, () => false, 'n')),
     draw(...tablet(0, () => false, 'n'), [stander('right'), TRACE, 0], ...line(SHOULDER, [10, 3], 'g')),
     draw(...tablet(0, () => false, 'n'), [stander('right'), TRACE, 0], ...line(SHOULDER, [11, 2], 'g')),
@@ -170,10 +171,9 @@ function carrying(step: number, x: number): Frame {
 
 const candleAct: Act = {
   name: 'świeca',
+  kit: draw([STOOL, SX, 0], ...candle(0, 6, 0)),
   intro: [
-    // Stołek wjeżdża z prawej, Krux ze świecą w ręku podchodzi i siada,
-    // stawia świecę obok, wyjmuje książkę zza fartucha.
-    ...[16, 11, 7].map((x, i) => draw([STOOL, x, 0], ...candle(i, 6, 0), [walker(0, 'right'), 0, 0])),
+    // Krux ze świecą w ręku wchodzi na stołek i siada, stawia świecę obok, wyjmuje książkę zza fartucha.
     ...[1, 2, 3, SX].map((x, i) => carrying(i + 3, x)),
     draw([STOOL, SX, 0], ...candle(7, SX + 6, 1), [CROUCH, SX, 0]),
     draw([STOOL, SX, 0], ...candle(8, 13, 1), [SEATED, SX, 0]),
@@ -209,9 +209,9 @@ function sniffScrollLoop(t: number): Frame {
 const sniffScroll: Act = {
   name: 'obwąchiwanie',
   who: ['Niuch'],
+  kit: draw(...(0 <= 2 ? line([5, 4], [6, 4], 'g') : []), [SNIFF_SCROLL, 7, 1]),
   intro: [
-    // Zwój wjeżdża do twarzy; dłoń chwyta dolny drążek, nie zasłaniając nosa.
-    ...SLIDE.map(dx => draw([stander('right'), 0, 0], ...(dx <= 2 ? line([5, 4], [6, 4], 'g') : []), [SNIFF_SCROLL, 7 + dx, 1])),
+    // Dłoń chwyta dolny drążek, nie zasłaniając nosa.
     sniffScrollLoop(0),
   ],
   length: 16,
@@ -219,20 +219,20 @@ const sniffScroll: Act = {
 }
 
 // ——— Piryt: lupa jubilera ———
-// Szkło i zwój przyjeżdżają na pulpicie; lupa wędruje wzdłuż drobnych run.
+// Szkło i zwój leżą na pulpicie; lupa wędruje wzdłuż drobnych run.
 const JEWEL_SCROLL: Frame = ['hpppppph', 'hpnnpnph']
 const JEWEL_DESK: Frame = ['hhhhhhhhh', 'x......x.']
 const JEWEL_LENS: Frame = ['.ss.', 'siis', '.ss.']
 
-function jewelerProps(dx: number, lensX: number): Layer[] {
-  return [[JEWEL_DESK, 11 + dx, 4], [JEWEL_SCROLL, 11 + dx, 2], [JEWEL_LENS, lensX + dx, 0], at('h', lensX + dx + 1, 3)]
+function jewelerProps(lensX: number): Layer[] {
+  return [[JEWEL_DESK, 11, 4], [JEWEL_SCROLL, 11, 2], [JEWEL_LENS, lensX, 0], at('h', lensX + 1, 3)]
 }
 
 function jewelerPose(lensX: number, look: Look): Frame {
   return draw(
     [stander(look), 2, 0],
     ...line([7, 3], [lensX, 3], 'g'),
-    ...jewelerProps(0, lensX),
+    ...jewelerProps(lensX),
   )
 }
 
@@ -245,10 +245,10 @@ function jewelerLoop(t: number): Frame {
 const jeweler: Act = {
   name: 'lupa jubilera',
   who: ['Piryt'],
+  kit: draw(...jewelerProps(15)),
   intro: [
-    // Pulpit wjeżdża z lupą; Piryt podchodzi i przesuwa szkło pod oko.
-    ...SLIDE.map(dx => draw(...jewelerProps(dx, 15), [stander('right'), 0, 0])),
-    ...stroll(2, jewelerProps(0, 15)),
+    // Piryt podchodzi i przesuwa szkło pod oko.
+    ...stroll(2, jewelerProps(15)),
     ...[15, 14, 13, 12, 11, 10].map(x => jewelerPose(x, 'right')),
     jewelerLoop(0),
   ],
@@ -281,9 +281,9 @@ function secretLoop(t: number): Frame {
 const secret: Act = {
   name: 'tajny atrament',
   who: ['Niuch'],
+  kit: draw([SECRET_GLASS, 8, 0]),
   intro: [
-    // Szkło wjeżdża; Niuch chwyta dolną ramę i nabiera powietrza.
-    ...SLIDE.map(dx => draw([SECRET_GLASS, 8 + dx, 0], [stander('right'), 0, 0])),
+    // Niuch chwyta dolną ramę i nabiera powietrza.
     draw([SECRET_GLASS, 8, 0], [stander('right', 'g'), 0, 0]),
     secretLoop(0),
   ],
@@ -293,13 +293,13 @@ const secret: Act = {
 
 // ——— Piryt: szukanie pęknięcia ———
 // Dwie dłonie zginają cienką blachę; ciemna rysa rozchodzi się przez środek.
-function crackPlate(dx: number, bend: number, split: number): Layer[] {
+function crackPlate(bend: number, split: number): Layer[] {
   const rows = ['sss', `${'.'.repeat(bend)}sss`, `${'.'.repeat(bend)}sss`, 'sss']
   return [
-    [rows, 8 + dx, 1],
-    ...(split >= 1 ? [at('n', 9 + dx + bend, 2)] : []),
-    ...(split >= 2 ? [at('n', 9 + dx + bend, 3)] : []),
-    ...(split >= 3 ? [at('R', 8 + dx + bend, 3)] : []),
+    [rows, 8, 1],
+    ...(split >= 1 ? [at('n', 9 + bend, 2)] : []),
+    ...(split >= 2 ? [at('n', 9 + bend, 3)] : []),
+    ...(split >= 3 ? [at('R', 8 + bend, 3)] : []),
   ]
 }
 
@@ -308,7 +308,7 @@ function crackPose(bend: number, split: number): Frame {
     [stander(split >= 2 ? 'shut' : 'right'), 0, 0],
     ...line([5, 3], [7, 1], 'g'),
     ...line([5, 4], [7, 4], 'g'),
-    ...crackPlate(0, bend, split),
+    ...crackPlate(bend, split),
   )
 }
 
@@ -320,11 +320,11 @@ function crackLoop(t: number): Frame {
 const crack: Act = {
   name: 'szukanie pęknięcia',
   who: ['Piryt'],
+  kit: draw(...crackPlate(0, 0)),
   intro: [
-    // Blacha wjeżdża; najpierw dolna dłoń, potem górna chwyta jej brzeg.
-    ...SLIDE.map(dx => draw(...crackPlate(dx, 0, 0), [stander('right'), 0, 0])),
-    draw(...crackPlate(0, 0, 0), [stander('right'), 0, 0], ...line([5, 4], [7, 4], 'g')),
-    draw(...crackPlate(0, 0, 0), [stander('right'), 0, 0], ...line([5, 4], [7, 4], 'g'), ...line([5, 3], [7, 2], 'g')),
+    // Najpierw dolna dłoń, potem górna chwyta brzeg blachy.
+    draw(...crackPlate(0, 0), [stander('right'), 0, 0], ...line([5, 4], [7, 4], 'g')),
+    draw(...crackPlate(0, 0), [stander('right'), 0, 0], ...line([5, 4], [7, 4], 'g'), ...line([5, 3], [7, 2], 'g')),
     crackLoop(0),
   ],
   length: 16,

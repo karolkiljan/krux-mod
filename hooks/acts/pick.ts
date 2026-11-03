@@ -1,8 +1,8 @@
-import { SLIDE, STAND, at, croucher, draw, line, noise, pusher, stander } from '../stage'
+import { STAND, at, croucher, draw, line, noise, pusher, stander } from '../stage'
 import type { Act, Frame, Layer, Look, Point } from '../stage'
 
-// Kopalnia przy Bash. Skała wyrasta z ziemi albo przesuwa się z prawej z narzędziem w sobie,
-// Krux chwyta trzonek i bierze się do roboty; przy zejściu wbija narzędzie z powrotem i skała odchodzi.
+// Kopalnia przy Bash. Ork wytacza skałę ze sztolni z narzędziem w środku, chwyta trzonek
+// i bierze się do roboty; przy zejściu wbija narzędzie z powrotem i odtacza skałę.
 
 // Stójka z ręką do połowy wyciągniętą: tak Krux sięga po trzonek.
 const HALF: Frame = stander('mid', 'g')
@@ -48,16 +48,16 @@ const ROCK: Frame = ['..kkk...', '.kkkkk..', '.kkkkkk.', '.kkkkkkk', 'kkkkkkkk']
 // Kilof wbity w skałę: trzonek wystaje w stronę Kruxa.
 const STUCK: Frame = ['......S', 'hhhhhhS', '......S']
 
-// Skała wyrasta z ziemi o `sink` pikseli niżej, z kilofem w środku.
-const rockAt = (sink: number): Layer[] => [[ROCK, 14, 1 + sink], [STUCK, 8, 2 + sink]]
+// Skała z kilofem w środku.
+const STUCK_ROCK: readonly Layer[] = [[ROCK, 14, 1], [STUCK, 8, 2]]
 
-// Kilof: skała wyrasta z ziemi z wbitym kilofem, Krux wyrywa go; pętla to zamach, uderzenie, odłamki.
+// Kilof: skała stoi z wbitym kilofem, Krux wyrywa go; pętla to zamach, uderzenie, odłamki.
 const rock: Act = {
   name: 'kilof',
+  kit: draw(...STUCK_ROCK),
   intro: [
-    ...[4, 3, 2, 1, 0].map(sink => draw(...rockAt(sink), [STAND, 0, 0])),
-    draw(...rockAt(0), [HALF, 0, 0]),
-    draw(...rockAt(0), [stander('mid', 'gg'), 0, 0]),
+    draw(...STUCK_ROCK, [HALF, 0, 0]),
+    draw(...STUCK_ROCK, [stander('mid', 'gg'), 0, 0]),
     PICK[1]!,
   ],
   length: PICK_CYCLE.length,
@@ -112,17 +112,14 @@ function shovelLoop(t: number): Frame {
 }
 
 // Łopata wbita w kopczyk, trzonek oparty skośnie.
-const leaning = (sink: number): Layer[] => [[HEAP, HEAP_AT, 4 + sink], ...line([8, 1 + sink], [9, 3 + sink], 'h'), [['S'], 9, 4 + sink]]
+const LEANING: readonly Layer[] = [[HEAP, HEAP_AT, 4], ...line([8, 1], [9, 3], 'h'), [['S'], 9, 4]]
 
 const shovel: Act = {
   name: 'łopata',
+  kit: draw(...LEANING, railsAt(RAILS), ...cartAt(CART_AT, 0)),
   intro: [
-    // Kopczyk rudy wyrasta z ziemi z łopatą w środku.
-    ...[2, 1, 0].map(sink => draw(...leaning(sink), [STAND, 0, 0])),
-    // Szyny z pustym wózkiem wjeżdżają z prawej.
-    ...SLIDE.map(dx => draw(...leaning(0), railsAt(RAILS + dx), ...cartAt(CART_AT + dx, 0), [STAND, 0, 0])),
     // Chwycić trzonek.
-    draw(...leaning(0), railsAt(RAILS), ...cartAt(CART_AT, 0), [STAND, 0, 0], [['g'], 6, 3], [['g'], 7, 2]),
+    draw(...LEANING, railsAt(RAILS), ...cartAt(CART_AT, 0), [STAND, 0, 0], [['g'], 6, 3], [['g'], 7, 2]),
     draw([HEAP, HEAP_AT, 4], railsAt(RAILS), ...cartAt(CART_AT, 0), ...spade(SPADE.low)),
   ],
   length: 40,
@@ -162,9 +159,9 @@ function drillLoop(t: number): Frame {
 
 const auger: Act = {
   name: 'świder',
+  kit: draw([RUBBLE[0], WALL_AT - 2, 5], ...drill(8, 0), [WALL, WALL_AT, 0]),
   intro: [
-    // Ściana z wbitym świdrem przesuwa się z prawej, Krux sięga po oprawę.
-    ...SLIDE.map(dx => draw([RUBBLE[0], WALL_AT - 2 + dx, 5], ...drill(8 + dx, 0), [WALL, WALL_AT + dx, 0], [STAND, 0, 0])),
+    // Krux sięga po oprawę świdra wbitego w ścianę.
     draw(RUBBLE, ...drill(8, 0), [WALL, WALL_AT, 0], [HALF, 0, 0]),
   ],
   length: 20,
@@ -181,12 +178,12 @@ const BOULDER_AT = 10
 const HOLE: readonly Point[] = [[10, 5], [11, 5], [12, 5]]
 
 // Głaz `sink` pikseli pod ziemią z wykopanymi `dug` pikselami dołka i ładunkiem `charge`.
-function boulder(sink: number, dug = 0, charge: readonly Layer[] = [], dx = 0): Layer[] {
+function boulder(sink: number, dug = 0, charge: readonly Layer[] = []): Layer[] {
   const hole = HOLE.slice(0, dug)
   // Dołek wycina piksele z głazu; ładunek siedzi w dołku i opada razem z głazem.
   const cut = draw([BOULDER, BOULDER_AT, 2]).map((row, y) =>
     [...row].map((cell, x) => (hole.some(([hx, hy]) => hx === x && hy === y) ? '.' : cell)).join(''))
-  return [[cut, dx, sink], ...charge.map(([sprite, x, y]) => [sprite, x + dx, y + sink] as Layer)]
+  return [[cut, 0, sink], ...charge.map(([sprite, x, y]) => [sprite, x, y + sink] as Layer)]
 }
 
 // Lont w przykucu; dłoń w punkcie `hand`, ręka od fartucha.
@@ -229,9 +226,8 @@ function undermining(t: number): Frame {
 const undermine: Act = {
   name: 'podkop',
   who: ['Lont'],
+  kit: draw(...boulder(0), ...DROPPED),
   intro: [
-    // Głaz z kilofkiem u stóp wjeżdża z prawej.
-    ...SLIDE.map(dx => draw(...boulder(0, 0, [], dx), ...DROPPED.map(([s, x, y]) => [s, x + dx, y] as Layer), [STAND, 0, 0])),
     draw(...boulder(0), ...DROPPED, [stander('right'), 0, 0]),
     // Przykucnąć, chwycić kilofek i unieść go.
     draw(...boulder(0), ...DROPPED, ...crouched('right', [7, 4])),
@@ -244,7 +240,7 @@ const undermine: Act = {
 }
 
 // ——— Rozpierak Lonta ———
-// Dwie połówki skały ze stalowym rozpierakiem w szczelinie wjeżdżają razem. Lont wykonuje
+// Dwie połówki skały ze stalowym rozpierakiem w szczelinie stoją razem. Lont wykonuje
 // trzy próbne ruchy pompką, dopiero za trzecim rozszerza szczelinę; odpuszcza zawór i zbiera siły.
 const SPLIT_LEFT: Frame = ['.kq', '.kk', 'qkk', 'kqk']
 const SPLIT_RIGHT: Frame = ['qk.', 'kk.', 'kqk', 'qkk']
@@ -253,14 +249,14 @@ const PUMP_DOWN = [0, 1, 0, 1, 0, 1, 2, 2, 1, 0, 0, 0, 0, 0, 0, 0] as const
 const SPLIT_GAP = [0, 0, 0, 0, 0, 0, 1, 2, 2, 2, 2, 1, 1, 0, 0, 0] as const
 
 // Pompa po lewej, przewód przy ziemi, teleskopowa stal między połówkami głazu.
-function splitterAt(dx: number, gap = 0, down = 0): Layer[] {
+function splitterAt(gap = 0, down = 0): Layer[] {
   return [
-    [SPLIT_LEFT, 14 + dx - gap, 2], [SPLIT_RIGHT, 17 + dx + gap, 2],
-    [['xxx', 'xsx'], PUMP_AT + dx, 4],
-    ...line([PUMP_AT + 1 + dx, 5], [17 + dx, 5], 'n'),
-    ...line([15 + dx - gap, 4], [18 + dx + gap, 4], 's'),
-    ...line([PUMP_AT + 1 + dx, 2 + down], [PUMP_AT + 1 + dx, 4], 's'),
-    [['hhh'], PUMP_AT + dx, 1 + down],
+    [SPLIT_LEFT, 14 - gap, 2], [SPLIT_RIGHT, 17 + gap, 2],
+    [['xxx', 'xsx'], PUMP_AT, 4],
+    ...line([PUMP_AT + 1, 5], [17, 5], 'n'),
+    ...line([15 - gap, 4], [18 + gap, 4], 's'),
+    ...line([PUMP_AT + 1, 2 + down], [PUMP_AT + 1, 4], 's'),
+    [['hhh'], PUMP_AT, 1 + down],
   ]
 }
 
@@ -269,18 +265,17 @@ function splitting(t: number): Frame {
   const gap = SPLIT_GAP[t]!
   // 0–5: trzy próby pompką; 6–10: mocny nacisk rozsuwa skałę; 11–15: odpuścić zawór.
   const valve = t >= 10 && t < 13
-  return draw(...splitterAt(0, gap, down), [stander(valve ? 'mid' : 'right'), 0, 0],
+  return draw(...splitterAt(gap, down), [stander(valve ? 'mid' : 'right'), 0, 0],
     ...line([6, 3], valve ? [PUMP_AT - 1, 4] : [PUMP_AT - 1, 1 + down], 'g'))
 }
 
 const splitter: Act = {
   name: 'rozpieranie skały',
   who: ['Lont'],
+  kit: draw(...splitterAt()),
   intro: [
-    // Głaz z rozpierakiem, przewodem i pompką wjeżdża z prawej.
-    ...SLIDE.map(dx => draw(...splitterAt(dx), [STAND, 0, 0])),
-    draw(...splitterAt(0), [stander('right', 'g'), 0, 0]),
-    draw(...splitterAt(0), [stander('right'), 0, 0], ...line([6, 3], [7, 2], 'g')),
+    draw(...splitterAt(), [stander('right', 'g'), 0, 0]),
+    draw(...splitterAt(), [stander('right'), 0, 0], ...line([6, 3], [7, 2], 'g')),
     splitting(0),
   ],
   length: PUMP_DOWN.length,

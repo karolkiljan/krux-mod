@@ -1,4 +1,4 @@
-import { SLIDE, STAND, draw, line, pingPong, stander } from '../stage'
+import { STAND, draw, line, pingPong, stander } from '../stage'
 import type { Act, Frame, Layer } from '../stage'
 
 // Próby bez rozstrzygania wyniku: kanarek nadal żyje, ciężar wraca,
@@ -23,8 +23,8 @@ function canaryLoop(t: number): Frame {
 const canary: Act = {
   name: 'kanarek',
   who: ['Krux', 'Młot'],
+  kit: draw(...cage(CAGE_X, 0, false)),
   intro: [
-    ...SLIDE.map(dx => draw(...cage(CAGE_X + dx, 0, false), [STAND, 0, 0])),
     draw(...cage(CAGE_X, 0, false), [stander('right', 'g'), 0, 0]),
     draw(...cage(CAGE_X, 0, false), [stander('right', 'gg'), 0, 0], [['p'], 8, 3]),
   ],
@@ -53,8 +53,8 @@ function loadLoop(t: number): Frame {
 
 const load: Act = {
   name: 'obciążenie',
+  kit: draw(...loadRig(RIG_X, 0), [['hhS'], 8, 3]),
   intro: [
-    ...SLIDE.map(dx => draw(...loadRig(RIG_X + dx, 0), [['hhS'], 8 + dx, 3], [STAND, 0, 0])),
     draw(...loadRig(RIG_X, 0), [['hhS'], 8, 3], [stander('right', 'g'), 0, 0]),
     draw(...loadRig(RIG_X, 0), ...line([8, 3], [10, 2], 'h'), [['S'], 10, 2], [stander('right', 'gg'), 0, 0]),
   ],
@@ -68,27 +68,27 @@ const load: Act = {
 const BENCH: Frame = ['hhhhhhhhhhhhh', '.x.........x.']
 const TUBES_X = [10, 14, 18] as const
 
-function tubes(dx: number, t: number): Layer[] {
+function tubes(t: number): Layer[] {
   const colors = ['W', 'f', 'd'] as const
-  return [[BENCH, 8 + dx, 4], ...TUBES_X.flatMap((x, i) => {
+  return [[BENCH, 8, 4], ...TUBES_X.flatMap((x, i) => {
     const liquid = colors[i]!
     const bubbleY = 3 - Math.floor(((t + i * 3) % 12) / 4)
-    return [[['i.i', `i${liquid}i`, 'iii'], x + dx, 1] as Layer, [['j'], x + dx + 1, bubbleY] as Layer]
+    return [[['i.i', `i${liquid}i`, 'iii'], x, 1] as Layer, [['j'], x + 1, bubbleY] as Layer]
   })]
 }
 
 function tubeLoop(t: number): Frame {
   const x = 9 + pingPong(t, 10)
   const drop = t % 8 === 4
-  return draw(...tubes(0, t), [stander('right', 'gg'), 0, 0], ...line([8, 3], [x, 0], 'h'), [['i'], x + 1, 0], ...(drop ? [[['W'], x + 1, 1] as Layer] : []))
+  return draw(...tubes(t), [stander('right', 'gg'), 0, 0], ...line([8, 3], [x, 0], 'h'), [['i'], x + 1, 0], ...(drop ? [[['W'], x + 1, 1] as Layer] : []))
 }
 
 const assay: Act = {
   name: 'fiolki',
+  kit: draw(...tubes(0), [['hi'], 8, 3]),
   intro: [
-    ...SLIDE.map(dx => draw(...tubes(dx, 0), [['hi'], 8 + dx, 3], [STAND, 0, 0])),
-    draw(...tubes(0, 0), [['hi'], 8, 3], [stander('right', 'g'), 0, 0]),
-    draw(...tubes(0, 0), ...line([8, 3], [9, 1], 'h'), [['i'], 10, 1], [stander('right', 'gg'), 0, 0]),
+    draw(...tubes(0), [['hi'], 8, 3], [stander('right', 'g'), 0, 0]),
+    draw(...tubes(0), ...line([8, 3], [9, 1], 'h'), [['i'], 10, 1], [stander('right', 'gg'), 0, 0]),
   ],
   length: 20,
   loop: tubeLoop,
@@ -100,24 +100,24 @@ const assay: Act = {
 const ABACUS: Frame = ['hhhhhhhhh', 'hsssssssh', 'h.......h', 'hsssssssh', 'hhhhhhhhh']
 const ABACUS_X = 12
 
-function abacusAt(dx: number, shift: number): Layer[] {
-  return [[ABACUS, ABACUS_X + dx, 1], [['yy'], 14 + dx + shift, 2], [['yy'], 17 + dx - shift, 4]]
+function abacusAt(shift: number): Layer[] {
+  return [[ABACUS, ABACUS_X, 1], [['yy'], 14 + shift, 2], [['yy'], 17 - shift, 4]]
 }
 
 function abacusLoop(t: number): Frame {
   const shift = Math.floor(pingPong(t, 4) * 3 / 4)
   const handY = t < 7 || t === 15 ? 2 : t === 7 || t === 14 ? 3 : 4
   const handX = handY === 4 ? 16 - shift : 13 + shift
-  return draw(...abacusAt(0, shift), [stander('right', 'gg'), 0, 0], ...line([8, 3], [handX, handY], 'g'))
+  return draw(...abacusAt(shift), [stander('right', 'gg'), 0, 0], ...line([8, 3], [handX, handY], 'g'))
 }
 
 const abacus: Act = {
   name: 'liczydło',
   who: ['Młot'],
+  kit: draw(...abacusAt(0)),
   intro: [
-    ...SLIDE.map(dx => draw(...abacusAt(dx, 0), [STAND, 0, 0])),
-    draw(...abacusAt(0, 0), [stander('right', 'g'), 0, 0]),
-    draw(...abacusAt(0, 0), [stander('right', 'gg'), 0, 0], ...line([8, 3], [10, 3], 'g')),
+    draw(...abacusAt(0), [stander('right', 'g'), 0, 0]),
+    draw(...abacusAt(0), [stander('right', 'gg'), 0, 0], ...line([8, 3], [10, 3], 'g')),
     abacusLoop(0),
   ],
   length: 16,
@@ -125,7 +125,7 @@ const abacus: Act = {
 }
 
 // ——— Próba dźwięku dzwonu ———
-// Dzwon wjeżdża z pobijakiem zawieszonym na belce, ręka zdejmuje pobijak. Po stuknięciu
+// Dzwon stoi z pobijakiem zawieszonym na belce, ręka zdejmuje pobijak. Po stuknięciu
 // jasna fala odchodzi od odlewu, a ręka wycofuje pobijak do następnej próby.
 const BELL: Frame = ['...h...', '..yyy..', '.yy.yy.', 'yyy.yyy', '...S...']
 const BELL_STAND: Frame = ['hhhhhhhhh', '........x', '........x', '........x', '........x', '......xxx']
@@ -133,22 +133,22 @@ const BELL_TAP = [10, 10, 11, 12, 13, 12, 11, 10, 10, 10, 10, 10] as const
 // Pobijak na haku belki: trzonek w górze, obuch w dole.
 const HANGING: Frame = ['h', 'S']
 
-function bellAt(dx: number): Layer[] {
-  return [[BELL_STAND, 12 + dx, 0], [BELL, 12 + dx, 0]]
+function bellAt(): Layer[] {
+  return [[BELL_STAND, 12, 0], [BELL, 12, 0]]
 }
 
 function bellLoop(t: number): Frame {
   const x = BELL_TAP[t]!
   const wave: Layer[] = t >= 5 && t <= 7 ? [[['j', '.', 'j'], 19 + t - 5, 1]] : []
-  return draw(...bellAt(0), [stander('right', 'gg'), 0, 0], ...line([8, 3], [x - 1, 3], 'g'), [['S', 'h'], x, 2], ...wave)
+  return draw(...bellAt(), [stander('right', 'gg'), 0, 0], ...line([8, 3], [x - 1, 3], 'g'), [['S', 'h'], x, 2], ...wave)
 }
 
 const bell: Act = {
   name: 'dzwon',
+  kit: draw(...bellAt(), [HANGING, 12, 1]),
   intro: [
-    ...SLIDE.map(dx => draw(...bellAt(dx), [HANGING, 12 + dx, 1], [STAND, 0, 0])),
-    draw(...bellAt(0), [HANGING, 12, 1], [stander('right', 'g'), 0, 0]),
-    draw(...bellAt(0), [HANGING, 12, 1], [stander('right', 'gg'), 0, 0], ...line([8, 3], [11, 2], 'g')),
+    draw(...bellAt(), [HANGING, 12, 1], [stander('right', 'g'), 0, 0]),
+    draw(...bellAt(), [HANGING, 12, 1], [stander('right', 'gg'), 0, 0], ...line([8, 3], [11, 2], 'g')),
     bellLoop(0),
   ],
   length: BELL_TAP.length,
@@ -162,27 +162,27 @@ const LOCKED_CHEST: Frame = ['.xxxxxxxx.', 'xhhhhhhhhx', 'xxxxssxxxx', 'xhhhhhhh
 const PULL_RING: Frame = ['.s.', 's.s', '.s.']
 const LATCH_PULL = [10, 10, 9, 8, 8, 9, 10, 10, 10, 10, 9, 8, 8, 9, 10, 10] as const
 
-function latchAt(dx: number, x: number): Layer[] {
+function latchAt(x: number): Layer[] {
   const tug = x === 8 ? -1 : 0
-  return [[LOCKED_CHEST, 12 + dx + tug, 1],
-    ...line([x + dx + 2, 3], [15 + dx + tug, 3], 'm'),
-    [PULL_RING, x + dx, 2]]
+  return [[LOCKED_CHEST, 12 + tug, 1],
+    ...line([x + 2, 3], [15 + tug, 3], 'm'),
+    [PULL_RING, x, 2]]
 }
 
 function latchLoop(t: number): Frame {
   const x = LATCH_PULL[t]!
   // Przy drugim szarpnięciu zaciska oczy, ale nie wypuszcza kółka.
-  return draw(...latchAt(0, x), [stander(t === 11 || t === 12 ? 'shut' : 'right', 'gg'), 0, 0],
+  return draw(...latchAt(x), [stander(t === 11 || t === 12 ? 'shut' : 'right', 'gg'), 0, 0],
     ...line([8, 3], [x, 3], 'g'), [PULL_RING, x, 2])
 }
 
 const latch: Act = {
   name: 'próba zatrzasku',
   who: ['Młot'],
+  kit: draw(...latchAt(10)),
   intro: [
-    ...SLIDE.map(dx => draw(...latchAt(dx, 10), [STAND, 0, 0])),
-    draw(...latchAt(0, 10), [stander('right', 'g'), 0, 0]),
-    draw(...latchAt(0, 10), [stander('right', 'gg'), 0, 0], ...line([8, 3], [9, 3], 'g')),
+    draw(...latchAt(10), [stander('right', 'g'), 0, 0]),
+    draw(...latchAt(10), [stander('right', 'gg'), 0, 0], ...line([8, 3], [9, 3], 'g')),
     latchLoop(0),
   ],
   length: LATCH_PULL.length,

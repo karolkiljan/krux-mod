@@ -1,9 +1,9 @@
-import { SLIDE, STAND, at, croucher, draw, flame, head, lerp, line, noise, pusher, stander, stroll } from '../stage'
+import { STAND, at, croucher, draw, flame, head, lerp, line, noise, pusher, stander, stroll } from '../stage'
 import type { Act, Frame, Layer, Look } from '../stage'
 
-// Piec przy budowaniu, typach i lincie. Piec z kupką węgla i ceber z koszem żaru wjeżdżają
-// z prawej z narzędziem na sobie, Krux sięga po nie i bierze się do roboty; przy zejściu
-// odkłada narzędzie i warsztat odjeżdża.
+// Piec przy budowaniu, typach i lincie. Piec z kupką węgla i ceber z koszem żaru ork przynosi
+// ze ściany kuźni, sięga po narzędzie i bierze się do roboty; przy zejściu odkłada narzędzie
+// i odnosi warsztat na miejsce.
 
 // ——— Piec ———
 const FURNACE_AT = 13
@@ -103,9 +103,8 @@ const leaning = (x: number): Layer[] => [[COAL, x, 4], ...line([x, 1], [x + 1, 3
 
 const stoke: Act = {
   name: 'piec',
+  kit: draw(...furnace(FURNACE_AT, 0, 0), ...leaning(COAL_AT)),
   intro: [
-    // Piec z kupką węgla i wbitą łopatą wjeżdża z prawej, w paszczy ledwie się tli.
-    ...SLIDE.map((dx, i) => draw(...furnace(FURNACE_AT + dx, i, 0), ...leaning(COAL_AT + dx), [STAND, 0, 0])),
     // Żar się budzi, Krux chwyta trzonek.
     draw(...furnace(FURNACE_AT, 7, 1), ...leaning(COAL_AT), [STAND, 0, 0], [['g'], 6, 3]),
     draw(...furnace(FURNACE_AT, 8, 1), ...leaning(COAL_AT), [STAND, 0, 0], [['g'], 6, 3], [['g'], 7, 2]),
@@ -123,13 +122,13 @@ const TUB_AT = 11
 const TONGS: Frame = ['hhhhhh']
 const HEATBED: Frame = ['qRRq', 'qqqq']
 
-function quenchProps(dx: number, frame: number): Layer[] {
-  return [[TUB, TUB_AT + dx, 3], [HEATBED, 18 + dx, 4],
-    ...[0, 1].map(i => at(flame(frame, i, 1), 19 + dx + i, 3))]
+function quenchProps(frame: number): Layer[] {
+  return [[TUB, TUB_AT, 3], [HEATBED, 18, 4],
+    ...[0, 1].map(i => at(flame(frame, i, 1), 19 + i, 3))]
 }
 
 function quenchWork(x: number, y: number, hot: boolean, frame: number, steam: number): Frame {
-  const out: Layer[] = [...quenchProps(0, frame), [stander('right', 'gg'), x, 0]]
+  const out: Layer[] = [...quenchProps(frame), [stander('right', 'gg'), x, 0]]
   out.push(...line([x + 7, 3], [x + 8, y], 'g'), [TONGS, x + 8, y], [[hot ? 'RRR' : 'sss'], x + 14, y])
   // Woda zasłania zanurzoną stal poza blikiem na powierzchni.
   if (x === 0 && y === 4) out.push([['Wi'], 14, 4])
@@ -142,9 +141,9 @@ function quenchWork(x: number, y: number, hot: boolean, frame: number, steam: nu
 
 const quench: Act = {
   name: 'hartowanie',
+  kit: draw(...quenchProps(0), [TONGS, 8, 2], [['RRR'], 14, 2]),
   intro: [
-    ...SLIDE.map(dx => draw(...quenchProps(dx, 0), [TONGS, 8 + dx, 2], [['RRR'], 14 + dx, 2], [STAND, 0, 0])),
-    draw(...quenchProps(0, 0), [TONGS, 8, 2], [['RRR'], 14, 2], [stander('right', 'g'), 0, 0]),
+    draw(...quenchProps(0), [TONGS, 8, 2], [['RRR'], 14, 2], [stander('right', 'g'), 0, 0]),
     quenchWork(0, 2, true, 0, 0),
   ],
   length: 28,
@@ -205,9 +204,8 @@ function bellowsLoop(t: number, frame: number): Frame {
 
 const blow: Act = {
   name: 'miech',
+  kit: draw(...hearth(HEARTH_AT, 0, 0), ...bellows(7, 2)),
   intro: [
-    // Palenisko z miechem wjeżdża z zimnym węglem.
-    ...SLIDE.map(dx => draw(...hearth(HEARTH_AT + dx, 0, 0), ...bellows(7 + dx, 2), [STAND, 0, 0])),
     // Żar się budzi, płomień rośnie, Krux sięga po uchwyt.
     draw(...hearth(HEARTH_AT, 1, 0), [['R'], HEARTH_AT + 3, 4], ...bellows(7, 2), [STAND, 0, 0]),
     draw(...hearth(HEARTH_AT, 2, 1), ...bellows(7, 2), [stander('mid', 'g'), 0, 0]),
@@ -222,19 +220,19 @@ const BENDING_ANVIL: Frame = ['ssssss', '..ss..']
 const SMALL_FORGE: Frame = ['.kkk', 'kRRk', 'koRk', 'kkkk']
 const BILLET_PATH = [18, 18, 17, 16, 15, 14, 13, 13, 13, 13, 14, 15, 16, 17, 18, 18] as const
 
-function billetProps(dx: number): Layer[] {
-  return [[BENDING_ANVIL, 11 + dx, 4], [SMALL_FORGE, 17 + dx, 2]]
+function billetProps(): Layer[] {
+  return [[BENDING_ANVIL, 11, 4], [SMALL_FORGE, 17, 2]]
 }
 
 // Dwie szczęki obejmują rozgrzany koniec; uchwyt pozostaje w dłoni podczas gięcia.
-function billetTongs(tip: number, bent: boolean, dx = 0): Layer[] {
-  return [...line([tip - 5 + dx, 3], [tip - 1 + dx, 3], 'h'), at('S', tip - 1 + dx, 2),
-    at('S', tip - 1 + dx, 4), [[bent ? 'RR' : 'RRR', bent ? '..R' : ''], tip + dx, 3]]
+function billetTongs(tip: number, bent: boolean): Layer[] {
+  return [...line([tip - 5, 3], [tip - 1, 3], 'h'), at('S', tip - 1, 2),
+    at('S', tip - 1, 4), [[bent ? 'RR' : 'RRR', bent ? '..R' : ''], tip, 3]]
 }
 
 function billetWork(t: number): Frame {
   const tip = BILLET_PATH[t]!
-  return draw(...billetProps(0), [[...head('right'), ...pusher(t).slice(3)], tip - 13, 0],
+  return draw(...billetProps(), [[...head('right'), ...pusher(t).slice(3)], tip - 13, 0],
     ...billetTongs(tip, t >= 8 && t <= 13),
     // Kęs naciska na róg kowadła; po powrocie do pieca ponownie się prostuje.
     ...(t === 8 || t === 9 ? [at('y', 16, 2), at('o', 17, 1)] : []))
@@ -244,9 +242,9 @@ function billetWork(t: number): Frame {
 const billet: Act = {
   name: 'kęs',
   who: ['Grom'],
+  kit: draw(...billetProps(), ...billetTongs(18, false)),
   intro: [
-    ...SLIDE.map(dx => draw(...billetProps(dx), ...billetTongs(18, false, dx), [STAND, 0, 0])),
-    ...stroll(5, [...billetProps(0), ...billetTongs(18, false)]),
+    ...stroll(5, [...billetProps(), ...billetTongs(18, false)]),
     billetWork(0),
   ],
   length: BILLET_PATH.length,
@@ -258,8 +256,8 @@ const TEST_BENCH: Frame = ['hhhhhhhhhhh', '.x.......x.']
 const HARD_STEEL: Frame = ['snnnnnss']
 const SCRATCH_PATH = [11, 11, 12, 13, 14, 15, 16, 16, 16, 15, 14, 13, 12, 11] as const
 
-function scriber(tip: number, y: number, dx = 0): Layer[] {
-  return [[['hhSS'], tip - 4 + dx, y], at('j', tip + dx, y + 1)]
+function scriber(tip: number, y: number): Layer[] {
+  return [[['hhSS'], tip - 4, y], at('j', tip, y + 1)]
 }
 
 function hardnessWork(t: number): Frame {
@@ -277,8 +275,8 @@ function hardnessWork(t: number): Frame {
 const hardness: Act = {
   name: 'próba twardości',
   who: ['Młot'],
+  kit: draw([TEST_BENCH, 9, 4], [HARD_STEEL, 11, 3], ...scriber(11, 2)),
   intro: [
-    ...SLIDE.map(dx => draw([TEST_BENCH, 9 + dx, 4], [HARD_STEEL, 11 + dx, 3], ...scriber(11, 2, dx), [STAND, 0, 0])),
     draw([TEST_BENCH, 9, 4], [HARD_STEEL, 11, 3], ...scriber(11, 2), [stander('right', 'g'), 0, 0]),
     hardnessWork(0),
   ],
@@ -291,14 +289,14 @@ const CAST_MOLD: Frame = ['qnnnnq', 'qqqqqq']
 const CRUCIBLE: Frame = ['kRRk', 'kRRk', '.kk.']
 const LADLE_PATH = [18, 18, 18, 17, 16, 15, 14, 13, 12, 12, 13, 14, 15, 16, 17, 18] as const
 
-function castingProps(dx: number): Layer[] {
-  return [[CAST_MOLD, 11 + dx, 3], [CRUCIBLE, 18 + dx, 2], [['xxxxxxxxxxx'], 11 + dx, 5]]
+function castingProps(): Layer[] {
+  return [[CAST_MOLD, 11, 3], [CRUCIBLE, 18, 2], [['xxxxxxxxxxx'], 11, 5]]
 }
 
 // Łyżka z długim uchwytem: zagarnia żar z tygla, przechyla dzióbek nad formą.
-function castingLadle(tip: number, y: number, full: boolean, tilted = false, dx = 0): Layer[] {
+function castingLadle(tip: number, y: number, full: boolean, tilted = false): Layer[] {
   const bowl: Frame = tilted ? ['SS.', full ? 'SRR' : 'SSR'] : [full ? 'SRS' : 'S.S', 'SSS']
-  return [...line([tip - 5 + dx, y + 1], [tip - 1 + dx, tilted ? y : y + 1], 'h'), [bowl, tip + dx, y]]
+  return [...line([tip - 5, y + 1], [tip - 1, tilted ? y : y + 1], 'h'), [bowl, tip, y]]
 }
 
 function castingWork(t: number): Frame {
@@ -306,7 +304,7 @@ function castingWork(t: number): Frame {
   const y = t < 2 ? 2 : 1
   const x = Math.max(0, tip - 13)
   const tilted = t === 8 || t === 9
-  const out: Layer[] = [...castingProps(0), [pusher(x), x, 0],
+  const out: Layer[] = [...castingProps(), [pusher(x), x, 0],
     ...line([x + 5, 3], [tip - 6, y + 1], 'g'), ...castingLadle(tip, y, t < 9, tilted)]
   if (tilted) out.push(...line([14, 2], [15, 3], 'o'), [[t === 8 ? 'RR' : 'RRRR'], t === 8 ? 14 : 12, 3])
   // Forma otwiera dno; gotowa sztabka opada na rolki i wyjeżdża pod tyglem.
@@ -319,9 +317,9 @@ function castingWork(t: number): Frame {
 const casting: Act = {
   name: 'odlewanie',
   who: ['Grom'],
+  kit: draw(...castingProps(), ...castingLadle(18, 2, true)),
   intro: [
-    ...SLIDE.map(dx => draw(...castingProps(dx), ...castingLadle(18, 2, true, false, dx), [STAND, 0, 0])),
-    ...stroll(5, [...castingProps(0), ...castingLadle(18, 2, true)]),
+    ...stroll(5, [...castingProps(), ...castingLadle(18, 2, true)]),
     castingWork(0),
   ],
   length: LADLE_PATH.length,
@@ -331,15 +329,15 @@ const casting: Act = {
 // ——— Podwójne ważenie ———
 const SCALE_TILT = [0, 0, 1, 1, -1, 0, 0, 0, 0, 0, 1, 1, -1, 0, 0, 0] as const
 
-function balance(dx: number, tilt: number): Layer[] {
+function balance(tilt: number): Layer[] {
   const left = 3 + tilt
   const right = 3 - tilt
-  return [...line([15 + dx, 1], [15 + dx, 4], 's'), [['xxxxx'], 13 + dx, 5],
-    ...line([10 + dx, left - 2], [20 + dx, right - 2], 'h'),
-    ...line([10 + dx, left - 1], [10 + dx, left], 's'),
-    ...line([20 + dx, right - 1], [20 + dx, right], 's'),
-    [['ssss'], 9 + dx, left], [['ssss'], 18 + dx, right],
-    [['SS'], 10 + dx, left - 1], [['y.y'], 18 + dx, right - 1]]
+  return [...line([15, 1], [15, 4], 's'), [['xxxxx'], 13, 5],
+    ...line([10, left - 2], [20, right - 2], 'h'),
+    ...line([10, left - 1], [10, left], 's'),
+    ...line([20, right - 1], [20, right], 's'),
+    [['ssss'], 9, left], [['ssss'], 18, right],
+    [['SS'], 10, left - 1], [['y.y'], 18, right - 1]]
 }
 
 function weighingWork(t: number): Frame {
@@ -347,7 +345,7 @@ function weighingWork(t: number): Frame {
   const tilt = SCALE_TILT[t]!
   const touching = k === 2
   const hand = k === 1 || k === 3 ? 8 : touching ? 9 : 7
-  return draw(...balance(0, tilt), [stander(k === 6 ? 'mid' : 'right'), 0, 0],
+  return draw(...balance(tilt), [stander(k === 6 ? 'mid' : 'right'), 0, 0],
     // Młot dwa razy naciska tę samą szalkę; po zwolnieniu patrzy, czy belka wraca do poziomu.
     ...line([5, 3], [hand, touching ? 3 + tilt : 3], 'g'))
 }
@@ -356,9 +354,9 @@ function weighingWork(t: number): Frame {
 const weighing: Act = {
   name: 'podwójne ważenie',
   who: ['Młot'],
+  kit: draw(...balance(0)),
   intro: [
-    ...SLIDE.map(dx => draw(...balance(dx, 0), [STAND, 0, 0])),
-    draw(...balance(0, 0), [stander('right', 'g'), 0, 0]),
+    draw(...balance(0), [stander('right', 'g'), 0, 0]),
     weighingWork(0),
   ],
   length: SCALE_TILT.length,

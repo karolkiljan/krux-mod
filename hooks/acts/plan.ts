@@ -2,7 +2,7 @@ import { SQUAT, dots, draw, head, lerp, line, stander, stroll } from '../stage'
 import type { Act, Frame, Layer, Look, Point } from '../stage'
 
 // Planowanie: mapa na sztaludze, plan bitwy patykiem na ziemi, lista z odhaczaniem, makieta z pionkami.
-// Rekwizyt wjeżdża albo spada, kartka rozwija się wiersz po wierszu; zejście cofa to samo.
+// Rekwizyt ork przynosi z regału, kartka rozwija się wiersz po wierszu; zejście cofa to samo.
 
 // ——— Mapa na sztaludze ———
 // Węgiel kreśli szlak kropka po kropce, czerwony krzyżyk na celu, potem szmata ściera szlak od początku.
@@ -10,11 +10,11 @@ const ROUTE: readonly Point[] = [[9, 4], [10, 3], [11, 3], [12, 4], [13, 3], [14
 const PEAKS: readonly Point[] = [[12, 1], [11, 2], [13, 2]]
 const EASEL: Frame = ['.hhhhhhhhhh.', 'h..........h', 'h..........h', 'h..........h', 'h..........h', '.h........h.']
 
-// Sztaluga przesunięta o `dx`, z kartką rozwiniętą na `rows` wierszy.
-function easel(dx: number, rows: number): Layer[] {
-  const sheet: Layer[] = rows > 0 ? [[Array.from({ length: rows }, () => 'pppppppppp'), 9 + dx, 0]] : []
+// Sztaluga z kartką rozwiniętą na `rows` wierszy.
+function easel(rows: number): Layer[] {
+  const sheet: Layer[] = rows > 0 ? [[Array.from({ length: rows }, () => 'pppppppppp'), 9, 0]] : []
   const peaks = rows === 5 ? dots(PEAKS, 'k') : []
-  return [[EASEL, 8 + dx, 0], ...sheet, ...peaks]
+  return [[EASEL, 8, 0], ...sheet, ...peaks]
 }
 
 function easelLoop(t: number): Frame {
@@ -23,16 +23,16 @@ function easelLoop(t: number): Frame {
   const wiped = Math.max(0, t - 14)
   const route = ROUTE.slice(wiped, drawn)
   const goal = drawn === ROUTE.length && wiped < ROUTE.length ? dots([ROUTE[ROUTE.length - 1]!], 'R') : []
-  return draw(...easel(0, 5), ...dots(route, 'n'), ...goal, [stander(t > 14 ? 'right' : 'mid', 'gg'), 0, 0])
+  return draw(...easel(5), ...dots(route, 'n'), ...goal, [stander(t > 14 ? 'right' : 'mid', 'gg'), 0, 0])
 }
 
 const easelAct: Act = {
   name: 'sztaluga',
+  kit: draw(...easel(0)),
   intro: [
-    // Pusta sztaluga wjeżdża z prawej, kartka rozwija się z górnej listwy, Krux podnosi węgiel.
-    ...[12, 8, 4, 0].map(dx => draw(...easel(dx, 0), [stander('right'), 0, 0])),
-    ...[1, 2, 3, 4].map(rows => draw(...easel(0, rows), [stander('right'), 0, 0])),
-    draw(...easel(0, 5), [stander('mid', 'g'), 0, 0]),
+    // Kartka rozwija się z górnej listwy, Krux podnosi węgiel.
+    ...[1, 2, 3, 4].map(rows => draw(...easel(rows), [stander('right'), 0, 0])),
+    draw(...easel(5), [stander('mid', 'g'), 0, 0]),
   ],
   length: 25,
   loop: easelLoop,
@@ -72,13 +72,17 @@ function groundLoop(t: number): Frame {
   return draw(...dots(SKETCH.slice(0, shown), 'q'), [SQUAT, x, 0], [head(look), x, 1], ...stick(tip))
 }
 
+// Patyk leży przed orkiem, zanim ten go podniesie.
+const GROUND_STICK: Layer = [['hhhh'], 7, 5]
+
 const ground: Act = {
   name: 'patyk',
+  kit: draw(GROUND_STICK),
   intro: [
-    // Rozejrzeć się, przykucnąć, wyciągnąć patyk zza fartucha i opuścić go do ziemi.
-    draw([stander('right'), 0, 0]),
-    draw([HALF, 0, 0]),
-    draw([SQUAT, 0, 0]),
+    // Rozejrzeć się, przykucnąć, podnieść patyk i opuścić go do ziemi.
+    draw(GROUND_STICK, [stander('right'), 0, 0]),
+    draw(GROUND_STICK, [HALF, 0, 0]),
+    draw(GROUND_STICK, [SQUAT, 0, 0]),
     draw([SQUAT, 0, 0], ...line([7, 4], [7, 5], 'h')),
     draw([SQUAT, 0, 0], ...line([7, 4], [8, 3], 'h')),
     draw([SQUAT, 0, 0], ...line(SHOULDER_LOW, [7, 2], 'g'), ...line([8, 2], [9, 3], 'h')),
@@ -119,9 +123,9 @@ function listLoop(t: number): Frame {
 
 const list: Act = {
   name: 'lista',
+  kit: draw(...board(0, 0)),
   intro: [
-    // Tablica spada z góry i siada na nóżkach, kartka zjeżdża, Krux podchodzi z węglem.
-    ...[-5, -3, -1, 1, 0].map(y => draw(...board(y, 0), [stander(y < 0 ? 'mid' : 'right'), 0, 0])),
+    // Kartka zjeżdża, Krux podchodzi z węglem.
     ...[1, 2, 3, 4].map(rows => draw(...board(0, rows), [stander('right'), 0, 0])),
     ...stroll(STAND_AT, board(0, 4)),
     draw(...board(0, 4), [stander('right'), STAND_AT, 0], ...line(SHOULDER, [10, 2], 'g')),
@@ -151,12 +155,12 @@ const MOVES: readonly (readonly [number, number, number])[] = [
 ]
 const MOVE = 8
 
-function pawnLayers(dx: number, pawns: readonly Pawn[], lifted = -1, liftX = 0, liftY = 1): Layer[] {
-  return pawns.map((p, i) => (i === lifted ? [[p.cell, p.cell], liftX + dx, liftY] : [[p.cell, p.cell], p.x + dx, 1]) as Layer)
+function pawnLayers(pawns: readonly Pawn[], lifted = -1, liftX = 0, liftY = 1): Layer[] {
+  return pawns.map((p, i) => (i === lifted ? [[p.cell, p.cell], liftX, liftY] : [[p.cell, p.cell], p.x, 1]) as Layer)
 }
 
-function table(dx: number, pawns: readonly Pawn[] = PAWNS, ...lift: [number, number, number] | []): Layer[] {
-  return [[TABLE, TX + dx, 0], ...pawnLayers(dx, pawns, ...lift)]
+function table(pawns: readonly Pawn[] = PAWNS, ...lift: [number, number, number] | []): Layer[] {
+  return [[TABLE, TX, 0], ...pawnLayers(pawns, ...lift)]
 }
 
 function modelLoop(t: number): Frame {
@@ -169,21 +173,19 @@ function modelLoop(t: number): Frame {
   const dir = Math.sign(to - from)
   const look: Look = p < 2 ? (k % 2 === 0 ? 'right' : 'mid') : 'right'
   const orc: Layer = [stander(look), MX, 0]
-  if (p < 2) return draw(...table(0, pawns), orc)
-  if (p === 2) return draw(...table(0, pawns), orc, ...line(ARM_FROM, [from - 1, 2], 'g'))
-  if (p === 7) return draw(...table(0, pawns.map((pw, i) => (i === who ? { ...pw, x: to } : pw))), orc, ...line(ARM_FROM, [9, 2], 'g'))
+  if (p < 2) return draw(...table(pawns), orc)
+  if (p === 2) return draw(...table(pawns), orc, ...line(ARM_FROM, [from - 1, 2], 'g'))
+  if (p === 7) return draw(...table(pawns.map((pw, i) => (i === who ? { ...pw, x: to } : pw))), orc, ...line(ARM_FROM, [9, 2], 'g'))
   const x = p === 3 ? from : p === 4 ? from + dir : to
   const y = p === 6 ? 1 : 0
-  return draw(...table(0, pawns, who, x, y), orc, ...line(ARM_FROM, [x - 1, y + 1], 'g'))
+  return draw(...table(pawns, who, x, y), orc, ...line(ARM_FROM, [x - 1, y + 1], 'g'))
 }
 
 const model: Act = {
   name: 'makieta',
-  intro: [
-    // Stół z pionkami wjeżdża z prawej, Krux podchodzi.
-    ...[12, 9, 6, 3, 0].map(dx => draw(...table(dx), [stander('right'), 0, 0])),
-    ...stroll(MX, table(0)),
-  ],
+  kit: draw(...table()),
+  // Krux podchodzi do stołu z pionkami.
+  intro: stroll(MX, table()),
   length: MOVES.length * MOVE,
   loop: modelLoop,
 }

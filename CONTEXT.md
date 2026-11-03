@@ -71,12 +71,20 @@ Miejsce na podłodze przypisane rodzajowi roboty: kuźnia, stół, próba albo s
 _Avoid_: strefa
 
 **Pokój**:
-Sprzęty na ścianie za orkami, bez wypełnionego tła.
+Sprzęty na ścianie za orkami i prycze pod ścianą, bez wypełnionego tła.
 _Avoid_: tło, backdrop
 
+**Rekwizyt**:
+To, czym ork pracuje w danej czynności: stoi na ziemi przed orkiem, a mieszka na ścianie, w miejscu swojej sceny. Nic nie zjawia się samo: ork przynosi rekwizyt i odnosi.
+_Avoid_: prop, kit (w tekstach dla Morry)
+
 **Wyprawa**:
-Marsz orka w głąb pokoju po sprzęt; ork maleje, wraca z ładunkiem i dopiero zaczyna robotę.
+Marsz orka w głąb pokoju po rekwizyt albo z rekwizytem; ork maleje razem z nim, odkłada, bierze następny i dopiero zaczyna robotę.
 _Avoid_: errand
+
+**Prycza**:
+Miejsce orka pod ścianą: kto nie pracuje, leży tu przyciemniony, a wezwany wstaje i idzie do roboty. Ork bez imienia pryczy nie ma, wychodzi ze sztolni.
+_Avoid_: łóżko, spawn
 
 **Scenka**:
 Zabawa dwóch orków na podłodze: szermierka, podanie stali, piątka albo kłótnia.
