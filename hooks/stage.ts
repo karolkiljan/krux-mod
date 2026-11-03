@@ -261,6 +261,11 @@ export function legAt(route: Route, step: number): number {
   return spotOf(route, step).leg
 }
 
+// Czy ork już gra pętlę czynności (po wejściu, przed zejściem).
+export function inLoop(route: Route, step: number): boolean {
+  return spotOf(route, step).phase === 'loop'
+}
+
 // Czy pętla odcinka już zagrała swoje: ork odkłada rekwizyt, zamiast czekać na następny odcinek.
 export function legDone(route: Route, step: number): boolean {
   const spot = spotOf(route, step)

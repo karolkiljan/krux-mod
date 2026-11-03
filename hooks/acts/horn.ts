@@ -2,7 +2,7 @@ import { STAND, draw, lerp, line, pingPong, stander } from '../stage'
 import type { Act, Frame, Layer } from '../stage'
 
 // Wezwanie hordy przy Agent. Krux przynosi rekwizyt ze ściany i daje sygnał;
-// prawdziwa horda wstaje potem z pryczy.
+// prawdziwa horda wychodzi potem z kwater.
 
 // Fala dźwięku: łuk z trzech pikseli wędruje w prawo od `from`.
 function wave(from: number, age: number, cell: string): Layer {

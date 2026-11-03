@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import Forge from '../hooks/forge'
 import type { ForgeOrc, ForgeProps } from '../hooks/forge'
-import { ACTS, DUET_FRAMES, DUET_GAP, ERRAND_FRAMES, PALETTE, RISE_FRAMES, bedX, carried, trackGrid } from '../hooks/sprites'
+import { ACTS, DUET_FRAMES, DUET_GAP, ERRAND_FRAMES, PALETTE, RISE_FRAMES, carried, doorX, trackGrid } from '../hooks/sprites'
 import type { Track } from '../hooks/sprites'
 import { STAND, pad } from '../hooks/stage'
 
@@ -22,7 +22,7 @@ function surfaceOf() {
   return { surface, tick: () => tick?.() }
 }
 
-type Seen = { frame: number; idle: boolean; duet?: { host: string; guest: string; kind: string; at: number | null }; duetAt?: number; snoozing?: boolean; actors: Record<string, { leftAt: number | null; slot: number; home: number; arrived: number; from: number; pending?: string; errand?: { at: number; from: number; spot: number; took?: readonly string[]; brings?: readonly string[] }; enter: number; track: Track; handoff?: { at: number; flight: number }; cue?: { id: string; at: number }; effortAt?: number; abed?: boolean; rise?: number; bed?: number; left?: { x: number } }> }
+type Seen = { frame: number; idle: boolean; duet?: { host: string; guest: string; kind: string; at: number | null }; duetAt?: number; snoozing?: boolean; actors: Record<string, { leftAt: number | null; slot: number; home: number; arrived: number; from: number; pending?: string; errand?: { at: number; from: number; spot: number; took?: readonly string[]; brings?: readonly string[] }; enter: number; track: Track; handoff?: { at: number; flight: number }; cue?: { id: string; at: number }; effortAt?: number; rise?: number; door?: number; left?: { x: number } }> }
 
 const KRUX: ForgeOrc = { key: 'krux', face: 'Krux', scene: 'lounge', mood: 'calm' }
 const NIUCH: ForgeOrc = { key: 'a1', face: 'Niuch', scene: 'scout', mood: 'calm' }
@@ -50,16 +50,16 @@ test('on a flat band the last mate done at rest marches out right and the clock 
   expect((surface.state as Seen).idle).toBe(true)
 })
 
-test('in the room a mate done carries the kit back, walks to the cot and the clock runs until Krux sleeps too', () => {
+test('in the room a mate done carries the kit back, walks to the quarters and the clock runs until Krux settles by the hearth', () => {
   const { surface, tick } = surfaceOf()
   const start: ForgeProps = { ...FLOOR, orcs: [{ ...KRUX, scene: 'hammer' }, { ...NIUCH, scene: 'pick' }] }
   draw(start, surface)
-  const after: ForgeProps = { ...FLOOR, rest: true, orcs: [{ ...KRUX, scene: 'hammer' }] }
+  const after: ForgeProps = { ...FLOOR, rest: true, orcs: [{ ...KRUX, scene: 'watch' }] }
   draw(after, surface)
   const going = (surface.state as Seen).actors.a1!
   expect(going.errand?.took).toBeDefined()
   expect(going.leftAt).toBeGreaterThanOrEqual(going.errand!.at + ERRAND_FRAMES)
-  expect(going.bed).toBe(bedX('Niuch', 140, true))
+  expect(going.door).toBe(doorX('Niuch', 140, true))
   expect((surface.state as Seen).idle).toBe(false)
   for (let step = 0; step < 150 && !(surface.state as Seen).idle; step += 1) {
     tick()
@@ -68,53 +68,67 @@ test('in the room a mate done carries the kit back, walks to the cot and the clo
   const done = surface.state as Seen
   expect(done.idle).toBe(true)
   expect(done.actors.a1).toBe(undefined)
-  expect(done.actors.krux).toMatchObject({ abed: true, home: bedX('Krux', 140, true) })
-  // Kumpel leży w pokoju przyciemnionym fartuchem; jasnego na scenie już nie ma.
-  const tree = JSON.stringify(draw(after, surface))
-  expect(tree).toContain(PALETTE['1'])
-  expect(tree).not.toContain(PALETTE.N)
+  expect(done.actors.krux!.track.scene).toBe('watch')
+  expect(done.actors.krux!.home).toBe(12)
+  // Kumpel odpoczywa za drzwiami kwater: jego fartucha w pokoju już nie ma.
+  expect(JSON.stringify(draw(after, surface))).not.toContain(PALETTE.N)
 })
 
-test('at rest the canvas mounts with Krux already asleep and the whole horde on its cots', () => {
+test('at rest the canvas mounts with Krux watching by the hearth and nobody else on the floor', () => {
   const { surface, tick } = surfaceOf()
-  const rest: ForgeProps = { ...FLOOR, rest: true }
+  const rest: ForgeProps = { ...FLOOR, rest: true, orcs: [{ ...KRUX, scene: 'watch' }] }
   const tree = JSON.stringify(draw(rest, surface))
   const state = surface.state as Seen
   expect(state.idle).toBe(true)
-  expect(state.actors.krux!.abed).toBe(true)
-  for (const shade of ['1', '2', '3', '4', '5', '6']) expect(tree).toContain(PALETTE[shade])
+  expect(state.actors.krux).toMatchObject({ home: 12 })
+  expect(state.actors.krux!.track.scene).toBe('watch')
+  for (const apron of ['N', 'M', 'P', 'O', 'L', 'T']) expect(tree).not.toContain(PALETTE[apron])
   tick()
   expect((surface.state as Seen).frame).toBe(0)
 })
 
-test('a call to work wakes Krux: he gets up, walks over, fetches the kit and only then starts', () => {
+test('when the turn ends Krux takes his gear back and goes to watch by the hearth, then the clock stops', () => {
   const { surface, tick } = surfaceOf()
-  draw({ ...FLOOR, rest: true }, surface)
   const work: ForgeProps = { ...FLOOR, orcs: [{ ...KRUX, scene: 'pick' }] }
   draw(work, surface)
-  const up = surface.state as Seen
-  expect(up.idle).toBe(false)
-  expect(up.actors.krux).toMatchObject({ rise: 1, from: bedX('Krux', 140, true), home: 118, pending: 'pick', enter: up.frame + RISE_FRAMES })
+  const rest: ForgeProps = { ...FLOOR, rest: true, orcs: [{ ...KRUX, scene: 'watch' }] }
+  let stowed = false
+  for (let i = 0; i < 160 && !(surface.state as Seen).idle; i++) {
+    tick()
+    draw(rest, surface)
+    stowed ||= (surface.state as Seen).actors.krux!.errand?.took !== undefined
+  }
+  const krux = (surface.state as Seen).actors.krux!
+  expect(stowed).toBe(true)
+  expect((surface.state as Seen).idle).toBe(true)
+  expect([krux.track.scene, krux.home, krux.pending]).toEqual(['watch', 12, undefined])
+})
+
+test('a call to work takes Krux from the hearth: he walks over, fetches the kit and only then starts', () => {
+  const { surface, tick } = surfaceOf()
+  draw({ ...FLOOR, rest: true, orcs: [{ ...KRUX, scene: 'watch' }] }, surface)
+  const work: ForgeProps = { ...FLOOR, orcs: [{ ...KRUX, scene: 'pick' }] }
+  draw(work, surface)
+  expect((surface.state as Seen).idle).toBe(false)
   let fetched = false
-  for (let i = 0; i < 80 && (surface.state as Seen).actors.krux!.pending !== undefined; i++) {
+  for (let i = 0; i < 160 && ((surface.state as Seen).actors.krux!.pending !== undefined || (surface.state as Seen).actors.krux!.track.scene !== 'pick'); i++) {
     tick()
     draw(work, surface)
     fetched ||= (surface.state as Seen).actors.krux!.errand?.brings !== undefined
   }
   expect(fetched).toBe(true)
   const there = (surface.state as Seen).actors.krux!
-  expect(there.rise).toBe(undefined)
-  expect(there.track.scene).toBe('pick')
+  expect([there.track.scene, there.home, there.rise]).toEqual(['pick', 118, undefined])
 })
 
-test('a mate called to work gets up from the cot, not from the right edge, and goes back to it', () => {
+test('a mate called to work comes out of the door of the quarters, not from the right edge, and goes back through it', () => {
   const { surface, tick } = surfaceOf()
   const alone: ForgeProps = { ...FLOOR, orcs: [{ ...KRUX, scene: 'hammer' }] }
   draw(alone, surface)
   const joined: ForgeProps = { ...FLOOR, orcs: [{ ...KRUX, scene: 'hammer' }, { ...NIUCH, scene: 'pick' }] }
   draw(joined, surface)
   const up = (surface.state as Seen).actors.a1!
-  expect(up).toMatchObject({ rise: 1, from: bedX('Niuch', 140, true), pending: 'pick' })
+  expect(up).toMatchObject({ rise: 1, from: doorX('Niuch', 140, true), pending: 'pick', enter: (surface.state as Seen).frame + RISE_FRAMES })
   let deep = false
   for (let i = 0; i < 100 && (surface.state as Seen).actors.a1!.pending !== undefined; i++) {
     tick()
@@ -130,7 +144,7 @@ test('a nameless orc comes out of the shaft and goes back into it: it has no cot
   draw({ ...FLOOR, orcs: [{ ...KRUX, scene: 'hammer' }] }, surface)
   draw({ ...FLOOR, orcs: [{ ...KRUX, scene: 'hammer' }, { key: 'a9', face: null, scene: 'read', mood: 'calm' }] }, surface)
   const orc = (surface.state as Seen).actors.a9!
-  expect(orc.from).toBe(bedX(null, 140, true))
+  expect(orc.from).toBe(doorX(null, 140, true))
   expect(orc.enter).toBe((surface.state as Seen).frame)
 })
 
@@ -186,7 +200,7 @@ test('an orc pinned to its kit on a crowded floor still goes for the next one: p
 
 test('kit acts are real: every act with a tool names a kit, only body language has none', () => {
   const bare = Object.values(ACTS).flat().filter(act => act.kit === undefined).map(act => act.name).sort()
-  expect(bare).toEqual(['drapanie', 'dumanie', 'kruk', 'nasłuch', 'wiatr', 'węszenie'].sort())
+  expect(bare).toEqual(['drapanie', 'dumanie', 'grzanie rąk', 'kruk', 'nasłuch', 'przeciąganie', 'rozglądanie', 'wiatr', 'węszenie'].sort())
 })
 
 test('the guest of a scene leaves its kit on the floor and comes back to the same act', () => {
@@ -719,7 +733,7 @@ test('scenes do not restart the thirty seconds of an act: two orcs keep changing
   expect((seen.surface.state as Seen).actors.krux!.track.first - first).toBeGreaterThanOrEqual(2)
 })
 
-test('a mate who ends while getting up lies straight back down; with a scroll it first walks over', () => {
+test('a mate who ends on the way out goes straight back through the door; with a scroll it first walks over', () => {
   const quiet = surfaceOf()
   const alone: ForgeProps = { ...FLOOR, orcs: [{ ...KRUX, scene: 'hammer' }] }
   const joined: ForgeProps = { ...FLOOR, orcs: [{ ...KRUX, scene: 'hammer' }, { ...NIUCH, scene: 'pick' }] }
@@ -752,8 +766,9 @@ test('Krux waits for the last scroll where he stands: no new gear and no sleep w
     seen.tick()
     draw(done, seen.surface)
   }
-  for (let i = 0; i < 120 && !(seen.surface.state as Seen).idle; i++) { seen.tick(); draw(done, seen.surface) }
-  expect((seen.surface.state as Seen).actors.krux!.abed).toBe(true)
+  const watch: ForgeProps = { ...done, orcs: [{ ...KRUX, scene: 'watch' }] }
+  for (let i = 0; i < 160 && !(seen.surface.state as Seen).idle; i++) { seen.tick(); draw(watch, seen.surface) }
+  expect((seen.surface.state as Seen).actors.krux!.track.scene).toBe('watch')
 })
 
 test('a mate past the last slot after the stage narrows takes a free one and keeps working', () => {
@@ -804,17 +819,9 @@ test('a scene called off before the guest arrives leaves the host at work, tool 
   expect((seen.surface.state as Seen).actors.krux!.track).toBe(before)
 })
 
-test('Krux wakes from where the cot stands now, even after the terminal was resized', () => {
-  const { surface } = surfaceOf()
-  draw({ ...FLOOR, rest: true }, surface)
-  const wider: ForgeProps = { ...FLOOR, floor: 200, orcs: [{ ...KRUX, scene: 'read' }] }
-  draw(wider, surface)
-  expect((surface.state as Seen).actors.krux!.from).toBe(bedX('Krux', 200, true))
-})
-
-test('a reaction over the cot plays to its end before the clock stops', () => {
+test('a reaction by the hearth at rest plays to its end before the clock stops', () => {
   const { surface, tick } = surfaceOf()
-  const rest: ForgeProps = { ...FLOOR, rest: true }
+  const rest: ForgeProps = { ...FLOOR, rest: true, orcs: [{ ...KRUX, scene: 'watch' }] }
   draw(rest, surface)
   expect((surface.state as Seen).idle).toBe(true)
   const hit: ForgeProps = { ...rest, cues: [{ key: 'krux', kind: 'test-fail', until: 9_000_000 }] }

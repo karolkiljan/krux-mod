@@ -239,8 +239,9 @@ test('a canvas fault switches the band and the forge pane to text for the sessio
   assert.equal(vm.runInContext('forgeFault', context), true)
   assert.deepEqual(logs, [['płótno hooks/forge.ts (load): boom', 'debug']])
   // Oba miejsca z płótnem czytają flagę: pas (`hasClient`, gałąź tekstu) i panel /krux.
+  // Desktop rysuje płótno jako `Svg`, bez `Client`, więc flaga dotyczy tylko terminala.
   const source = fs.readFileSync('hooks/register.ts', 'utf8')
-  assert.match(source, /hasClient: 'Client' in table && !forgeFault/u)
+  assert.match(source, /hasClient: desk \|\| \('Client' in table && !forgeFault\)/u)
   assert.match(source, /!\('Client' in table\) \|\| forgeFault/u)
   assert.match(source, /'Client' in table && !forgeFault && e\.props\.bodyColumns/u)
 })

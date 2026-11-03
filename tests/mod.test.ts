@@ -311,14 +311,14 @@ test('while Claude works, the smith hammers above the prompt and names the tool'
   expect(await ui.find({ key: 'forge' })).toBeDefined()
 })
 
-test('the desktop draws no band, nameplates or reply rule: they count terminal cells', async ($, on) => {
+test('the desktop draws no nameplates or reply rule: they count terminal cells; the band goes as Svg, not as Client', async ($, on) => {
   engine(on, new Map())
   await start($)
   await $.turn.start({ text: 'czytaj', turnId: 't1' })
   await $.tool.call({ tool: 'Read', file_path: '/repo/src/app.ts' })
   const band = await $.ui.mount({ ...BAND, surface: 'desktop' })
-  expect(await band.find({ key: 'forge' })).toBeUndefined()
-  expect(await band.find({ type: 'Text', text: 'Krux czytać runy' })).toBeUndefined()
+  expect(await band.find({ type: 'Client' } as never)).toBeUndefined()
+  expect(await band.find({ type: 'Svg' })).toBeDefined()
   const reply = await $.ui.mount({ ...REPLY, surface: 'desktop', props: { text: 'Build pad.', isFirstOfReply: true } })
   expect(await reply.find({ type: 'Text', text: '⚒ Krux' })).toBeUndefined()
   expect(await reply.find({ type: 'Box', borderStyle: 'quote' } as never)).toBeUndefined()
@@ -413,6 +413,54 @@ async function showsScene(ui: Parameters<typeof forgeColors>[0], scene: StageSce
 async function forgeColors(ui: { findAll: (query: { type: string; in: string }) => Promise<{ props: Record<string, unknown> }[]> }) {
   return (await ui.findAll({ type: 'Text', in: 'forge' })).map(element => element.props.color)
 }
+
+test('on the desktop the band draws the room as one Svg, square pixels instead of half-block glyphs', async ($, on) => {
+  engine(on, new Map())
+  await start($)
+  await $.turn.start({ text: 'czytaj', turnId: 't1' })
+  await $.tool.call({ tool: 'Read', file_path: '/repo/src/app.ts' })
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  const svg = (await ui.find({ type: 'Svg' }))!
+  const source = String(svg.props.source)
+  expect(source.startsWith('<svg')).toBe(true)
+  expect(source).toContain(PALETTE.g)
+  expect(source).not.toMatch(/[▀▄█]/u)
+  expect(source.length).toBeLessThan(131_072)
+  expect(String(svg.props.alt)).toContain('Krux czytać runy')
+  // Podpis zostaje tekstem Desktopu, kreski nad pasem Desktop nie potrzebuje.
+  expect(await ui.find({ type: 'Text', text: 'Krux czytać runy' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: /^─+$/u })).toBeUndefined()
+})
+
+test('on the desktop the band moves on the mod clock while there is motion, and the clock stops at rest', async ($, on) => {
+  const clock = engine(on, new Map())
+  await start($)
+  await $.turn.start({ text: 'czytaj', turnId: 't1' })
+  await $.tool.call({ tool: 'Read', file_path: '/repo/src/app.ts' })
+  const ui = await $.ui.mount({ ...BAND, surface: 'desktop' })
+  const frames = new Set<string>()
+  for (let i = 0; i < 12; i += 1) {
+    await clock.advance(150)
+    frames.add(String((await ui.find({ type: 'Svg' }))!.props.source))
+  }
+  expect(frames.size).toBeGreaterThan(4)
+  await ui.unmount()
+  // W spoczynku Krux śpi: po wypisaniu dymka nic się nie rusza, więc i nic nie przerysowuje.
+  const rest = await $.ui.mount({ ...BAND, requestId: 'band-rest', surface: 'desktop', props: { ...BAND.props, isWorking: false } })
+  for (let i = 0; i < 20; i += 1) await clock.advance(150)
+  const asleep = String((await rest.find({ type: 'Svg' }))!.props.source)
+  for (let i = 0; i < 10; i += 1) await clock.advance(150)
+  expect(String((await rest.find({ type: 'Svg' }))!.props.source)).toBe(asleep)
+})
+
+test('on the desktop the /krux pane shows the smith as Svg too', async ($, on) => {
+  engine(on, new Map())
+  await start($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  const svg = (await ui.find({ type: 'Svg' }))!
+  expect(String(svg.props.source)).toContain(PALETTE.k)
+  expect(String(svg.props.source)).not.toMatch(/[▀▄█]/u)
+})
 
 test('a Bash test uses the testing scene instead of mining', async ($, on) => {
   engine(on, new Map())

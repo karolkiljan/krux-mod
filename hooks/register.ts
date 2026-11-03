@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
-import type { EngineInterface, Register, RenderElement, RenderInput, SessionUsage } from 'claude-code'
+import type { EngineInterface, Register, RenderElement, RenderInput, SessionUsage, Timer } from 'claude-code'
 
-import type { KruxActivity, KruxBoard, KruxEvent, KruxGit, KruxHordeMember, KruxMode, KruxModes, KruxTestRun } from '../types'
+import type { KruxActivity, KruxBoard, KruxEvent, KruxGit, KruxHordeMember, KruxLore, KruxMode, KruxModes, KruxTestRun } from '../types'
 import { CAPTION_COLUMNS, CAPTION_GAP, bandPlan } from './band'
 import type { BandInput } from './band'
 import { EMPTY_CREW, crewAfter } from './crew'
@@ -23,7 +23,11 @@ import { MORRA_COLOR } from './avatar'
 import type { AvatarSpeaker } from './avatar'
 import { EMPTY_JOURNAL, journalAfter, journalTree, toolLine } from './journal'
 import { echoLine, echoPrompt } from './echo'
-import { forgeColumns } from './sprites'
+import Forge from './forge'
+import type { ForgeProps } from './forge'
+import { FRAME_MS, forgeColumns } from './sprites'
+import { drawHeadless, headless, svgOf } from './vector'
+import type { Headless } from './vector'
 import {
   DEFAULT_MODES,
   HELP,
@@ -67,6 +71,12 @@ const DIGEST_MAX = 64
 // pusty wiersz nad wiadomością, piksele z półbloków. Desktop rysuje je krzywo
 // (tabliczka na tekście, piksele z przerwami), więc stoją tylko w terminalu.
 const GRID_SURFACE = 'terminal'
+// Desktop dostaje płótno jako `Svg`: ten sam `Forge` liczy tam klatki w module hooków.
+const DESK_SURFACE = 'desktop'
+// Piksele CSS na komórkę płótna: tyle co krok czcionki kodu Desktopu.
+const DESK_CELL = 8
+// Tyle klatek bez rysunku i zegar płótna staje: miejsce zniknęło (ankieta, zamknięty panel).
+const DESK_STALE = 14
 
 const modes = atom({ plugin: 'krux-mod', key: 'modes' } as const, DEFAULT_MODES)
 const activity = atom({ plugin: 'krux-mod', key: 'activity' } as const, null)
@@ -97,6 +107,7 @@ const longAnswer = atom({ plugin: 'krux-mod', key: 'longAnswer' } as const, fals
 const ownRed = atom({ plugin: 'krux-mod', key: 'ownRed' } as const, null)
 const journal = atom({ plugin: 'krux-mod', key: 'journal' } as const, { entries: [] })
 const shaftTab = atom({ plugin: 'krux-mod', key: 'shaftTab' } as const, 'stan')
+const deskFrame = atom({ plugin: 'krux-mod', key: 'deskFrame' } as const, 0)
 
 // Godzina pierwszego rysunku po id wiadomości, bez niedozwolonego zapisu $.state
 // w ui.render. Nie ma zegara historii: redraw i resize zachowują tę samą godzinę.
@@ -522,6 +533,44 @@ async function drawChat($: EngineInterface, e: MessageInput, speaker: AvatarSpea
   const date = new Date(at)
   const time = [date.getHours(), date.getMinutes()].map(value => String(value).padStart(2, '0')).join(':')
   return chatTree($.ui.resolve(e), { speaker, time, content })
+}
+
+// Płótno na Desktopie: jedno na miejsce rysowania, stan i zegar w module hooków, bo Desktop
+// rysuje `Client` tylko divami i spanami. Zegar tyka, póki płótno się rusza i ktoś je rysuje;
+// zapis `deskFrame` przerysowuje tylko miejsca, które go czytają.
+// Ściana pokoju z kroniki: pieczęcie za commity, kamienie za zielone testy, sztabki za udane
+// budowania; po padłych zielone przywołuje Skarbnika.
+function trophiesOf(chronicle: KruxLore): Pick<BandInput, 'seals' | 'gems' | 'ingots' | 'blessed'> {
+  return { seals: chronicle.commits, gems: chronicle.testRuns - chronicle.testFails, ingots: chronicle.builds - chronicle.buildFails, blessed: chronicle.testFails + chronicle.buildFails > 0 }
+}
+
+type Desk = { surface: Headless; timer: Timer | null; drawnAt: number }
+const desks = new Map<string, Desk>()
+
+type DeskState = { frame: number; idle: boolean; snoozing?: boolean }
+
+async function deskArt($: EngineInterface, site: string, props: ForgeProps, alt: string): Promise<{ source: string; alt: string }> {
+  await read($, deskFrame)
+  const desk = desks.get(site) ?? { surface: headless(), timer: null, drawnAt: 0 }
+  desks.set(site, desk)
+  const tree = drawHeadless(Forge, props, desk.surface)
+  const state = desk.surface.state as DeskState
+  desk.drawnAt = state.frame
+  if (!state.idle && desk.timer === null) {
+    desk.timer = $.clock.every(FRAME_MS, () => {
+      const now = desk.surface.state as DeskState
+      if (now.frame - desk.drawnAt > DESK_STALE || (now.idle && now.snoozing === true)) {
+        desk.timer?.cancel()
+        desk.timer = null
+        return
+      }
+      desk.surface.tick?.()
+      if (!desk.surface.written) return
+      desk.surface.written = false
+      void update($, deskFrame, frame => frame + 1)
+    })
+  }
+  return { source: svgOf(tree, DESK_CELL).source, alt }
 }
 
 async function journalShown($: EngineInterface, surface: string): Promise<boolean> {
@@ -1106,7 +1155,8 @@ export const register: Register = on => {
   // Pas nad promptem: podpis z lewej, za nim Krux i wysłani kumple, dymek nad
   // tym, kto ostatnio coś zrobił. Plan liczy `band.ts`; tu tylko stan i elementy.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    if (e.props.hasSurvey || e.surface !== GRID_SURFACE) return next(e)
+    const desk = e.surface === DESK_SURFACE
+    if (e.props.hasSurvey || (e.surface !== GRID_SURFACE && !desk)) return next(e)
     const now = await read($, modes)
     if (!now.persona || !now.animacje) return next(e)
     const working = e.props.isWorking
@@ -1128,9 +1178,9 @@ export const register: Register = on => {
       now: await $.clock.now(),
       columns: e.props.bodyColumns,
       rows: e.props.maxRows,
-      hasClient: 'Client' in table && !forgeFault,
+      hasClient: desk || ('Client' in table && !forgeFault),
       red: (await read($, board)).test?.ok === false,
-      seals: (await read($, lore)).commits,
+      ...trophiesOf(await read($, lore)),
     }
     // Skrót Sztolni za płótnem, gdy jej panelu nie widać: zamknięty, czeka na
     // szerszy terminal (bez pytania silnik stawia go od 144 kolumn) albo stoi
@@ -1151,9 +1201,9 @@ export const register: Register = on => {
     }
     const theirs = await next(e)
     const { Box, Text } = table
-    // Kreska nad pasem oddziela go od odpowiedzi i zabiera jeden wiersz.
-    const rule = plan.rule ? [Text({ dimColor: true, wrap: 'truncate-end', children: ['─'.repeat(Math.max(1, e.props.bodyColumns))] })] : []
-    if (plan.stage === null || !('Client' in table) || forgeFault) {
+    // Kreska nad pasem oddziela go od odpowiedzi i zabiera jeden wiersz; Desktop oddziela go sam.
+    const rule = plan.rule && !desk ? [Text({ dimColor: true, wrap: 'truncate-end', children: ['─'.repeat(Math.max(1, e.props.bodyColumns))] })] : []
+    if (plan.stage === null || (!desk && (!('Client' in table) || forgeFault))) {
       const caption = [[plan.verb, plan.target].filter(Boolean).join(' '), plan.tally].filter(Boolean).join(' · ')
       const line = Text({ dimColor: true, wrap: 'truncate-end', children: [`⚒ ${caption}`] })
       return Box({ flexDirection: 'column', children: [...rule, line, theirs] })
@@ -1167,7 +1217,9 @@ export const register: Register = on => {
         ...(plan.tally ? [Text({ dimColor: true, wrap: 'truncate-end', children: [plan.tally] })] : []),
       ],
     })
-    const forge = table.Client({ key: 'forge', module: './forge.ts', props: plan.stage.props, width: plan.stage.width, height: plan.stage.height })
+    const forge = desk && 'Svg' in table
+      ? table.Svg({ ...(await deskArt($, `band:${e.requestId}`, plan.stage.props, [plan.verb, plan.target].filter(Boolean).join(' '))) })
+      : table.Client({ key: 'forge', module: './forge.ts', props: plan.stage.props, width: plan.stage.width, height: plan.stage.height })
     const free = e.props.bodyColumns - CAPTION_COLUMNS - plan.stage.width - 2 * CAPTION_GAP
     // Skrót nie podnosi pasa: tyle linii, ile wierszy płótna, od najważniejszej.
     const digest = free >= DIGEST_COLUMNS ? lines.slice(0, plan.stage.height) : []
@@ -1258,18 +1310,21 @@ export const register: Register = on => {
         },
       })
     const scale = e.props.bodyColumns >= forgeColumns('pane', 2) + 2 ? 2 : 1
+    const smithy: ForgeProps = { variant: 'pane', scale, still: isStill, rest: false, slots: 1, bubbleRows: false, orcs: [{ key: 'krux', face: 'Krux', scene: 'hammer', mood: mood.faces.Krux }], bubble: null }
     const art =
-      e.surface === GRID_SURFACE && 'Client' in table && !forgeFault && e.props.bodyColumns >= forgeColumns('pane', 1)
-        ? [
-            table.Client({
-              key: `forge-pane-${scale}-${isStill ? 'still' : 'live'}`,
-              module: './forge.ts',
-              props: { variant: 'pane', scale, still: isStill, rest: false, slots: 1, bubbleRows: false, orcs: [{ key: 'krux', face: 'Krux', scene: 'hammer', mood: mood.faces.Krux }], bubble: null },
-              width: forgeColumns('pane', scale),
-              height: 3 * scale,
-            }),
-          ]
-        : []
+      e.surface === DESK_SURFACE && 'Svg' in table
+        ? [table.Svg({ ...(await deskArt($, `pane:${e.requestId}`, { ...smithy, scale: 1 }, 'Krux kuć przy palenisku')) })]
+        : e.surface === GRID_SURFACE && 'Client' in table && !forgeFault && e.props.bodyColumns >= forgeColumns('pane', 1)
+          ? [
+              table.Client({
+                key: `forge-pane-${scale}-${isStill ? 'still' : 'live'}`,
+                module: './forge.ts',
+                props: smithy,
+                width: forgeColumns('pane', scale),
+                height: 3 * scale,
+              }),
+            ]
+          : []
     return Box({
       flexDirection: 'column',
       gap: 1,

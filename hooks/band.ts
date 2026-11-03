@@ -39,9 +39,13 @@ export type BandInput = {
   rows: number
   // Czy powierzchnia potrafi narysować płótno `Client`.
   hasClient: boolean
-  // Stan roboty na ścianie pokoju: czerwone testy, commity sesji.
+  // Stan roboty na ścianie pokoju: czerwone testy, commity, zielone przebiegi testów, udane
+  // budowania; `blessed`: w sesji coś już padło.
   red?: boolean
   seals?: number
+  gems?: number
+  ingots?: number
+  blessed?: boolean
 }
 
 export type BandPlan = {
@@ -69,7 +73,8 @@ export function bandPlan(input: BandInput): BandPlan {
   const handedBack = input.activity?.scene === 'horn' && (input.cues ?? []).some(cue => cue.kind === 'handoff' && cue.until > input.now)
   const lounging = handedBack || (members.length > 0 && (!working || input.waiting))
   const orcs: ForgeOrc[] = [
-    { key: 'krux', face: 'Krux', scene: lounging ? 'lounge' : (input.activity?.scene ?? 'hammer'), mood: input.moods.faces.Krux, ...(!lounging && input.activity?.startedAt !== undefined ? { workAt: input.activity.startedAt } : {}) },
+    // W spoczynku Krux czuwa przy palenisku; kumple odpoczywają w kwaterach.
+    { key: 'krux', face: 'Krux', scene: lounging ? 'lounge' : working ? (input.activity?.scene ?? 'hammer') : 'watch', mood: input.moods.faces.Krux, ...(!lounging && input.activity?.startedAt !== undefined ? { workAt: input.activity.startedAt } : {}) },
     ...shown.map(member => ({ key: member.agentId, face: member.mate, scene: member.scene, mood: member.mate ? input.moods.faces[member.mate] : ('calm' as const), ...(member.startedAt === undefined ? {} : { workAt: member.startedAt }) })),
   ]
   // Krok kumpla, którego już nie ma na scenie, nie wisi nad nikim.
@@ -99,6 +104,9 @@ export function bandPlan(input: BandInput): BandPlan {
     floor,
     red: input.red === true,
     seals: input.seals ?? 0,
+    gems: input.gems ?? 0,
+    ingots: input.ingots ?? 0,
+    blessed: input.blessed === true,
     bubbleRows: tall,
     orcs,
     bubble: inCanvas ? { key: speaker!.key, text: said!.text, speaker: said!.speaker } : null,
