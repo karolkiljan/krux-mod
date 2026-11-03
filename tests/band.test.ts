@@ -7,7 +7,7 @@ import { EMPTY_CREW, crewAfter } from '../hooks/crew'
 import { EMPTY_LORE, recordTool } from '../hooks/lore'
 import { CALM, EVENT_HOLD_MS, SPAR_EVENTS, sparLine } from '../hooks/mood'
 import { MATES } from '../hooks/roster'
-import { BUBBLE_TEXT } from '../hooks/sprites'
+import { BUBBLE_TEXT, hasHearth } from '../hooks/sprites'
 import { describeTool } from '../hooks/voice'
 
 const NIUCH: KruxHordeMember = { agentId: 'a1', mate: 'Niuch', scene: 'hammer', target: '' }
@@ -85,6 +85,21 @@ test('mates beyond the slots are counted, and Krux waits on the sofa while they 
   const rest = bandPlan({ ...AT_WORK, working: false, activity: null, columns: 140, members: crowd })
   expect([rest.verb, rest.target, rest.tally]).toEqual(['Krux czekać na hordę', '', '+1 z hordy'])
   expect(bandPlan({ ...AT_WORK, members: [NIUCH] }).verb).toBe('Krux czytać runy')
+})
+
+test('the hearth beats the last mate slot: Krux keeps his fire on a band beside the Sztolnia', async () => {
+  // Pas obok panelu Sztolni ma około 80 kolumn płótna: trzech orków albo dwóch i palenisko.
+  for (const [columns, slots] of [[110, 2], [120, 3], [130, 3], [136, 4], [140, 4]] as const) {
+    const props = bandPlan({ ...AT_WORK, columns }).stage!.props
+    expect([columns, props.slots, hasHearth(props.floor!, props.slots)]).toEqual([columns, slots, true])
+  }
+  // Węższy pas nie ma miejsca na palenisko nawet przy dwóch: zostaje tyle miejsc, ile się mieści.
+  const narrow = bandPlan({ ...AT_WORK, columns: 80 }).stage!.props
+  expect([narrow.slots, hasHearth(narrow.floor!, narrow.slots)]).toEqual([2, false])
+  // Kumpel, którego nie widać, liczy się w podpisie.
+  expect(bandPlan({ ...AT_WORK, columns: 110, members: [NIUCH, MLOT] }).tally).toBe('+1 z hordy')
+  // W bezruchu palenisko nie staje, więc miejsca kumplowi nie zabiera.
+  expect(bandPlan({ ...AT_WORK, columns: 110, still: true }).stage!.props.slots).toBe(3)
 })
 
 test('low and text-only captions keep mate speech and only count hidden mates', async () => {

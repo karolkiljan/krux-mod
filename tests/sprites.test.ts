@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import { GESTURES } from '../hooks/fidget'
 import { MATES } from '../hooks/roster'
-import { ACTS, BUBBLE_TEXT, CATCH_X, DUET_FRAMES, carried, doorX, dayPhase, duetPose, floorHomes, roomGrid, hasHearth, stationX, CUE_FRAMES, FRAME_MS, HOLD_FRAMES, actsFor, routeOf, trackDozing, trackFace, ORC_GAP, ORC_WIDTH, PALETTE, bandColumns, behind, bubbleLines, canvasColumns, catchStep, caughtScroll, dress, frameGrid, forgeColumns, runsOf, slotX, stageGrid, tossFrames, trackGrid, trackOff, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withNap } from '../hooks/sprites'
+import { ACTS, BUBBLE_TEXT, CATCH_X, DUET_FRAMES, carried, doorX, dayPhase, duetPose, floorHomes, kitAt, kitReach, quartersDoor, roomGrid, hasHearth, stationX, CUE_FRAMES, FRAME_MS, HOLD_FRAMES, actsFor, routeOf, trackDozing, trackFace, ORC_GAP, ORC_WIDTH, PALETTE, bandColumns, behind, bubbleLines, canvasColumns, catchStep, caughtScroll, dress, frameGrid, forgeColumns, runsOf, slotX, stageGrid, tossFrames, trackGrid, trackOff, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withNap } from '../hooks/sprites'
 import type { DayPhase, StageScene } from '../hooks/sprites'
 import { H, STAND, W, actFrame, entryOf, head, kitLead, legAt, moodOf, pad, stander } from '../hooks/stage'
 
@@ -269,16 +269,18 @@ test('the room lives on its own and answers the chronicle', () => {
   expect(calm).toHaveLength(12)
   expect(calm.every(row => row.length === 120)).toBe(true)
   expect(calm.join('')).toContain('Z')
-  // Klatka 0 to bezruch: ani wózka, ani szczura w pół drogi.
-  expect(roomGrid(120, 0, true).join('')).not.toContain('Y')
-  const frames = Array.from({ length: 240 }, (_, frame) => roomGrid(120, frame, true).join(''))
-  expect(frames.some(room => room.includes('Y'))).toBe(true)
-  expect(new Set(frames).size).toBeGreaterThan(20)
+  const frames = Array.from({ length: 240 }, (_, frame) => roomGrid(120, frame, true))
+  expect(new Set(frames.map(room => room.join(''))).size).toBeGreaterThan(20)
   expect(roomGrid(120, 7, true, { feel: { kind: 'test-fail', age: 2 } }).join('')).toContain('R')
   expect(roomGrid(120, 7, true, { feel: { kind: 'zawał', age: 2 } }).join('').split('q').length).toBeGreaterThan(5)
-  // Spoczynek zatrzymuje zegar: wózek i szczur nie stają w pół drogi.
-  const atRest = Array.from({ length: 240 }, (_, frame) => roomGrid(120, frame, true, { alive: false }).join(''))
-  expect(atRest.some(room => room.includes('Y'))).toBe(false)
+  // Spokojna ściana: rusza się tylko dym, kanarek i płomienie pochodni. Żadnych wózków, szczurów,
+  // nietoperzy ani mrugającej rudy, które mieszały się ze sprzętem.
+  const moving = new Set<string>()
+  for (let y = 0; y < 12; y += 1) for (let x = 0; x < 120; x += 1) {
+    const seen = new Set(frames.map(room => room[y]![x]!))
+    if (seen.size > 1) for (const cell of seen) moving.add(cell)
+  }
+  expect([...moving].sort()).toEqual(['.', 'Q', 'V', 'Z'])
 })
 
 test('the window shows the sky of the hour, and the room has no background', () => {
@@ -293,7 +295,7 @@ test('the window shows the sky of the hour, and the room has no background', () 
 })
 
 test('duet poses stay in the palette, keep both eyes and open with the partner in reach', () => {
-  for (const kind of ['fence', 'pass', 'highfive', 'argue'] as const) {
+  for (const kind of ['fence', 'pass', 'highfive', 'argue', 'toast'] as const) {
     for (let t = 0; t < DUET_FRAMES; t += 1) {
       const { host, guest, prop } = duetPose(kind, t)
       for (const rows of [host, guest, prop]) expect([...rows.join('')].every(cell => cell === '.' || PALETTE[cell] !== undefined)).toBe(true)
@@ -303,9 +305,23 @@ test('duet poses stay in the palette, keep both eyes and open with the partner i
   }
   expect(duetPose('fence', 0).prop.join('')).toContain('s')
   expect(duetPose('pass', 2).prop.join('')).toContain('R')
+  // Kufle: gość przynosi oba i z oboma odchodzi, stuk nad środkiem pryska pianą między nimi.
+  for (let t = 0; t < DUET_FRAMES; t += 1) expect(duetPose('toast', t).prop.join('').split('h').length - 1).toBe(2)
+  for (const t of [0, DUET_FRAMES - 1]) expect(pad(duetPose('toast', t).prop)[3]!.slice(7, 14)).toBe('....hh.')
+  expect(pad(duetPose('toast', 12).prop)[0]!.slice(8, 12)).toBe('jjjj')
+  expect(pad(duetPose('toast', 9).prop)[0]!.slice(8, 12)).toBe('j..j')
 })
 
-test('the wall shows the state of the work: canary, the door of the quarters, seals', () => {
+test('the kit left on the ground is the one of the act playing, and its reach is measured from the orc', () => {
+  const track = trackStart('hammer', 'krux', 0, 0)
+  const kit = kitAt(track, 40)
+  expect(kit).toBe(routeOf('hammer', 'Krux', track.seed).legs[0]!.act.kit)
+  expect(kitReach(['......', '.....hh'])).toBe(7)
+  expect(kitReach(STAND)).toBe(6)
+  expect(kitAt(trackOff(track, 40, true), 80)).toBe(kit)
+})
+
+test('the wall shows the state of the work: the canary and the door of the quarters', () => {
   const count = (rows: string[], cell: string) => rows.join('').split(cell).length - 1
   const well = roomGrid(160, 8, true)
   const faint = roomGrid(160, 8, true, { red: true })
@@ -313,8 +329,6 @@ test('the wall shows the state of the work: canary, the door of the quarters, se
   expect(count(faint, 'Z')).toBeLessThan(count(well, 'Z'))
   // Drzwi kwater stoją otworem, gdy ktoś w nich przechodzi: w środku ciemność zamiast desek.
   expect(count(roomGrid(160, 8, true, { door: true }), 'I')).toBeGreaterThan(count(well, 'I'))
-  expect(count(roomGrid(160, 8, true, { seals: 3 }), 'd') - count(well, 'd')).toBe(3)
-  expect(count(roomGrid(160, 8, true, { seals: 99 }), 'd') - count(well, 'd')).toBeLessThanOrEqual(12)
 })
 
 test('a load rides at the hand on the side of the march, and a trial leaves empty-handed', () => {
@@ -405,14 +419,15 @@ test('at the kit an act settles back to the kit, so the orc can carry it away', 
 
 test('the horde rests behind the door of the quarters, not on the floor: no sleeper pixels in the room', () => {
   for (const width of [70, 94, 120, 200]) {
-    const door = doorX('Niuch', width, false)
-    // Wszyscy kumple wychodzą tymi samymi drzwiami, w obrębie podłogi; bezimienny ze sztolni.
-    for (const mate of MATES) expect(doorX(mate, width, false)).toBe(door)
+    const door = quartersDoor(width, false)!
+    // Kumple wychodzą tymi samymi drzwiami, w obrębie podłogi; zwiad i bezimienny z nory w sztolni.
+    for (const mate of MATES) expect([mate, doorX(mate, width, false)]).toEqual([mate, mate === 'Niuch' ? doorX(null, width, false) : door])
     expect(door + 3).toBeLessThanOrEqual(width)
     expect(doorX(null, width, false)).not.toBe(door)
   }
   // Bez miejsca na drzwi kumple, jak bezimienny, wychodzą ze sztolni.
-  expect(doorX('Niuch', 46, false)).toBe(doorX(null, 46, false))
+  expect(quartersDoor(46, false)).toBe(null)
+  expect(doorX('Grom', 46, false)).toBe(doorX(null, 46, false))
   const room = roomGrid(200, 8, false).join('')
   for (const apron of ['N', 'M', 'P', 'O', 'L', 'T', 'u']) expect(room).not.toContain(apron)
 })
@@ -623,32 +638,47 @@ test('a mate named while working settles the old act to the stand, then plays it
   expect(trackFace(trackStart('hammer', 'a1', 0, 20, null), 'Grom', 'a1', 5, false)).toMatchObject({ face: 'Grom', leaving: null })
 })
 
-test('the work of the session hangs on the wall: gems for green test runs, ingots for builds', () => {
-  const count = (rows: string[], cells: string) => [...rows.join('')].filter(cell => cells.includes(cell)).length
-  const bare = roomGrid(160, 8, true)
-  const rich = roomGrid(160, 8, true, { gems: 5, ingots: 3 })
-  expect(count(rich, 'dfWyv') - count(bare, 'dfWyv')).toBeGreaterThanOrEqual(5)
-  expect(count(rich, 's') - count(bare, 's')).toBe(3)
-  // Ściana mieści tyle, ile ma miejsc: setka zielonych nie wylewa się na sztolnię.
-  expect(count(roomGrid(160, 8, true, { gems: 100, ingots: 100 }), 'dfWyvsj') - count(roomGrid(160, 8, true, { gems: 12, ingots: 7 }), 'dfWyvsj')).toBe(0)
+test('gear on the forge rack hangs from hooks, and an empty hook marks the place of gear in use', () => {
+  const room = roomGrid(120, 8, true)
+  const used = roomGrid(120, 8, true, { taken: ['hammer'] })
+  // Belka nad hakami: pod nią w każdym wierszu tyle haków, ile sprzętu na kuźni.
+  const beam = room[1]!.indexOf('E')
+  const hooks = [...room[2]!.slice(beam, beam + 14)].flatMap((cell, x) => (cell === 'C' ? [x] : []))
+  expect(hooks).toEqual([1, 4, 7, 10, 13])
+  // Zdjęty młot znika ze ściany, hak nad nim zostaje.
+  expect(used[2]).toBe(room[2])
+  expect(used.slice(3, 6).map(row => row.slice(beam, beam + 2))).toEqual(['..', '..', '..'])
+  expect(room.slice(3, 6).map(row => row.slice(beam, beam + 2))).not.toEqual(['..', '..', '..'])
 })
 
-test('the window follows the season and the wall the holidays', () => {
+test('outside the holidays the free wall before the door of the quarters stays empty', () => {
+  // Bez proporca i trofeów: ściana to meble i sprzęt, stan sesji pokazuje Sztolnia.
+  const room = roomGrid(160, 8, true)
+  const door = quartersDoor(160, true)! - 1
+  for (const row of room.slice(0, 6)) expect(row.slice(door - 10, door - 1)).toBe('.'.repeat(9))
+})
+
+test('the window follows the winter and one holiday thing stands by the door', () => {
   const at = (month: number, day: number, phase: DayPhase = 'day') => roomGrid(160, 8, true, { date: { month, day }, phase })
   const differs = (a: string[], b: string[]) => a.join('') !== b.join('')
   expect(differs(at(1, 15), at(6, 15))).toBe(true)
-  expect(differs(at(10, 10), at(6, 15))).toBe(true)
+  // Poza zimą i świętami pora roku nie zmienia ściany.
+  expect(differs(at(10, 10), at(6, 15))).toBe(false)
+  expect(differs(at(4, 10), at(6, 15))).toBe(false)
   // Choinka z lampkami w grudniu, dynia na Zaduszki: zielone igły i pomarańczowa dynia.
   expect(at(12, 24).join('')).toContain('l')
   expect(at(6, 15).join('').split('l').length).toBeLessThan(at(12, 24).join('').split('l').length)
   expect(at(10, 31).join('').split('o').length).toBeGreaterThan(at(6, 15).join('').split('o').length)
+  // Choinka stoi przy drzwiach kwater, nie na środku wolnej ściany: igły tuż przed framugą.
+  expect(quartersDoor(160, true)! - 1 - at(12, 24)[4]!.lastIndexOf('l')).toBe(3)
 })
 
-test('Skarbnik comes only in a green moment after failures, and bats only after dusk', () => {
+test('Skarbnik comes only in a green moment after failures, and the night shows only in the window', () => {
   const feel = { kind: 'test-pass' as const, age: 5 }
   expect(roomGrid(160, 8, true, { feel, blessed: true }).join('')).not.toBe(roomGrid(160, 8, true, { feel }).join(''))
   expect(roomGrid(160, 8, true, { feel: { kind: 'test-fail', age: 5 }, blessed: true }).join('')).toBe(roomGrid(160, 8, true, { feel: { kind: 'test-fail', age: 5 } }).join(''))
-  const bats = (phase: DayPhase) => roomGrid(160, 8, true, { phase }).join('').split('w').length - 1
-  expect(bats('night')).toBeGreaterThan(bats('day'))
-  expect(bats('dusk')).toBeGreaterThan(bats('day'))
+  const night = roomGrid(160, 8, true, { phase: 'night' })
+  const day = roomGrid(160, 8, true, { phase: 'day' })
+  const changed = night.flatMap((row, y) => [...row].flatMap((cell, x) => (cell === day[y]![x] ? [] : [`${cell}${day[y]![x]}`])))
+  expect(new Set(changed)).toEqual(new Set(['79', 'j9']))
 })

@@ -48,7 +48,6 @@ export const PALETTE: Record<string, string> = {
   8: '#c4845a', // niebo w szybie: świt
   9: '#7aa6c8', // niebo w szybie: dzień
   0: '#a8562e', // niebo w szybie: zmierzch
-  Y: '#55402a', // skrzynia wózka
 }
 
 // Fartuchy kumpli: tych znaków czynność nie używa, bo kumpel podmienia nimi 'b'.

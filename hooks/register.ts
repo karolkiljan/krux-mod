@@ -535,14 +535,14 @@ async function drawChat($: EngineInterface, e: MessageInput, speaker: AvatarSpea
   return chatTree($.ui.resolve(e), { speaker, time, content })
 }
 
+// Ściana pokoju z kroniki: po padłych zielone przywołuje Skarbnika.
+function blessedOf(chronicle: KruxLore): Pick<BandInput, 'blessed'> {
+  return { blessed: chronicle.testFails + chronicle.buildFails > 0 }
+}
+
 // Płótno na Desktopie: jedno na miejsce rysowania, stan i zegar w module hooków, bo Desktop
 // rysuje `Client` tylko divami i spanami. Zegar tyka, póki płótno się rusza i ktoś je rysuje;
 // zapis `deskFrame` przerysowuje tylko miejsca, które go czytają.
-// Ściana pokoju z kroniki: pieczęcie za commity, kamienie za zielone testy, sztabki za udane
-// budowania; po padłych zielone przywołuje Skarbnika.
-function trophiesOf(chronicle: KruxLore): Pick<BandInput, 'seals' | 'gems' | 'ingots' | 'blessed'> {
-  return { seals: chronicle.commits, gems: chronicle.testRuns - chronicle.testFails, ingots: chronicle.builds - chronicle.buildFails, blessed: chronicle.testFails + chronicle.buildFails > 0 }
-}
 
 type Desk = { surface: Headless; timer: Timer | null; drawnAt: number }
 const desks = new Map<string, Desk>()
@@ -1180,7 +1180,7 @@ export const register: Register = on => {
       rows: e.props.maxRows,
       hasClient: desk || ('Client' in table && !forgeFault),
       red: (await read($, board)).test?.ok === false,
-      ...trophiesOf(await read($, lore)),
+      ...blessedOf(await read($, lore)),
     }
     // Skrót Sztolni za płótnem, gdy jej panelu nie widać: zamknięty, czeka na
     // szerszy terminal (bez pytania silnik stawia go od 144 kolumn) albo stoi

@@ -78,28 +78,36 @@ _Avoid_: tło, backdrop
 To, czym ork pracuje w danej czynności: stoi na ziemi przed orkiem, a mieszka na ścianie, w miejscu swojej sceny. Nic nie zjawia się samo: ork przynosi rekwizyt i odnosi.
 _Avoid_: prop, kit (w tekstach dla Morry)
 
+**Hak**:
+Miejsce sprzętu kuźni pod belką na ścianie; zdjęty sprzęt zostawia pusty hak, więc widać, czego brak.
+_Avoid_: slot, uchwyt
+
 **Wyprawa**:
 Marsz orka w głąb pokoju po rekwizyt albo z rekwizytem; ork maleje razem z nim, odkłada, bierze następny i dopiero zaczyna robotę.
 _Avoid_: errand
-
-**Trofea**:
-Robota sesji na ścianie pokoju: pieczęcie za commity, kamienie za zielone przebiegi testów, sztabki za udane budowania.
-_Avoid_: punkty, odznaki
 
 **Skarbnik**:
 Duch kopalni ze śląskiej legendy: staje z lampą w otworze sztolni, gdy robota zazieleni się po padłych.
 _Avoid_: easter egg
 
 **Kwatery**:
-Miejsce hordy za drzwiami w ścianie pokoju: kto nie pracuje, odpoczywa tam niewidoczny, a wezwany wychodzi drzwiami do roboty. Ork bez imienia wychodzi ze sztolni.
+Miejsce hordy za drzwiami w ścianie pokoju: kto nie pracuje, odpoczywa tam niewidoczny, a wezwany wychodzi drzwiami do roboty.
 _Avoid_: prycza, łóżko, spawn
+
+**Nora**:
+Głąb sztolni, z której wychodzi i do której wraca zwiad: Niuch i ork bez imienia. Drzwi kwater przed nimi się nie otwierają.
+_Avoid_: jaskinia, tunel
+
+**Odwiedziny**:
+Kumpel z kwater, którego nikt nie wezwał, wpada czasem do Kruxa stojącego samotnie przy robocie albo przy ogniu: przynosi kufle albo przybija piątkę i wraca. Zabawa hordy, bez dymka i bez roboty.
+_Avoid_: wizyta agenta, spawn
 
 **Czuwanie**:
 Spoczynek Kruxa przy palenisku, gdy nie ma roboty ani hordy na scenie.
 _Avoid_: idle, sen
 
 **Scenka**:
-Zabawa dwóch orków na podłodze: szermierka, podanie stali, piątka albo kłótnia.
+Zabawa dwóch orków na podłodze: szermierka, podanie stali, piątka, kłótnia albo kufle przy odwiedzinach.
 _Avoid_: animacja, duet
 
 **Stary wróg**:

@@ -186,6 +186,18 @@ export function trackKit(track: Track): Frame | undefined {
   return track.stops === 'kit' ? routeOfTrack(track).legs[0]!.act.kit : undefined
 }
 
+// Rekwizyt czynności, która gra w klatce `frame`: ten zostanie na ziemi, gdy ork przerwie.
+export function kitAt(track: Track, frame: number): Frame | undefined {
+  if (track.stops !== undefined) return trackKit(track)
+  const route = routeOfTrack(track)
+  return route.legs[legAt(route, Math.max(0, frame - track.since))]!.act.kit
+}
+
+// Kolumna za prawą krawędzią rekwizytu, licząc od lewej krawędzi orka.
+export function kitReach(kit: Frame): number {
+  return Math.max(0, ...pad(kit).map(row => row.replace(/\.+$/u, '').length))
+}
+
 // Scena, której sprzęt jest poza ścianą: gra albo stoi przy orku.
 export function trackOut(track: Track): StageScene | null {
   return track.stops === 'bare' || routeOfTrack(track).legs[0]!.act.kit === undefined ? null : track.scene
@@ -473,8 +485,9 @@ export function carried(scene: StageScene, x: number, rightward: boolean): Place
 export const ROOM_ROWS = 12
 
 // Meble na ścianie. `x` to odstęp od stanowiska; meble rozsuwa `wallSpots`, żeby się nie wpychały.
+// Pod belką kuźni wiszą haki: każdy trzyma swój sprzęt, a gdy ork go zdejmie, hak zostaje pusty.
 const WALL_PROPS: Record<Station, { x: number; rows: Frame }> = {
-  forge: { x: 1, rows: ['', '', 'EEEEEEEEEEEEEE'] },
+  forge: { x: 1, rows: ['', 'EEEEEEEEEEEEEE', '.C..C..C..C..C'] },
   table: { x: 2, rows: ['', '', 'EEEEEEEEEEEEE', '.UU.U..UU.U..', '.UU.U..UU.U..', 'EEEEEEEEEEEEE'] },
   trial: { x: 2, rows: ['', '', '', 'EEEEEEEE', 'ECCCCCCE', 'EEEEEEEE'] },
   mine: { x: 2, rows: ['..EEEEEEEE..', '.EEIIIIIIEE.', '.EIIIIIIIIE.', '.EIIIIIIIIE.', '.EIIIIIIIIE.', '.EIIIIIIIIE.'] },
@@ -543,10 +556,21 @@ function doorLeft(width: number, hearth: boolean): number | null {
   return to - from + 1 < DOOR_WIDE ? null : to - DOOR_WIDE + 1
 }
 
-// Skąd kumpel wychodzi do roboty i dokąd wraca: kolumna orka w głębi, w drzwiach kwater.
+// Zwiad mieszka w norze: Niuch, jak ork bez imienia, wychodzi z głębi sztolni i tam wraca.
+const BURROW: ReadonlySet<Face> = new Set<Face>([null, 'Niuch'])
+// Kolumna orka w głębi sztolni: środek otworu, z którego wychodzi.
+const SHAFT_MOUTH = 4
+
+// Kolumna orka w otwartych drzwiach kwater; `null`, gdy na drzwi nie ma miejsca.
+export function quartersDoor(floor: number, hearth: boolean): number | null {
+  const left = doorLeft(floor, hearth)
+  return left === null ? null : left + 1
+}
+
+// Skąd kumpel wychodzi do roboty i dokąd wraca: kolumna orka w głębi, w drzwiach kwater albo w sztolni.
 export function doorX(face: Face, floor: number, hearth: boolean): number {
-  const left = face === null ? null : doorLeft(floor, hearth)
-  return left === null ? depthSpot('pick', floor, hearth) : left + 1
+  const door = BURROW.has(face) ? null : quartersDoor(floor, hearth)
+  return door ?? wallX('mine', floor, hearth) + SHAFT_MOUTH
 }
 
 // Meble i drzwi kwater, bez tła: pusta komórka zostaje kolorem terminala. Stałe dla szerokości, liczone raz.
@@ -563,40 +587,21 @@ function roomBase(width: number, hearth: boolean): string[][] {
   for (const station of WALL_ORDER) stamp(WALL_PROPS[station].rows, wallX(station, width, hearth), 0)
   const door = doorLeft(width, hearth)
   if (door !== null) stamp(DOOR, door, 0)
-  // Błękitna ruda w głębi sztolni: żyły, które przy robocie mrugają.
-  stamp(ORE_VEINS, wallX('mine', width, hearth), 0)
   roomCache.set(key, room)
   return room
 }
 
-// Wózek wytacza się ze sztolni ku widzowi z błękitną rudą i wraca: rośnie jak ork w drodze z głębi.
-const CART: readonly Frame[] = [['iW', 'YY'], ['WiW', 'YYY', 'C.C'], ['iWiW', 'YYYY', 'YYYY', 'C..C']]
-// Żyły rudy w otworze sztolni (rama mebla `mine`), pod sprzętem, który tam stoi.
-const ORE_VEINS: Frame = ['', '', '...W....W', '......W..', '..W......', '.......W.']
-const ORE_SPOTS: readonly (readonly [number, number])[] = [[3, 2], [8, 2], [6, 3], [2, 4], [7, 5]]
-// Trofea sesji: zielony przebieg testów to kamień w ramie sztolni, udane budowanie to sztabka na belce kuźni.
-const GEM_SPOTS: readonly (readonly [number, number])[] = [[2, 0], [9, 0], [1, 2], [10, 2], [1, 4], [10, 4], [3, 0], [8, 0], [1, 3], [10, 3], [1, 5], [10, 5]]
-const GEMS = ['d', 'f', 'W', 'y', 'v'] as const
-const INGOT_SPOTS: readonly (readonly [number, number])[] = [[1, 1], [4, 1], [7, 1], [10, 1], [2, 0], [5, 0], [8, 0]]
 // Skarbnik, duch kopalni: staje z lampą w otworze sztolni, gdy robota zazieleni się po padłych.
 const SKARBNIK: Frame = ['.jj.', '.mm.', 'omjm', '.mm.', '.m.m']
-// Proporzec hordy w wolnym miejscu ściany: młot na czerwieni.
-const BANNER: Frame = ['EEEEE', '.ddd.', '.dSd.', '.SSd.', '.ddd.', '..d..']
-// Święta: choinka z lampkami, dynia na Zaduszki, girlanda na Barbórkę.
+// Święta, jedna rzecz przy drzwiach kwater: choinka z lampkami albo dynia na Zaduszki.
 const SPRUCE: Frame = ['..y..', '..f..', '.flf.', 'flflf', '..x..']
 const LIGHTS: readonly (readonly [number, number])[] = [[1, 2], [3, 2], [0, 3], [2, 3], [4, 3]]
 const PUMPKIN: Frame = ['.l.', 'ooo', 'yoy']
-const CART_EVERY = 160
-const CART_TRIP = 20
-const RAT_EVERY = 240
-const RAT_TRIP = 48
 // Pył z zawału: tyle ziaren spada ze stropu.
 const DUST_GRAINS = 9
-// Tyle pieczęci mieści się na ścianie.
-const MAX_SEALS = 12
 
-// Co dzieje się w pokoju samo: dym, kanarek, wózek, szczur. Fazy tak dobrane, że w klatce 0
-// (bezruch) nic nie stoi w pół kroku.
+// Co dzieje się w pokoju samo, i tylko tyle: dym nad paleniskiem, kanarek w klatce, drzwi kwater.
+// Ściana to meble i sprzęt; ozdoby nie mieszają się z tym, po co ork sięga.
 function roomLife(room: string[][], width: number, frame: number, hearth: boolean, state: RoomState): void {
   const put = (x: number, y: number, cell: string) => { if (room[y]?.[x] !== undefined) room[y]![x] = cell }
   if (hearth) {
@@ -604,8 +609,6 @@ function roomLife(room: string[][], width: number, frame: number, hearth: boolea
       const y = 5 - ((Math.floor(frame / 2) + i * 2) % 5)
       put(4 + ((y + i) % 2), y, 'V')
     }
-    // Iskra z paleniska leci pod strop i gaśnie.
-    if (state.alive && frame % 9 < 6) put(3 + (Math.floor(frame / 9) % 4), 5 - (frame % 9), frame % 2 === 0 ? 'o' : 'y')
   }
   const cage = wallX('trial', width, hearth) + 1
   for (const dx of [0, 1, 2, 3, 4]) put(cage + dx, 1, 'C')
@@ -617,81 +620,27 @@ function roomLife(room: string[][], width: number, frame: number, hearth: boolea
   // Drzwi kwater stoją otworem, póki ktoś w nich wchodzi albo wychodzi.
   const door = doorLeft(width, hearth)
   if (door !== null && state.door) DOORWAY.forEach((row, dy) => [...row].forEach((cell, dx) => put(door + dx, dy, cell)))
-  const shaft = wallX('mine', width, hearth)
-  // Kamienie w ramie sztolni i sztabki na belce kuźni: robota sesji, która się udała.
-  const gems = Math.min(state.gems, GEM_SPOTS.length)
-  const glint = state.alive && gems > 0 && frame % 12 === 0 ? Math.floor(frame / 12) % gems : -1
-  for (let i = 0; i < gems; i += 1) put(shaft + GEM_SPOTS[i]![0], GEM_SPOTS[i]![1], i === glint ? 'j' : GEMS[i % GEMS.length]!)
-  const rack = wallX('forge', width, hearth)
-  for (let i = 0; i < Math.min(state.ingots, INGOT_SPOTS.length); i += 1) {
-    const [x, y] = INGOT_SPOTS[i]!
-    put(rack + x, y, 's')
-    put(rack + x + 1, y, 'j')
-  }
-  // Ruda w głębi mruga, póki zegar tyka.
-  if (state.alive && frame % 5 === 0) {
-    const [x, y] = ORE_SPOTS[Math.floor(frame / 5) % ORE_SPOTS.length]!
-    if (room[y]?.[shaft + x] === 'W') put(shaft + x, y, 'i')
-  }
   roomWall(room, width, hearth, frame, state, put)
-  // Pieczęcie: każdy commit sesji to czerwona kropka wosku na ścianie, na wolnym kamieniu.
-  const wax = wallX('table', width, hearth) + 14
-  for (let i = 0; i < Math.min(state.seals, MAX_SEALS); i += 1) {
-    const cell = room[5]?.[wax + 2 * i]
-    if (cell === '.') put(wax + 2 * i, 5, 'd')
-  }
-  // W spoczynku zegar stoi: wózek i szczur nie zamarzają w pół drogi.
-  if (!state.alive) return
-  const trip = (frame + 60) % CART_EVERY
-  const way = trip < CART_TRIP ? trip : trip < 2 * CART_TRIP ? 2 * CART_TRIP - trip : -1
-  if (way >= 0) {
-    const cart = CART[Math.min(CART.length - 1, Math.floor((way * CART.length) / CART_TRIP))]!
-    const left = wallX('mine', width, hearth) + 6 - Math.floor(cart[0]!.length / 2)
-    cart.forEach((row, dy) => [...row].forEach((cell, dx) => { if (cell !== '.') put(left + dx, 4 + dy, cell) }))
-  }
-  // Kretoszczur przemyka pod ścianą: czerwone ślepie z przodu, szary ogon z tyłu.
-  const run = (frame + 100) % RAT_EVERY
-  if (run < RAT_TRIP) {
-    const x = width - 1 - run * Math.ceil(width / RAT_TRIP)
-    put(x, 11, 'R')
-    put(x + 1, 11, 'q')
-    put(x + 2, 11, 'q')
-    if (run % 2 === 0) put(x + 3, 11, 'm')
-  }
-  // Nietoperze o zmroku i nocą krążą przy wejściu do sztolni.
-  if (state.phase === 'night' || state.phase === 'dusk') {
-    for (const k of [0, 1]) {
-      const t = frame + 29 * k
-      const x = shaft + 5 + Math.round(4 * Math.sin(t / 6 + 2 * k))
-      const y = 1 + Math.round(Math.sin(t / 4 + k))
-      put(x, y, 'w')
-      const up = t % 4 < 2
-      put(x - 1, up ? y - 1 : y, 'w')
-      put(x + 1, up ? y - 1 : y, 'w')
-    }
-  }
 }
 
-// Wolne miejsce ściany między skrzynią z kanarkiem a sztolnią: proporzec hordy, święta, przed drzwiami kwater.
+// Wolne miejsce ściany przed drzwiami kwater: w święta jedna rzecz, poza nimi pusto. Skarbnik w sztolni.
 function roomWall(room: string[][], width: number, hearth: boolean, frame: number, state: RoomState, put: (x: number, y: number, cell: string) => void): void {
   const [from, gapEnd] = wallGap(width, hearth)
   const door = doorLeft(width, hearth)
   const to = door === null ? gapEnd : door - 2
-  if (to - from < BANNER[0]!.length) return
   const stamp = (rows: Frame, left: number, top: number) => rows.forEach((row, dy) => [...row].forEach((cell, dx) => { if (cell !== '.') put(left + dx, top + dy, cell) }))
-  stamp(BANNER, from, 0)
-  const free = from + BANNER[0]!.length + 2
   const { month, day } = state.date
   const christmas = (month === 12 && day >= 20) || (month === 1 && day <= 6)
-  if (christmas && free + SPRUCE[0]!.length <= to) {
-    stamp(SPRUCE, free, 1)
-    LIGHTS.forEach(([x, y], i) => put(free + x, 1 + y, ['d', 'y', 'i'][(i + (state.alive ? Math.floor(frame / 4) : 0)) % 3]!))
-  } else if (((month === 10 && day >= 28) || (month === 11 && day <= 2)) && free + PUMPKIN[0]!.length <= to) {
-    stamp(PUMPKIN, free, 3)
-    if (state.alive && frame % 10 < 3) put(free + 1, 5, 'Z')
+  // Przy samych drzwiach, nie na środku wolnego miejsca: ściana zostaje spokojna.
+  if (christmas && to - from + 1 >= SPRUCE[0]!.length) {
+    const left = to - SPRUCE[0]!.length + 1
+    stamp(SPRUCE, left, 1)
+    LIGHTS.forEach(([x, y], i) => put(left + x, 1 + y, ['d', 'y', 'i'][(i + (state.alive ? Math.floor(frame / 4) : 0)) % 3]!))
+  } else if (((month === 10 && day >= 28) || (month === 11 && day <= 2)) && to - from + 1 >= PUMPKIN[0]!.length) {
+    const left = to - PUMPKIN[0]!.length + 1
+    stamp(PUMPKIN, left, 3)
+    if (state.alive && frame % 10 < 3) put(left + 1, 5, 'Z')
   }
-  // Barbórka: girlanda górników nad wolnym miejscem ściany.
-  if (month === 12 && day >= 3 && day <= 5) for (let x = from; x <= to; x += 2) put(x, 0, x % 4 === 0 ? 'G' : 'y')
   // Skarbnik przychodzi tylko w zielonej chwili po padłych: lampa, broda, potem znika.
   const age = state.feel?.age ?? -1
   const green = state.feel?.kind === 'test-pass' || state.feel?.kind === 'build-pass' || state.feel?.kind === 'commit'
@@ -702,17 +651,14 @@ function roomWall(room: string[][], width: number, hearth: boolean, frame: numbe
   }
 }
 
-// Co pokój wie o robocie: zdarzenie, którym żyje Krux, ruch, czerwone testy, pieczęcie, kto śpi,
-// czyj sprzęt zszedł ze ściany.
-// Trofea: kamienie za zielone przebiegi, sztabki za udane budowania; `blessed`: sesja miała
-// padłe, więc zielone przywołuje Skarbnika. `date`: miesiąc i dzień, z nich pora roku i święta.
-// `door`: ktoś właśnie przechodzi przez drzwi kwater.
-export type RoomState = { feel: { kind: KruxEvent | 'handoff'; age: number } | null; alive: boolean; red: boolean; seals: number; gems: number; ingots: number; blessed: boolean; phase: DayPhase; date: { month: number; day: number }; taken: readonly StageScene[]; door: boolean }
+// Co pokój wie o robocie: zdarzenie, którym żyje Krux, ruch, czerwone testy, czyj sprzęt zszedł
+// ze ściany. `blessed`: sesja miała padłe, więc zielone przywołuje Skarbnika. `date`: miesiąc
+// i dzień, z nich zima w okienku i święta. `door`: ktoś właśnie przechodzi przez drzwi kwater.
+export type RoomState = { feel: { kind: KruxEvent | 'handoff'; age: number } | null; alive: boolean; red: boolean; blessed: boolean; phase: DayPhase; date: { month: number; day: number }; taken: readonly StageScene[]; door: boolean }
 
-const ROOM_AT_REST: RoomState = { feel: null, alive: true, red: false, seals: 0, gems: 0, ingots: 0, blessed: false, phase: 'day', date: { month: 6, day: 15 }, taken: [], door: false }
+const ROOM_AT_REST: RoomState = { feel: null, alive: true, red: false, blessed: false, phase: 'day', date: { month: 6, day: 15 }, taken: [], door: false }
 
-// Okienko na ścianie: drewniana rama, w środku niebo o tej porze; nocą gwiazda, a za szybą pora
-// roku: zimą śnieg, jesienią liście, wiosną pąki na parapecie, latem słońce.
+// Okienko na ścianie: drewniana rama, w środku niebo o tej porze, nocą gwiazda, zimą śnieg.
 const PANE_WIDE = 7
 const PANE_TALL = 4
 
@@ -732,12 +678,6 @@ function roomSky(room: string[][], width: number, hearth: boolean, frame: number
   const { month } = state.date
   const step = state.alive ? frame : 0
   if (month === 12 || month <= 2) for (const k of [0, 3]) sky(1 + ((Math.floor(step / 3) + k) % 5), 1 + ((Math.floor(step / 4) + k) % 2), 'j')
-  else if (month >= 9) sky(1 + (Math.floor(step / 5) % 5), 1 + (Math.floor(step / 3) % 2), Math.floor(step / 15) % 2 === 0 ? 'o' : 'd')
-  else if (month >= 6) { if (phase === 'day') sky(4, 1, 'y') }
-  else { sky(1, 2, 'f'); sky(5, 2, 'l') }
-  // Nowy rok: fajerwerki za szybą.
-  const { day } = state.date
-  if (((month === 12 && day === 31) || (month === 1 && day === 1)) && state.alive && step % 6 < 3) sky(2 + (Math.floor(step / 6) % 3), 1, ['y', 'd', 'i'][Math.floor(step / 6) % 3]!)
 }
 
 // Pokój w klatce `frame`: pochodnie, życie pokoju i reakcja na zdarzenie kroniki.
@@ -809,6 +749,14 @@ export function farPose(depth: number, x: number, step: number, face: Face): Far
 // Kumpel staje w otwartych drzwiach kwater, zanim ruszy do roboty.
 export const RISE_FRAMES = 2
 
+// Kufle gościa w drodze przez głąb pokoju: piana nad drewnem przy dłoni, po stronie marszu.
+// Im dalej, tym mniej z nich widać, jak z orka.
+export function farMugs(orc: Far, leftward: boolean): Far {
+  const rows = orc.rows.length >= 5 ? ['j', 'h'] : orc.rows.length === 4 ? ['h'] : ['j']
+  const width = Math.max(...orc.rows.map(row => row.length))
+  return { rows, x: leftward ? orc.x - 1 : orc.x + width, y: orc.y + Math.floor(orc.rows.length / 2) - (rows.length - 1) }
+}
+
 // Wyprawa do ściany: wejście, chwila przy sprzęcie, powrót.
 const ERRAND_IN = 7
 const ERRAND_HOLD = 3
@@ -846,7 +794,8 @@ export function errandPose(t: number, from: number, route: ErrandRoute, face: Fa
 }
 
 // Scenka dwóch orków: gospodarz z lewej, gość z prawej, twarzą w twarz, między nimi miejsce na rekwizyt.
-export type DuetKind = 'fence' | 'pass' | 'highfive' | 'argue'
+// `toast`: kumpel z kwater wpada z kuflami, stukają się i piją.
+export type DuetKind = 'fence' | 'pass' | 'highfive' | 'argue' | 'toast'
 export const DUET_GAP = 14
 export const DUET_FRAMES = 32
 
@@ -861,6 +810,15 @@ const RIGHT = (arm: string) => pad(stander('right', arm))
 const HIGH_HOST = pad(draw([stander('right'), 0, 0], at('g', 6, 2), at('g', 7, 1)))
 const raised = (rows: readonly string[]): string[] => rows.map(row => [...row.padEnd(8, '.').slice(0, 8)].reverse().join('').replace(/\.+$/u, ''))
 const HIGH_GUEST = raised(pad(draw([stander('right'), 0, 0], at('g', 6, 2), at('g', 7, 1))))
+// Kufel: piana na drewnie. Przy łyku ręka zgięta, kufel tuż przy pysku. Dwa kufle niesie gość.
+const MUG: Frame = ['j', 'h']
+export const MUGS: Frame = ['jj', 'hh']
+// Od tej klatki toastu kufel leci do Kruxa albo jest w jego dłoni; od `TOAST_RETURN` obaj
+// trzymają kufle nisko, a potem Krux oddaje swój gościowi.
+export const TOAST_HELD = 2
+export const TOAST_RETURN = 26
+const DRINK_HOST = pad(draw([stander('right'), 0, 0], at('g', 6, 3)))
+const DRINK_GUEST = raised(DRINK_HOST)
 
 // Klatka scenki `t`. Współrzędne rekwizytu od lewej krawędzi gospodarza.
 export function duetPose(kind: DuetKind, t: number): DuetFrame {
@@ -878,6 +836,22 @@ export function duetPose(kind: DuetKind, t: number): DuetFrame {
   if (kind === 'highfive') {
     const touch = step % 3 === 2
     return { host: touch ? HIGH_HOST : RIGHT(''), guest: touch ? HIGH_GUEST : facing('right', ''), prop: touch ? draw(at('y', 9, 0), at('y', 10, 1), at('o', 8, 1)) : [] }
+  }
+  if (kind === 'toast') {
+    // Gość przynosi dwa kufle i podaje jeden, w górę, stuk nad środkiem z rozpryskiem piany, łyk
+    // przy pysku, a na koniec Krux oddaje kufel: gość wychodzi z oboma, tak jak przyszedł.
+    const handing = t < 6 || t >= TOAST_RETURN + 2
+    const up = t >= 8 && t < 18
+    const clink = t >= 11 && t < 15
+    const sip = t >= 18 && t < TOAST_RETURN
+    if (handing) {
+      const away = t < 2 || t >= 30 ? 11 : t < 4 || t >= 28 ? 9 : 7
+      return { host: RIGHT(away === 11 ? '' : 'g'), guest: facing('right', 'g'), prop: draw([MUG, away, 2], [MUG, 12, 2]) }
+    }
+    if (sip) return { host: DRINK_HOST, guest: DRINK_GUEST, prop: draw([MUG, 6, 1], [MUG, 13, 1]) }
+    if (!up) return { host: RIGHT('g'), guest: facing('right', 'g'), prop: draw([MUG, 7, 2], [MUG, 12, 2]) }
+    const splash: Layer[] = clink && t % 2 === 0 ? [at('j', 9, 0), at('j', 10, 0)] : []
+    return { host: HIGH_HOST, guest: HIGH_GUEST, prop: draw([MUG, 8, 0], [MUG, 11, 0], ...splash) }
   }
   const shout = step % 2 === 0
   return { host: shout ? HIGH_HOST : RIGHT('g'), guest: shout ? facing('right', 'g') : HIGH_GUEST, prop: draw(at('R', 8 + (step % 3), 1), at('y', 10 - (step % 3), 0)) }
