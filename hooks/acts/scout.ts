@@ -1,4 +1,4 @@
-import { SLIDE, STAND, at, croucher, draw, head, line, noise, pingPong, stander, walker } from '../stage'
+import { STAND, at, croucher, draw, head, line, noise, pingPong, stander, walker } from '../stage'
 import type { Act, Frame, Layer, Look } from '../stage'
 
 // Rozglądanie się za plikami: ork czai się w krzaku, patrzy przez lunetę i obchodzi teren z włócznią.
@@ -8,6 +8,8 @@ import type { Act, Frame, Layer, Look } from '../stage'
 const BUSH: Frame = ['.lllflll', 'llflllfll', 'lfllllflll']
 const BUSH_RUSTLE: Frame = ['.llfllfl', 'llflllfll', 'lfllllflll']
 const BUSH_X = 2
+// Krzak przyniesiony z zewnątrz stoi obok orka, zanim ten się za nim schowa.
+const BUSH_AT = 8
 
 function bushLoop(t: number, frame: number): Frame {
   // Robak wpełza zza prawej krawędzi i chowa się pod krzakiem; oczy idą za nim.
@@ -19,11 +21,10 @@ function bushLoop(t: number, frame: number): Frame {
 
 const bush: Act = {
   name: 'krzak',
+  kit: draw([BUSH, BUSH_AT, 3]),
   intro: [
-    // Krzak wyrasta z ziemi wiersz po wierszu, ork zerka w prawo.
-    draw([STAND, 0, 0], [BUSH, BUSH_X, 5]),
-    draw([STAND, 0, 0], [BUSH, BUSH_X, 4]),
-    draw([stander('right'), 0, 0], [BUSH, BUSH_X, 3]),
+    // Ork przyciąga krzak przed siebie i chowa się za liśćmi.
+    ...[BUSH_AT - 2, BUSH_AT - 4, BUSH_X].map(x => draw([stander('right'), 0, 0], [BUSH, x, 3])),
     draw([stander('right'), 0, 0], [BUSH_RUSTLE, BUSH_X, 3]),
   ],
   length: 24,
@@ -33,6 +34,7 @@ const bush: Act = {
 // ——— Luneta ———
 // Rura od oka w prawo: dwa skórzane człony, dwa stalowe, szkło na końcu.
 const TUBE = 'hhSSi'
+const CLOSED_GLASS: Layer = [['hS'], 7, 3]
 
 function spyglass(length: number, tilt: -1 | 0 | 1): Layer[] {
   const cells: Layer[] = [at('g', 6, 3), at('g', 7, 2)]
@@ -56,9 +58,11 @@ function bird(t: number): Layer[] {
 
 const spy: Act = {
   name: 'luneta',
+  // Złożona luneta w dłoni.
+  kit: draw(CLOSED_GLASS),
   intro: [
     // Unieść rękę do oka i rozsunąć lunetę człon po członie.
-    draw([stander('right'), 0, 0], at('g', 6, 3)),
+    draw([stander('right'), 0, 0], at('g', 6, 3), CLOSED_GLASS),
     ...[1, 2, 3, 4].map(n => draw([stander('right'), 0, 0], ...spyglass(n, 0))),
   ],
   length: 32,
@@ -97,9 +101,9 @@ function patrolLoop(t: number): Frame {
 
 const patrol: Act = {
   name: 'patrol',
+  kit: draw([SPEAR, FROM + 6, 0]),
   intro: [
-    // Włócznia spada z góry i wbija się w ziemię, ork podchodzi i ją chwyta.
-    ...[-5, -3, -1, 0].map(y => draw([stander('right'), 0, 0], [SPEAR, FROM + 6, y])),
+    // Ork podchodzi do wbitej włóczni i ją chwyta.
     ...[1, 2].map(x => draw([walker(x, 'right'), x, 0], [SPEAR, FROM + 6, 0])),
     draw([holding('right'), FROM, 0], [SPEAR, FROM + 6, 0]),
   ],
@@ -108,9 +112,10 @@ const patrol: Act = {
 }
 
 // ——— Nora ———
-// Kopiec z ciemną dziurą; ork leży na brzuchu i zagląda, z nory łypią żółte ślepia.
+// Ork rozkopuje kopiec łopatką, kładzie się na brzuchu i zagląda, z nory łypią żółte ślepia.
 const MOUND: Frame = ['..aaaa..', '.hcccch.', 'hhcccchh']
 const MOUND_X = 12
+const TROWEL: Layer = [['hS'], 7, 5]
 const PRONE: Frame = ['', '', '......gggg', '.....ggrggr', 'GGGbbbb.tggt', '...bbbb']
 const KNEEL: Frame = croucher('right')
 // Pochylenie z przykucu: głowa idzie naprzód i w dół.
@@ -125,11 +130,13 @@ function burrowLoop(t: number): Frame {
 
 const burrow: Act = {
   name: 'nora',
+  kit: draw(TROWEL),
   intro: [
-    // Kopiec rośnie z ziemi, ork kładzie się i podczołguje.
-    draw([stander('right'), 0, 0], [MOUND, MOUND_X, 5]),
-    draw([stander('right'), 0, 0], [MOUND, MOUND_X, 4]),
-    draw([KNEEL, 0, 0], [MOUND, MOUND_X, 3]),
+    // Ork klęka z łopatką, ziemia rośnie pod jego ręką, potem kładzie się i podczołguje.
+    draw([KNEEL, 0, 0], TROWEL, at('g', 6, 4)),
+    draw([KNEEL, 0, 0], [MOUND, MOUND_X, 5], at('g', 6, 4), at('g', 7, 4), [['hS'], 8, 4]),
+    draw([KNEEL, 0, 0], [MOUND, MOUND_X, 4], at('g', 6, 4), at('g', 7, 4), [['hS'], 9, 4]),
+    draw([KNEEL, 0, 0], [MOUND, MOUND_X, 3], at('g', 6, 4), at('g', 7, 4), [['hS'], 10, 4]),
     draw([DIVE, 0, 0], [MOUND, MOUND_X, 3]),
     draw([MOUND, MOUND_X, 3], [PRONE, -2, 0]),
     draw([MOUND, MOUND_X, 3], [PRONE, -1, 0]),
@@ -192,9 +199,9 @@ function threadLoop(t: number): Frame {
 const thread: Act = {
   name: 'nić zwiadowcy',
   who: ['Niuch'],
+  kit: draw(...threadBall(8, 0)),
   intro: [
-    // Kłębek przyjeżdża pod rękę; Niuch schyla dłoń i wyciąga początek nici.
-    ...SLIDE.map(dx => draw(...threadBall(8 + dx, 0), [stander('right'), 0, 0])),
+    // Niuch schyla dłoń i wyciąga początek nici.
     draw(...threadBall(8, 0), [stander('right', 'g'), 0, 0], at('j', 7, 5)),
     threadLoop(0),
   ],

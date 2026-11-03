@@ -10,13 +10,16 @@ export const H = 6
 // Klatka: H wierszy, każdy najwyżej W znaków; '.' to przezroczysty piksel, krótszy wiersz dopełnia się kropkami.
 export type Frame = readonly string[]
 
-// Czynność. Wejście startuje tuż po stójce (`STAND`) i kończy się pozą, z której rusza pętla;
-// zejście to wejście puszczone wstecz, więc ork wstaje z szezlonga, a nie znika.
+// Czynność. `kit` to rekwizyty na ziemi przed orkiem w stójce, bez orka: nic nie wjeżdża samo,
+// ork przynosi je z pokoju (`hooks/forge.ts`), a czynność bez `kit` nie potrzebuje niczego spoza ciała.
+// Wejście startuje przy rekwizycie (albo tuż po stójce, `STAND`) i kończy się pozą, z której rusza
+// pętla; zejście to wejście puszczone wstecz, więc ork wstaje z szezlonga, a nie znika.
 // Oczy to dokładnie dwa piksele 'r' (zamknięte oczy: zero) — humor maluje brwi nad nimi.
 // Fartuch to 'b': kumpel dostaje w tym miejscu swój kolor, więc rekwizyty go nie używają.
 // `who` zawęża czynność do orków jednego fachu; bez niego gra każdy.
 export type Act = {
   name: string
+  kit?: Frame
   intro: readonly Frame[]
   length: number
   loop: (t: number, frame: number) => Frame
@@ -76,8 +79,8 @@ export function croucher(look: Look, arm = ''): Frame {
 // Przykuc z dłonią przed sobą: ognisko, strumień, rysunek w piachu.
 export const SQUAT: Frame = croucher('mid', 'g')
 
-// Wjazd rekwizytu z prawej: zwalnia przed metą, żeby nie stanąć jak wryty.
-export const SLIDE = [12, 9, 6, 4, 2, 1, 0] as const
+// Bez pokoju nie ma skąd przynieść: rekwizyt wysuwa się spod orka na swoje miejsce.
+const PULL = [-14, -11, -8, -6, -4, -2, -1] as const
 
 // Marsz od stójki do x, piksel na klatkę, między rekwizytami; `held` niesie przy prawej dłoni.
 export function stroll(to: number, props: readonly Layer[], held: Frame = []): Frame[] {
@@ -168,13 +171,30 @@ export type Route = { legs: readonly Leg[]; cyclic: boolean; gestures: readonly 
 
 type Spot = { leg: number; act: Act; phase: 'stand' | 'intro' | 'loop' | 'outro'; i: number }
 
+const entries = new WeakMap<Act, readonly Frame[]>()
+
+// Cała droga od stójki do pętli: rekwizyt spod orka, rekwizyt na ziemi, wejście.
+export function entryOf(act: Act): readonly Frame[] {
+  const known = entries.get(act)
+  if (known !== undefined) return known
+  const { kit } = act
+  const entry = kit === undefined ? act.intro : [...[...PULL, 0].map(dx => draw([kit, dx, 0], [STAND, 0, 0])), ...act.intro]
+  entries.set(act, entry)
+  return entry
+}
+
+// Krok, w którym ork stoi przy rekwizycie na ziemi; 0, gdy rekwizytu nie ma.
+export function kitLead(act: Act): number {
+  return act.kit === undefined ? 0 : PULL.length + 1
+}
+
 function loopsOf(leg: Leg): number {
   if (leg.frames === Infinity) return Infinity
-  return Math.max(1, Math.round((leg.frames - 1 - 2 * leg.act.intro.length) / leg.act.length))
+  return Math.max(1, Math.round((leg.frames - 1 - 2 * entryOf(leg.act).length) / leg.act.length))
 }
 
 function totalOf(leg: Leg): number {
-  return 1 + 2 * leg.act.intro.length + loopsOf(leg) * leg.act.length
+  return 1 + 2 * entryOf(leg.act).length + loopsOf(leg) * leg.act.length
 }
 
 // Odcinki po kolei od czynności `start`, każdy po `frames` klatek.
@@ -190,7 +210,7 @@ function spotOf(route: Route, step: number): Spot {
   let k = 0
   while (k < legs.length - 1 && t >= totalOf(legs[k]!)) t -= totalOf(legs[k++]!)
   const act = legs[k]!.act
-  const n = act.intro.length
+  const n = entryOf(act).length
   const loops = loopsOf(legs[k]!) * act.length
   // Trasa naprzód kończy się na ostatnim odcinku: po jego czasie pętla gra dalej.
   if (!route.cyclic && k === legs.length - 1 && t >= totalOf(legs[k]!)) return { leg: k, act, phase: 'loop', i: t - 1 - n }
@@ -222,13 +242,14 @@ const GESTURE_SPAN = 20
 function frameOf(route: Route, spot: Spot, frame: number): Frame {
   const { act, phase, i } = spot
   if (phase === 'stand') return STAND
-  if (phase === 'intro') return act.intro[i]!
+  if (phase === 'intro') return entryOf(act)[i]!
   if (phase === 'loop') {
     const fidget = gestureAt(route, spot)
     if (fidget !== null) return fidget.gesture.apply(act.loop((i - fidget.t) % act.length, frame - fidget.t), fidget.t)
     return act.loop(i % act.length, frame)
   }
-  return act.intro[act.intro.length - 1 - i]!
+  const entry = entryOf(act)
+  return entry[entry.length - 1 - i]!
 }
 
 export function actFrame(route: Route, step: number, frame: number): Frame {
@@ -240,6 +261,12 @@ export function legAt(route: Route, step: number): number {
   return spotOf(route, step).leg
 }
 
+// Czy pętla odcinka już zagrała swoje: ork odkłada rekwizyt, zamiast czekać na następny odcinek.
+export function legDone(route: Route, step: number): boolean {
+  const spot = spotOf(route, step)
+  return spot.leg > 0 || spot.phase === 'outro'
+}
+
 // Ile klatek ostatni odcinek trasy naprzód już gra w pętli; przed nim `null`.
 export function finalLoop(route: Route, step: number): number | null {
   if (route.cyclic) return null
@@ -249,7 +276,7 @@ export function finalLoop(route: Route, step: number): number | null {
 
 // Klatki od stójki do pierwszej klatki pętli: płótno na starcie od razu pokazuje robotę.
 export function leadIn(route: Route): number {
-  return 1 + route.legs[0]!.act.intro.length
+  return 1 + entryOf(route.legs[0]!.act).length
 }
 
 // Poza w bezruchu: pierwsza klatka pętli pierwszej czynności, z rekwizytem w ręku.
@@ -258,13 +285,17 @@ export function restFrame(route: Route): Frame {
 }
 
 // Droga do stójki po przerwanej scenie: reszta wejścia albo całe zejście, na końcu stójka.
-export function settleFrames(route: Route, step: number): Frame[] {
+// `kept`: rekwizyt zostaje na ziemi, droga kończy się przy nim, bo ork zaraz go odniesie.
+export function settleFrames(route: Route, step: number, kept = false): Frame[] {
   const { act, phase, i } = spotOf(route, step)
-  const back = (from: number) => [...act.intro.slice(0, from)].reverse()
+  const entry = entryOf(act)
+  const lead = kept ? kitLead(act) : 0
+  const last = entry[lead - 1] ?? STAND
+  const back = (from: number) => [...entry.slice(lead, Math.max(lead, from))].reverse()
   if (phase === 'stand') return []
-  if (phase === 'intro') return [...back(i), STAND]
-  if (phase === 'loop') return [...back(act.intro.length), STAND]
-  return [...back(act.intro.length - 1 - i), STAND]
+  if (phase === 'intro') return [...back(i), last]
+  if (phase === 'loop') return [...back(entry.length), last]
+  return [...back(entry.length - 1 - i), last]
 }
 
 // Humor na oczach: brwi nad 'r' przy złości, złote oczy przy dumie, mrugnięcie w spokoju.

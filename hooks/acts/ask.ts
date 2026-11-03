@@ -2,7 +2,7 @@ import { dots, draw, head, line, pingPong, stander, walker } from '../stage'
 import type { Act, Frame, Layer, Look, Point } from '../stage'
 
 // Pytanie do Morry: drapanie się po głowie, tabliczka z „?”, dumanie z chmurką, wzruszenie ramion i nasłuch.
-// Znak zapytania rysuje się kreska po kresce, tabliczka wynurza się od dołu, chmurka rośnie z bąbelków.
+// Znak zapytania rysuje się kreska po kresce, tabliczkę ork przynosi, chmurka rośnie z bąbelków.
 
 // ——— Drapanie po głowie ———
 // Ork drapie się po głowie, nad nim pulsuje znak zapytania.
@@ -52,10 +52,11 @@ function signLoop(t: number): Frame {
 
 const sign: Act = {
   name: 'tabliczka',
+  kit: draw([SIGN, SIGN_X, 0]),
   intro: [
-    // Krux robi krok, tabliczka wynurza się od dołu w jego ręce aż nad głowę.
-    draw([walker(0, 'right'), HOLDER, 0]),
-    ...[5, 4, 3, 2, 1].map(y => holding('right', SIGN_X, y)),
+    // Krux robi krok i chwyta tabliczkę nad głową.
+    draw([SIGN, SIGN_X, 0], [walker(0, 'right'), HOLDER, 0]),
+    holding('right', SIGN_X, 0),
   ],
   length: 16,
   loop: signLoop,

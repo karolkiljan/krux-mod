@@ -528,8 +528,8 @@ test('a new scene waits out a second and a half, so quick tools do not flicker',
   await start($)
   await $.turn.start({ text: 'czytaj', turnId: 't1' })
   await $.tool.call({ tool: 'Read', file_path: '/repo/src/app.ts' })
-  // Wąsko, bez paleniska na podłodze: jego kolory to też kolory rekwizytów.
-  const ui = await $.ui.mount({ ...BAND, surface: 'terminal', props: { ...BAND.props, bodyColumns: 80 } })
+  // Wąsko i nisko, bez pokoju: jego kolory to też kolory rekwizytów.
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal', props: { ...BAND.props, bodyColumns: 80, maxRows: 5 } })
   expect(await showsScene(ui, 'pick', 'read')).toBe(false)
   await ui.advance(600)
   await $.tool.call({ tool: 'Bash', command: 'npm test' })
@@ -577,21 +577,21 @@ test('the band keeps six rows when nobody talks, so nothing jumps', async ($, on
   expect(await ui.find({ type: 'Text', in: 'forge', text: /│/ })).toBeUndefined()
 })
 
-test('a spawned mate walks in from the right edge to his own rectangle', async ($, on) => {
+test('a spawned mate gets up from his cot in his own apron and stays at work', async ($, on) => {
   engine(on, new Map(), { agents: [{ id: 'a1', status: 'running' }] })
   await start($)
   await $.turn.start({ text: 'szukaj', turnId: 't1' })
   await $.tool.call({ tool: 'Read', file_path: '/repo/a.ts' })
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  await $.agent.spawn(spawnOf({ prompt: 'Niuch, zwiad.', description: 'Niuch: zwiad' }))
   expect(await forgeColors(ui)).not.toContain(NIUCH)
+  await $.agent.spawn(spawnOf({ prompt: 'Niuch, zwiad.', description: 'Niuch: zwiad' }))
   await ui.advance(300)
   expect(await forgeColors(ui)).toContain(NIUCH)
   await ui.advance(3000)
   expect(await forgeColors(ui)).toContain(NIUCH)
 })
 
-test('a mate done with his loop walks off to the right, then the stage is Krux alone', async ($, on) => {
+test('a mate done with his loop goes back to his cot, then the stage is Krux alone', async ($, on) => {
   engine(on, new Map(), { agents: [{ id: 'a1', status: 'running' }] })
   await start($)
   await $.turn.start({ text: 'szukaj', turnId: 't1' })
@@ -600,7 +600,7 @@ test('a mate done with his loop walks off to the right, then the stage is Krux a
   expect(await forgeColors(ui)).toContain(NIUCH)
   await $.turn.complete({ answer: 'jest', durationMs: 10, isAborted: false, turnId: 'sub', reason: 'answer', agentId: 'a1' })
   expect(await forgeColors(ui)).toContain(NIUCH)
-  await ui.advance(6000)
+  await ui.advance(12_000)
   expect(await forgeColors(ui)).not.toContain(NIUCH)
 })
 
@@ -614,7 +614,7 @@ test('waiting on a foreground Agent, Krux puts his feet up', async ($, on) => {
   // Hook wywołania biegnie dalej, aż silnik zawiśnie na bramce `Agent`.
   for (let tick = 0; tick < 50; tick += 1) await Promise.resolve()
   await $.agent.spawn(spawnOf({ prompt: 'Niuch, zwiad.', description: 'Niuch: zwiad' }))
-  const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal', props: { ...BAND.props, maxRows: 5 } })
   expect(await ui.find({ type: 'Text', text: 'Krux czekać na hordę' })).toBeDefined()
   await ui.advance(4000)
   expect(await showsScene(ui, 'lounge', 'horn', 'hammer')).toBe(true)
@@ -659,7 +659,7 @@ test('at rest with a background mate still working, Krux lounges instead of hamm
   engine(on, new Map(), { agents: [{ id: 'a1', status: 'running' }] })
   await start($)
   await $.agent.spawn(spawnOf({ prompt: 'Lont, rozbiórka.', description: 'Lont: rozbiórka', run_in_background: true }))
-  const ui = await $.ui.mount({ ...BAND, surface: 'terminal', props: { ...BAND.props, isWorking: false } })
+  const ui = await $.ui.mount({ ...BAND, surface: 'terminal', props: { ...BAND.props, isWorking: false, maxRows: 5 } })
   expect(await showsScene(ui, 'lounge', 'hammer')).toBe(true)
   expect(await ui.find({ type: 'Text', text: 'Krux czekać na hordę' })).toBeDefined()
 })
@@ -840,7 +840,7 @@ test('a mate resumed with SendMessage comes back on stage and into the muster on
   await $.agent.spawn(spawnOf({ prompt: 'Niuch, zwiad.', description: 'Niuch: zwiad' }))
   await $.turn.complete({ answer: 'jest', durationMs: 10, isAborted: false, turnId: 'sub', reason: 'answer', agentId: 'a1' })
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  await ui.advance(6000)
+  await ui.advance(12_000)
   expect(await forgeColors(ui)).not.toContain(NIUCH)
   // Wznowienie nie odpala agent.spawn: kumpel wraca z pierwszym narzędziem.
   await $.tool.call(inLoop('a1', { tool: 'Grep', pattern: 'lore' }))

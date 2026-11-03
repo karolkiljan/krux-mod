@@ -1,8 +1,8 @@
-import { SLIDE, SQUAT, STAND, at, croucher, draw, head, line, noise, pingPong, stander } from '../stage'
+import { SQUAT, STAND, at, croucher, draw, head, line, noise, pingPong, stander } from '../stage'
 import type { Act, Frame, Layer, Point } from '../stage'
 
 // Szukanie w treści plików: ork świeci, węszy, ogląda ślady przez lupę i płucze złoto.
-// Każdy rekwizyt pojawia się na oczach: rośnie, wysuwa się zza pleców albo napływa.
+// Każdy rekwizyt ork przynosi ze sztolni; skała wychodzi z mroku dopiero w świetle pochodni.
 
 // ——— Pochodnia na ścianie ———
 const WALL_FROM = 10
@@ -23,6 +23,9 @@ function wall(reveal: number, left: number): Layer[] {
   return cells
 }
 
+// Pochodnia zgaszona, zanim ork ją uniesie.
+const UNLIT: Layer[] = [at('h', 8, 2), at('h', 8, 3)]
+
 // Ręka z pochodnią; `fire` 0 zgaszona, 1 tli się, 2 płonie.
 function torchInHand(frame: number, fire: number): Layer[] {
   const cells: Layer[] = [[['gg'], 6, 3], at('h', 8, 2), at('h', 8, 3)]
@@ -39,10 +42,11 @@ function wallLoop(t: number, frame: number): Frame {
 
 const torchWall: Act = {
   name: 'pochodnia',
+  kit: draw(...UNLIT),
   intro: [
     // Sięgnąć po pochodnię, unieść ją, skrzesać iskrę.
-    draw([STAND, 0, 0], at('g', 6, 3)),
-    draw([STAND, 0, 0], [['gg'], 6, 3], at('h', 8, 3)),
+    draw([STAND, 0, 0], at('g', 6, 3), ...UNLIT),
+    draw([STAND, 0, 0], ...torchInHand(0, 0)),
     draw([stander('right'), 0, 0], ...torchInHand(0, 0)),
     draw([stander('right'), 0, 0], ...torchInHand(0, 0), at('y', 9, 1)),
     draw([stander('right'), 0, 0], ...torchInHand(1, 1)),
@@ -82,12 +86,10 @@ function magnifyLoop(t: number): Frame {
 
 const magnify: Act = {
   name: 'lupa',
+  kit: draw(...lens(0, 0)),
   intro: [
-    // Wyciągnąć lupę: rączka, potem szkło rośnie wokół błysku.
-    draw([STAND, 0, 0], at('g', 6, 3)),
-    draw([STAND, 0, 0], at('g', 6, 3), at('h', 7, 3), at('h', 8, 3)),
-    draw([STAND, 0, 0], at('g', 6, 3), at('h', 7, 3), at('h', 8, 3), at('i', 9, 2)),
-    draw([STAND, 0, 0], at('g', 6, 3), at('h', 7, 3), at('h', 8, 3), [['.s', 'sii', '.ss'], 8, 1]),
+    // Chwycić rączkę lupy i spojrzeć przez szkło.
+    draw([STAND, 0, 0], at('g', 6, 3), ...lens(0, 0)),
     draw([stander('right'), 0, 0], at('g', 6, 3), ...lens(0, 0)),
   ],
   length: 16,
@@ -137,12 +139,17 @@ const sniff: Act = {
 }
 
 // ——— Płukanie złota ———
+// Rynna płuczkarska: woda w drewnianym korycie, zawsze ta sama długość.
 const STREAM_FROM = 11
+const SLUICE = 22 - STREAM_FROM - 1
 
-function stream(frame: number, width: number): Layer {
-  const top = Array.from({ length: width }, (_, i) => (noise(frame, i, 4) < 0.2 ? 'i' : 'W')).join('')
-  return [[top, 'W'.repeat(width)], 22 - width, 4]
+function stream(frame: number): Layer {
+  const top = Array.from({ length: SLUICE }, (_, i) => (noise(frame, i, 4) < 0.2 ? 'i' : 'W')).join('')
+  return [[`x${top}x`, 'x'.repeat(SLUICE + 2)], STREAM_FROM - 1, 4]
 }
+
+// Misa leży przy nogach, zanim ork po nią sięgnie.
+const LAID_PAN: Layer = [['S...S', '.SSS.'], 5, 4]
 
 // Misa: brzeg i dno z grafitu, w środku to, co akurat w niej siedzi.
 function pan(x: number, y: number, inside: string): Layer[] {
@@ -180,16 +187,17 @@ function panLoop(t: number, frame: number): Frame {
   }
   const gold = extra.filter(l => l[0][0] === 'y')
   const drips = extra.filter(l => l[0][0] !== 'y')
-  return draw(stream(frame, 22 - STREAM_FROM), ...gold, [SQUAT, 0, 0], ...pan(x, y, inside), ...drips)
+  return draw(stream(frame), ...gold, [SQUAT, 0, 0], ...pan(x, y, inside), ...drips)
 }
 
 const panning: Act = {
   name: 'płukanie',
+  kit: draw(stream(0), LAID_PAN),
   intro: [
-    // Strumień napływa z prawej, ork kuca, misa wysuwa się zza pleców.
-    ...[2, 5, 8].map((w, i) => draw(stream(i, w), [stander('right'), 0, 0])),
-    draw(stream(3, 22 - STREAM_FROM), [SQUAT, 0, 0]),
-    ...[4, 5, 6].map((x, i) => draw(stream(4 + i, 22 - STREAM_FROM), ...pan(x, 3, '...'), [SQUAT, 0, 0])),
+    // Ork kuca przy rynnie i podnosi misę.
+    draw(stream(1), LAID_PAN, [stander('right'), 0, 0]),
+    draw(stream(3), LAID_PAN, [SQUAT, 0, 0]),
+    ...[4, 5, 6].map((x, i) => draw(stream(4 + i), ...pan(x, 3, '...'), [SQUAT, 0, 0])),
   ],
   length: 32,
   loop: panLoop,
@@ -201,8 +209,8 @@ const TRACK_PRINTS: Frame = ['h..h..h', '.h..h..']
 const TRACK_TORCH: Frame = ['y', 'o', 'h', 'h', 'h']
 const TRACK_BODY: Frame = ['', '', '', '..bbb', 'bbbbbb', '.G..G.']
 
-function trackProps(dx: number, lean = 0): Layer[] {
-  return [[TRACK_PRINTS, 15 + dx, 4], [TRACK_TORCH, 13 + dx + lean, 1]]
+function trackProps(lean = 0): Layer[] {
+  return [[TRACK_PRINTS, 15, 4], [TRACK_TORCH, 13 + lean, 1]]
 }
 
 function trackLoop(t: number): Frame {
@@ -210,7 +218,7 @@ function trackLoop(t: number): Frame {
   const legs = t % 4 < 2 ? '.G..G.' : '..G.G.'
   const lit = 15 + 3 * (Math.floor(t / 4) % 3)
   return draw(
-    ...trackProps(0, lean),
+    ...trackProps(lean),
     [[...TRACK_BODY.slice(0, 5), legs], 0, 0],
     [head('right'), 5 + lean, 2],
     ...line([6, 5], [12 + lean, 5], 'g'),
@@ -222,11 +230,11 @@ function trackLoop(t: number): Frame {
 const track: Act = {
   name: 'trop',
   who: ['Niuch'],
+  kit: draw(...trackProps()),
   intro: [
-    // Pochodnia i ślady wjeżdżają; Niuch kuca, pochyla nos i chwyta trzonek.
-    ...SLIDE.map(dx => draw(...trackProps(dx), [stander('right'), 0, 0])),
-    draw(...trackProps(0), [croucher('right'), 0, 0]),
-    ...[2, 4].map(x => draw(...trackProps(0), [TRACK_BODY, 0, 0], [head('right'), x, 1])),
+    // Niuch kuca, pochyla nos i chwyta trzonek pochodni.
+    draw(...trackProps(), [croucher('right'), 0, 0]),
+    ...[2, 4].map(x => draw(...trackProps(), [TRACK_BODY, 0, 0], [head('right'), x, 1])),
     trackLoop(0),
   ],
   length: 16,
@@ -239,8 +247,8 @@ const DRAFT_ROCK: Frame = ['.kkkk', 'kkknk', 'kkknk', 'kknkk', 'kknkk', 'kkkkk']
 const CENSER: Frame = ['.o.', 'S.S', '.SS']
 const SMOKE_PATH: readonly Point[] = [[11, 2], [12, 1], [13, 1], [14, 2], [15, 2], [16, 2], [17, 2], [18, 2], [19, 2], [20, 2]]
 
-function draftProps(dx: number): Layer[] {
-  return [[DRAFT_ROCK, 17 + dx, 0], [CENSER, 10 + dx, 3]]
+function draftProps(): Layer[] {
+  return [[DRAFT_ROCK, 17, 0], [CENSER, 10, 3]]
 }
 
 function draftLoop(t: number): Frame {
@@ -251,7 +259,7 @@ function draftLoop(t: number): Frame {
   if (t >= 2 && t < 12) smoke.push(at('m', ...SMOKE_PATH[t - 2]!))
   if (t >= 3 && t < 13) smoke.push(at('m', ...SMOKE_PATH[t - 3]!))
   return draw(
-    ...draftProps(0),
+    ...draftProps(),
     [stander('right'), 0, 0],
     ...line([5, 3], [7, 3], 'g'),
     ...line([7, 3], [8, tip], 'g'),
@@ -262,11 +270,11 @@ function draftLoop(t: number): Frame {
 const draft: Act = {
   name: 'dymna sonda',
   who: ['Niuch'],
+  kit: draw(...draftProps()),
   intro: [
-    // Skała i kadzielnica wjeżdżają; Niuch wyciąga dłoń nad żarem.
-    ...SLIDE.map(dx => draw(...draftProps(dx), [stander('right'), 0, 0])),
-    draw(...draftProps(0), [stander('right', 'g'), 0, 0]),
-    draw(...draftProps(0), [stander('right', 'gg'), 0, 0]),
+    // Niuch wyciąga dłoń nad żarem kadzielnicy.
+    draw(...draftProps(), [stander('right', 'g'), 0, 0]),
+    draw(...draftProps(), [stander('right', 'gg'), 0, 0]),
     draftLoop(0),
   ],
   length: 16,

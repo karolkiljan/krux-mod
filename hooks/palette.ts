@@ -48,12 +48,12 @@ export const PALETTE: Record<string, string> = {
   8: '#c4845a', // niebo w szybie: świt
   9: '#7aa6c8', // niebo w szybie: dzień
   0: '#a8562e', // niebo w szybie: zmierzch
-  1: '#2f524f', // fartuch Niucha na haku, w cieniu
-  2: '#7a2c20', // fartuch Groma na haku
-  3: '#97791d', // fartuch Piryta na haku
-  4: '#99591a', // fartuch Ochry na haku
-  5: '#505860', // fartuch Młota na haku
-  6: '#665466', // fartuch Lonta na haku
+  1: '#2f524f', // fartuch Niucha na pryczy, w cieniu
+  2: '#7a2c20', // fartuch Groma na pryczy
+  3: '#97791d', // fartuch Piryta na pryczy
+  4: '#99591a', // fartuch Ochry na pryczy
+  5: '#505860', // fartuch Młota na pryczy
+  6: '#665466', // fartuch Lonta na pryczy
   Y: '#55402a', // skrzynia wózka
 }
 

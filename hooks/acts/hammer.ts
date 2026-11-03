@@ -1,8 +1,8 @@
-import { SLIDE, STAND, at, draw, lerp, line, noise, pingPong, pusher, stander } from '../stage'
+import { STAND, at, draw, lerp, line, noise, pingPong, pusher, stander } from '../stage'
 import type { Act, Frame, Layer } from '../stage'
 
-// Kuźnia przy Edit i Write. Każdy warsztat wjeżdża z prawej z narzędziem na sobie,
-// Krux sięga po nie i bierze się do roboty; przy zejściu odkłada narzędzie i warsztat odjeżdża.
+// Kuźnia przy Edit i Write. Każdy warsztat ork przynosi ze ściany z narzędziem na sobie,
+// sięga po nie i bierze się do roboty; przy zejściu odkłada narzędzie i odnosi warsztat.
 
 // Stójka z ręką wyciągniętą przed siebie na wysokości fartucha.
 const REACH: Frame = stander('mid', 'gg')
@@ -50,12 +50,12 @@ const ANVIL_AT = 11
 // Kowadło z młotem położonym na rozgrzanej sztabie.
 const anvilAt = (x: number): Layer[] => [[ANVIL, x, 4], [['hhhhhSSS'], x - 3, 3]]
 
-// Kowadło: wjeżdża z młotem na grzbiecie, Krux chwyta trzonek i unosi młot; pętla to zamach, uderzenie, iskry.
+// Kowadło: stoi z młotem na grzbiecie, Krux chwyta trzonek i unosi młot; pętla to zamach, uderzenie, iskry.
 const anvil: Act = {
   name: 'kowadło',
   who: ['Krux', 'Grom'],
+  kit: draw(...anvilAt(ANVIL_AT)),
   intro: [
-    ...SLIDE.map(dx => draw(...anvilAt(ANVIL_AT + dx), [STAND, 0, 0])),
     draw(...anvilAt(ANVIL_AT), [REACH, 0, 0]),
     POSES.mid,
   ],
@@ -88,9 +88,9 @@ function planeLoop(t: number): Frame {
 
 const plane: Act = {
   name: 'hebel',
+  kit: draw([BENCH, BENCH_AT, 4], [PLANE, BENCH_AT, 2]),
   intro: [
-    // Kozioł z deską i heblem wjeżdża, Krux sięga po hebel.
-    ...SLIDE.map(dx => draw([BENCH, BENCH_AT + dx, 4], [PLANE, BENCH_AT + dx, 2], [STAND, 0, 0])),
+    // Krux sięga po hebel leżący na koźle.
     draw([BENCH, BENCH_AT, 4], [PLANE, BENCH_AT, 2], [stander('mid', 'g'), 0, 0]),
   ],
   length: 16,
@@ -133,9 +133,8 @@ function grindLoop(t: number, frame: number): Frame {
 
 const grind: Act = {
   name: 'szlifierka',
+  kit: draw(...wheel(WHEEL_AT, 0), blade(8, 4)),
   intro: [
-    // Szlifierka z klingą na podstawie wjeżdża, tarcza toczy się po drodze.
-    ...SLIDE.map((dx, i) => draw(...wheel(WHEEL_AT + dx, i), blade(8 + dx, 4), [STAND, 0, 0])),
     // Schylić rękę po klingę.
     draw(...wheel(WHEEL_AT, 7), blade(8, 4), [[...STAND.slice(0, 3), 'bbbbbbg', '.bGGb..g', STAND[5]!], 0, 0]),
   ],
@@ -161,8 +160,8 @@ function rivetWork(x: number, y: number, strike = false): Frame {
 const rivets: Act = {
   name: 'nity',
   who: ['Grom'],
+  kit: draw([PLATES, 9, 4], [['hhhhhSSS'], 8, 2]),
   intro: [
-    ...SLIDE.map(dx => draw([PLATES, 9 + dx, 4], [['hhhhhSSS'], 8 + dx, 2], [STAND, 0, 0])),
     draw([PLATES, 9, 4], [['hhhhhSSS'], 8, 2], [REACH, 0, 0]),
     rivetWork(11, 2), rivetWork(10, 1), rivetWork(9, 0),
   ],
@@ -188,8 +187,8 @@ function levelWork(t: number): Frame {
 const level: Act = {
   name: 'poziomica',
   who: ['Ochra'],
+  kit: draw([BENCH, BENCH_AT + 2, 4], [LEVEL, 9, 3], at('y', 12, 3)),
   intro: [
-    ...SLIDE.map(dx => draw([BENCH, BENCH_AT + 2 + dx, 4], [LEVEL, 9 + dx, 3], at('y', 12 + dx, 3), [STAND, 0, 0])),
     draw([BENCH, BENCH_AT + 2, 4], [LEVEL, 9, 3], at('y', 12, 3), [REACH, 0, 0]),
     levelWork(0),
   ],
@@ -220,8 +219,8 @@ function fileWork(t: number): Frame {
 // Pilnik: ork zdejmuje narzędzie z ławy, wygładza stal w imadle; opiłki spadają.
 const filing: Act = {
   name: 'pilnik',
+  kit: draw([BENCH, BENCH_AT + 2, 4], [CLAMP, 13, 2], ...fileTool(0, 3)),
   intro: [
-    ...SLIDE.map(dx => draw([BENCH, BENCH_AT + 2 + dx, 4], [CLAMP, 13 + dx, 2], ...fileTool(dx, 3), [STAND, 0, 0])),
     draw([BENCH, BENCH_AT + 2, 4], [CLAMP, 13, 2], ...fileTool(0, 3), [stander('right', 'g'), 0, 0]),
     fileWork(0),
   ],
@@ -234,15 +233,15 @@ const PRESS: Frame = ['SSSSSSSSS', 'S.......S', 'S.......S', 'S.......S', 'S....
 const PRESS_TURN = [2, 2, 1, 1, 2, 3, 3, 2, 2, 1, 1, 2, 3, 3, 2, 2] as const
 const PRESS_DIE = [2, 2, 2, 2, 3, 3, 3, 3, 3, 3, 3, 3, 2, 2, 2, 2] as const
 
-function screwPress(dx: number, turn: number, die: number): Layer[] {
-  return [[PRESS, 12 + dx, 0], [['RRRRR'], 14 + dx, 4],
-    ...line([8 + dx, turn], [19 + dx, 4 - turn], 'h'),
-    ...line([16 + dx, 1], [16 + dx, die], 'q'), [['sss'], 15 + dx, die]]
+function screwPress(turn: number, die: number): Layer[] {
+  return [[PRESS, 12, 0], [['RRRRR'], 14, 4],
+    ...line([8, turn], [19, 4 - turn], 'h'),
+    ...line([16, 1], [16, die], 'q'), [['sss'], 15, die]]
 }
 
 function pressWork(t: number): Frame {
   const turn = PRESS_TURN[t]!
-  return draw(...screwPress(0, turn, PRESS_DIE[t]!), [stander('right'), 0, 0],
+  return draw(...screwPress(turn, PRESS_DIE[t]!), [stander('right'), 0, 0],
     ...line([5, 3], [7, turn], 'g'),
     // Matryca dociska świeżą stal; iskra rodzi się przy zejściu śruby.
     ...(t === 4 ? [at('y', 18, 3)] : t === 5 ? [at('o', 19, 2)] : []))
@@ -252,9 +251,9 @@ function pressWork(t: number): Frame {
 const pressingSteel: Act = {
   name: 'prasa śrubowa',
   who: ['Grom'],
+  kit: draw(...screwPress(2, 2)),
   intro: [
-    ...SLIDE.map(dx => draw(...screwPress(dx, 2, 2), [STAND, 0, 0])),
-    draw(...screwPress(0, 2, 2), [REACH, 0, 0]),
+    draw(...screwPress(2, 2), [REACH, 0, 0]),
     pressWork(0),
   ],
   length: PRESS_TURN.length,
@@ -266,8 +265,8 @@ const GILT_PANEL: Frame = ['yyyyy', 'yWWWy', 'yWiWy', 'yyyyy']
 const GILT_PATH = [[12, 2], [12, 2], [12, 3], [12, 4], [13, 4], [14, 4], [15, 4], [16, 4],
   [16, 3], [16, 2], [16, 2], [15, 2], [14, 2], [13, 2], [12, 2], [12, 2]] as const
 
-function gildingProps(dx: number): Layer[] {
-  return [[GILT_PANEL, 12 + dx, 1], [['.x.x.'], 12 + dx, 5], [['.yy.', 'kyyk'], 18 + dx, 4]]
+function gildingProps(): Layer[] {
+  return [[GILT_PANEL, 12, 1], [['.x.x.'], 12, 5], [['.yy.', 'kyyk'], 18, 4]]
 }
 
 // Drewniany trzonek, biała skuwka i złota farba na czubku pędzla.
@@ -279,7 +278,7 @@ function gildingWork(t: number): Frame {
   const [tip, y] = GILT_PATH[t]!
   const x = tip - 12
   const orc: Frame = [...stander('right').slice(0, 5), pusher(x)[5]!]
-  return draw(...gildingProps(0), [orc, x, 0],
+  return draw(...gildingProps(), [orc, x, 0],
     ...line([x + 5, 3], [tip - 5, y], 'g'), ...giltBrush(tip, y))
 }
 
@@ -287,9 +286,9 @@ function gildingWork(t: number): Frame {
 const gilding: Act = {
   name: 'złocenie',
   who: ['Ochra'],
+  kit: draw(...gildingProps(), ...giltBrush(11, 3)),
   intro: [
-    ...SLIDE.map(dx => draw(...gildingProps(dx), ...giltBrush(11 + dx, 3), [STAND, 0, 0])),
-    draw(...gildingProps(0), ...giltBrush(11, 3), [stander('right', 'g'), 0, 0]),
+    draw(...gildingProps(), ...giltBrush(11, 3), [stander('right', 'g'), 0, 0]),
     gildingWork(0),
   ],
   length: GILT_PATH.length,

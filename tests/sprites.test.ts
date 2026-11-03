@@ -2,9 +2,9 @@ import { expect, test } from 'claude-code/testing'
 
 import { GESTURES } from '../hooks/fidget'
 import { MATES } from '../hooks/roster'
-import { ACTS, BUBBLE_TEXT, CATCH_X, DUET_FRAMES, carried, dayPhase, duetPose, floorHomes, roomGrid, hasHearth, stationX, CUE_FRAMES, FRAME_MS, HOLD_FRAMES, actsFor, routeOf, trackDozing, trackFace, ORC_GAP, ORC_WIDTH, PALETTE, bandColumns, behind, bubbleLines, canvasColumns, catchStep, caughtScroll, dress, frameGrid, forgeColumns, runsOf, slotX, stageGrid, tossFrames, trackGrid, trackOff, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withNap } from '../hooks/sprites'
+import { ACTS, BUBBLE_TEXT, CATCH_X, DUET_FRAMES, bedX, carried, dayPhase, duetPose, floorHomes, roomGrid, hasHearth, stationX, CUE_FRAMES, FRAME_MS, HOLD_FRAMES, actsFor, routeOf, trackDozing, trackFace, ORC_GAP, ORC_WIDTH, PALETTE, bandColumns, behind, bubbleLines, canvasColumns, catchStep, caughtScroll, dress, frameGrid, forgeColumns, runsOf, slotX, stageGrid, tossFrames, trackGrid, trackOff, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withNap } from '../hooks/sprites'
 import type { DayPhase, StageScene } from '../hooks/sprites'
-import { H, STAND, W, actFrame, head, legAt, moodOf, pad, stander } from '../hooks/stage'
+import { H, STAND, W, actFrame, entryOf, head, kitLead, legAt, moodOf, pad, stander } from '../hooks/stage'
 
 test('every forge frame is a rectangle and two pixels make one cell', async () => {
   const width = forgeColumns('band', 1)
@@ -76,7 +76,7 @@ test('every act starts from the stand, has two eyes, keeps to the palette and th
   for (const [scene, acts] of Object.entries(ACTS)) {
     expect([scene, acts.length >= 3]).toEqual([scene, true])
     for (const act of acts) {
-      const frames = [...act.intro, ...Array.from({ length: act.length }, (_, t) => act.loop(t, t))]
+      const frames = [...entryOf(act), ...Array.from({ length: act.length }, (_, t) => act.loop(t, t))]
       for (const rows of frames) {
         const label = `${scene}/${act.name}`
         expect([label, rows.length <= H]).toEqual([label, true])
@@ -183,6 +183,11 @@ test('waiting for the horde moves only forward and ends at the campfire', async 
     seen.add(names.join('>'))
   }
   expect(seen.size > 2).toBe(true)
+})
+
+test('waiting ends at the campfire however many times the story is asked to go on', async () => {
+  const track = trackStart('lounge', 'krux', 0, 0)
+  expect(routeOf('lounge', 'Krux', track.seed, track.first, 9).legs.map(leg => leg.act.name)).toEqual(['ognisko'])
 })
 
 test('Krux dozes off by the campfire after a minute, not before', async () => {
@@ -300,7 +305,7 @@ test('duet poses stay in the palette, keep both eyes and open with the partner i
   expect(duetPose('pass', 2).prop.join('')).toContain('R')
 })
 
-test('the wall shows the state of the work: canary, aprons on pegs, seals', () => {
+test('the wall shows the state of the work: canary, the horde asleep on its cots, seals', () => {
   const count = (rows: string[], cell: string) => rows.join('').split(cell).length - 1
   const well = roomGrid(160, 8, true)
   const faint = roomGrid(160, 8, true, { red: true })
@@ -308,8 +313,8 @@ test('the wall shows the state of the work: canary, aprons on pegs, seals', () =
   expect(count(faint, 'Z')).toBeLessThan(count(well, 'Z'))
   expect(count(roomGrid(160, 8, true, { absent: ['Niuch'] }), '1')).toBe(2)
   expect(count(well, '1')).toBe(0)
-  expect(count(roomGrid(160, 8, true, { seals: 3 }), 'd')).toBe(3)
-  expect(count(roomGrid(160, 8, true, { seals: 99 }), 'd')).toBeLessThanOrEqual(12)
+  expect(count(roomGrid(160, 8, true, { seals: 3 }), 'd') - count(well, 'd')).toBe(3)
+  expect(count(roomGrid(160, 8, true, { seals: 99 }), 'd') - count(well, 'd')).toBeLessThanOrEqual(12)
 })
 
 test('a load rides at the hand on the side of the march, and a trial leaves empty-handed', () => {
@@ -334,8 +339,8 @@ test('a wide-text bubble keeps its tail over later slots in a seventy-cell canva
   ])
 })
 
-const framesOf = (act: { intro: readonly (readonly string[])[]; length: number; loop: (t: number, frame: number) => readonly string[] }) => [
-  ...act.intro,
+const framesOf = (act: Parameters<typeof entryOf>[0]) => [
+  ...entryOf(act),
   ...Array.from({ length: act.length }, (_, t) => act.loop(t, t)),
 ]
 
@@ -360,17 +365,62 @@ test('a grumpy orc frowns with both brows whichever way it looks', async () => {
   }
 })
 
-test('the chaise brings the mug in on its seat, nothing pops up beside Krux', async () => {
+test('the chaise is brought with the mug on its seat, nothing pops up beside Krux', async () => {
   const chaise = ACTS.lounge.find(act => act.name === 'szezlong')!
-  // Pierwsza klatka po stójce: obok Kruxa pusto, szezlong dopiero wjeżdża zza krawędzi.
-  const first = pad(chaise.intro[0]!)
-  expect(first.every(row => row.slice(6, 20) === '.'.repeat(14))).toBe(true)
-  // Dopóki Krux nie siada, kufel jedzie razem z szezlongiem (wjazd, potem marsz do niego).
-  const chaiseX = [20, 16, 12, 9, 7, 6, 6, 6, 6, 6, 6, 6, 6]
-  chaise.intro.slice(0, chaiseX.length).forEach((rows, i) => {
-    const mug = chaiseX[i]! + 7
-    expect([i, pad(rows)[3]!.indexOf('y')]).toEqual([i, mug < W ? mug : -1])
-  })
+  // Rekwizyt to szezlong z kuflem na siedzisku, bez orka.
+  const kit = pad(chaise.kit!)
+  expect(kit.every(row => row.slice(0, 6) === '.'.repeat(6))).toBe(true)
+  expect(kit[3]!.indexOf('y')).toBe(13)
+  // Dopóki Krux nie siada, kufel stoi na siedzisku.
+  for (const rows of chaise.intro.slice(0, 6)) expect(pad(rows)[3]!.indexOf('y')).toBe(13)
+})
+
+test('a prop never slides in by itself: an act stands at its kit, and without a room the kit leaves from under the orc', async () => {
+  for (const [scene, acts] of Object.entries(ACTS)) {
+    for (const act of acts) {
+      if (act.kit === undefined) continue
+      const entry = entryOf(act)
+      const lead = kitLead(act)
+      const label = `${scene}/${act.name}`
+      // Rekwizyt stoi przed orkiem, nie na nim; wyjątek to krzaki i stołek, za którymi ork się chowa.
+      expect([label, pad(entry[lead - 1]!).slice(0, 3).every(row => row.slice(0, 6) === pad(STAND)[0]!.slice(0, 6) || row.slice(0, 6) === pad(STAND)[1]!.slice(0, 6) || row.slice(0, 6) === pad(STAND)[2]!.slice(0, 6))]).toEqual([label, true])
+      // Wysuwanie idzie spod orka: prawa krawędź rekwizytu rośnie, a nie maleje jak przy wjeździe z prawej.
+      const right = (rows: readonly string[]) => Math.max(...pad(rows).map(row => row.replace(/\.+$/u, '').length))
+      const edges = entry.slice(0, lead).map(right)
+      expect([label, edges.every((edge, i) => i === 0 || edge >= edges[i - 1]!)]).toEqual([label, true])
+    }
+  }
+})
+
+test('at the kit an act settles back to the kit, so the orc can carry it away', async () => {
+  for (const scene of Object.keys(ACTS) as StageScene[]) {
+    const track = trackStart(scene, 'krux', 0, 0)
+    const act = routeOf(scene, 'Krux', track.seed).legs[0]!.act
+    const parked = trackOff(track, 30, true)
+    expect([scene, parked.stops]).toEqual([scene, act.kit === undefined ? 'bare' : 'kit'])
+    const last = trackGrid(parked, parked.since, 'band', 'calm', false)
+    expect([scene, last]).toEqual([scene, pad(act.kit === undefined ? STAND : entryOf(act)[kitLead(act) - 1]!)])
+  }
+})
+
+test('a cot keeps the sleeper in the shadow and a bed for each of the horde, inside the floor', () => {
+  for (const width of [46, 70, 94, 120, 200]) {
+    const beds = (['Krux', ...MATES] as const).map(face => bedX(face, width, false))
+    expect(new Set(beds).size).toBe(7)
+    for (const x of beds) expect(x + 7).toBeLessThanOrEqual(width)
+    expect([...beds].sort((a, b) => a - b)).toEqual(beds.filter(() => true).sort((a, b) => a - b))
+  }
+  const room = roomGrid(120, 8, true, { absent: ['Krux', 'Lont'] }).join('')
+  expect(room).toContain('6')
+  expect(room).not.toContain('T')
+})
+
+test('gear leaves the wall when an orc takes it and the wall keeps the gap', () => {
+  const full = roomGrid(120, 8, true).join('')
+  const taken = roomGrid(120, 8, true, { taken: ['seal', 'read'] }).join('')
+  expect(taken.split('.').length).toBeGreaterThan(full.split('.').length)
+  expect(full).toContain('d')
+  expect(roomGrid(120, 8, true, { taken: ['torch'] }).join('').split('Q').length + roomGrid(120, 8, true, { taken: ['torch'] }).join('').split('Z').length).toBeLessThan(full.split('Q').length + full.split('Z').length)
 })
 
 test("Lont's fuse glows beside his head in every pose, never on his apron or skin", async () => {

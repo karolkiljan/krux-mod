@@ -18,7 +18,7 @@ import { pathToFileURL } from 'node:url'
 import { dress } from '../hooks/apron.ts'
 import { MATE_APRONS, PALETTE } from '../hooks/palette.ts'
 import { GESTURES, headOf } from '../hooks/fidget.ts'
-import { H, STAND, W, moodOf, pad } from '../hooks/stage.ts'
+import { H, STAND, W, entryOf, moodOf, pad } from '../hooks/stage.ts'
 import type { Act, Frame } from '../hooks/stage.ts'
 
 const PER_ROW = 5
@@ -44,11 +44,11 @@ function labelOf({ name, who }: Pick<Act, 'name' | 'who'>): string {
   return `${name}${who?.[0] === undefined ? '' : ` (${who[0]})`}`
 }
 
-// Klatki czynności: wejście i pętla, pętla w dwóch chwilach zegara, bo ogień i woda szumią.
+// Klatki czynności: wyjęcie rekwizytu, wejście i pętla, pętla w dwóch chwilach zegara, bo ogień i woda szumią.
 function framesOf(act: Act): { label: string; rows: Frame }[] {
   const label = labelOf(act)
   return [
-    ...act.intro.map((rows, i) => ({ label: `${label} wejście ${i}`, rows })),
+    ...entryOf(act).map((rows, i) => ({ label: `${label} wejście ${i}`, rows })),
     ...Array.from({ length: act.length }, (_, t) => ({ label: `${label} pętla ${t}`, rows: act.loop(t, t) })),
     ...Array.from({ length: act.length }, (_, t) => ({ label: `${label} pętla ${t} (zegar ${t + 17})`, rows: act.loop(t, t + 17) })),
   ]
@@ -91,7 +91,7 @@ function problemsOf(label: string, rows: Frame, wick = true): string[] {
 function actStrips(acts: readonly Act[]): string[][][] {
   const strips: string[][][] = []
   for (const act of acts) {
-    const frames = [STAND, ...act.intro, ...Array.from({ length: act.length }, (_, t) => act.loop(t, t))].map(rows => dress(pad(rows), act.who?.[0] ?? 'Krux'))
+    const frames = [STAND, ...entryOf(act), ...Array.from({ length: act.length }, (_, t) => act.loop(t, t))].map(rows => dress(pad(rows), act.who?.[0] ?? 'Krux'))
     for (let i = 0; i < frames.length; i += PER_ROW) strips.push(frames.slice(i, i + PER_ROW))
     strips.push([])
   }
@@ -225,7 +225,7 @@ async function main(): Promise<void> {
   const out = process.argv[3] ?? join(mkdtempSync(join(tmpdir(), 'act-sheet-output-')), 'sheet.png')
   sheet(actStrips(acts), out)
   console.log(out)
-  for (const act of acts) console.log(`${labelOf(act)}: wejście ${act.intro.length}, pętla ${act.length}`)
+  for (const act of acts) console.log(`${labelOf(act)}: wejście ${entryOf(act).length}, pętla ${act.length}`)
   report(problems)
 }
 

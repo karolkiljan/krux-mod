@@ -2,6 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import { TEST_ACTS, canaryResult } from '../hooks/acts/test'
 import { MATE_APRONS, PALETTE } from '../hooks/palette'
+import { entryOf } from '../hooks/stage'
 
 const canary = TEST_ACTS.find(act => act.name === 'kanarek')!
 
@@ -43,7 +44,7 @@ test('result recognition rejects other trials, clipped cages and unrelated times
   for (const act of TEST_ACTS.filter(act => act !== canary)) {
     for (let t = 0; t < act.length; t += 1) expect(canaryResult(act.loop(t, t), true, 5)).toBe(null)
   }
-  expect(canaryResult(canary.intro[0]!, true, 5)).toBe(null)
+  expect(canaryResult(entryOf(canary)[0]!, true, 5)).toBe(null)
   expect(canaryResult(canary.loop(0, 0), true, -1)).toBe(null)
   expect(canaryResult(canary.loop(0, 0), true, 14)).toBe(null)
 })

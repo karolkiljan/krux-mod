@@ -1,8 +1,8 @@
 import { STAND, SQUAT, bonfire, croucher, draw, head, line, noise, stander, stroll } from '../stage'
 import type { Act, Frame, Layer } from '../stage'
 
-// Odpoczynek, gdy Krux czeka na hordę. Każdy mebel wjeżdża albo rośnie na oczach,
-// Krux do niego podchodzi i siada; przy zejściu wstaje i mebel odjeżdża.
+// Odpoczynek, gdy Krux czeka na hordę. Każdy mebel Krux przynosi ze ściany, podchodzi
+// do niego i siada; przy zejściu wstaje i odnosi mebel na miejsce.
 
 // ——— Szezlong z kuflem ———
 const MUG: Frame = ['t', 'y']
@@ -30,10 +30,9 @@ function chaiseLoop(t: number): Frame {
 
 const chaise: Act = {
   name: 'szezlong',
+  kit: draw(chaiseAt(CHAISE_AT), [MUG, CHAISE_AT + MUG_ON_SEAT, 2]),
   intro: [
-    // Szezlong wjeżdża z prawej z kuflem na siedzisku, Krux patrzy.
-    ...[20, 16, 12, 9, 7, CHAISE_AT].map(x => draw(chaiseAt(x), [MUG, x + MUG_ON_SEAT, 2], [stander('right'), 0, 0])),
-    // Podejść do szezlonga.
+    // Podejść do szezlonga z kuflem na siedzisku.
     ...stroll(CHAISE_AT, [chaiseAt(CHAISE_AT), [MUG, CHAISE_AT + MUG_ON_SEAT, 2]]),
     // Usiąść prosto, nogi zwisają.
     draw(chaiseAt(CHAISE_AT), [['.gggg.', 'grggrg', '.tggtg', '.bbbbbgg', '......GG', '.......G'], CHAISE_AT, 0], [MUG, 13, 2]),
@@ -72,9 +71,8 @@ function armchairLoop(t: number): Frame {
 
 const armchair: Act = {
   name: 'fotel',
+  kit: draw([ARMCHAIR, CHAIR_AT - 1, 0]),
   intro: [
-    // Fotel spada z góry i siada na nóżkach.
-    ...[-5, -3, -1, 1, 0].map(y => draw([ARMCHAIR, CHAIR_AT - 1, y], [stander(y < 0 ? 'mid' : 'right'), 0, 0])),
     ...stroll(CHAIR_AT, [[ARMCHAIR, CHAIR_AT - 1, 0]]),
     // Klapnąć, wyciągnąć fajkę.
     draw([ARMCHAIR, CHAIR_AT - 1, 0], [['.gggg.', 'grggrg', '.tggt.', 'gbbbbg', '.bbGG', '..GG'], CHAIR_AT, 0]),
@@ -86,13 +84,17 @@ const armchair: Act = {
 }
 
 // ——— Ryby ———
+// Koryto z wodą: Krux łowi w tym, co sam przyniósł.
 const POND_FROM = 11
-const POND = 22 - POND_FROM
+const POND = 22 - POND_FROM - 1
 
-function pond(frame: number, width: number): Layer {
-  const top = Array.from({ length: width }, (_, i) => (noise(frame, i, 4) < 0.18 ? 'i' : 'W')).join('')
-  return [[top, 'W'.repeat(width)], 22 - width, 4]
+function pond(frame: number): Layer {
+  const top = Array.from({ length: POND }, (_, i) => (noise(frame, i, 4) < 0.18 ? 'i' : 'W')).join('')
+  return [[`x${top}x`, 'x'.repeat(POND + 2)], POND_FROM - 1, 4]
 }
+
+// Wędka leży przy korycie, zanim Krux po nią sięgnie.
+const LAID_ROD: Layer = [['hhhh'], 6, 5]
 
 // Siedzi na brzegu: głowa wiersz niżej, nogi przed sobą.
 const SITTER: Frame = ['', '.gggg.', 'grggrg', '.tggt.', 'bbbbbbg', '.bGGGGG']
@@ -120,21 +122,21 @@ function fishingLoop(t: number, frame: number): Frame {
     fish.push([['jj'], fx, fy])
   }
   const splash: Layer[] = fishT === 0 ? [[['i.i'], 17, 3]] : fishT === 8 ? [[['i.i'], 13, 3]] : []
-  return draw(pond(frame, POND), [SITTER, 0, 0], ...ripple, ...tackle(tip, bobber), ...fish, ...splash)
+  return draw(pond(frame), [SITTER, 0, 0], ...ripple, ...tackle(tip, bobber), ...fish, ...splash)
 }
 
 const fishing: Act = {
   name: 'ryby',
+  kit: draw(pond(0), LAID_ROD),
   intro: [
-    // Woda napływa z prawej, Krux siada na brzegu.
-    ...[2, 4, 7, POND].map((w, i) => draw(pond(i, w), [STAND, 0, 0])),
-    draw(pond(4, POND), [croucher('mid'), 0, 0]),
-    draw(pond(5, POND), [SITTER, 0, 0]),
+    // Krux siada na brzegu koryta i podnosi wędkę.
+    draw(pond(4), LAID_ROD, [croucher('mid'), 0, 0]),
+    draw(pond(5), LAID_ROD, [SITTER, 0, 0]),
     // Zamach za głowę, rzut, spławik leci łukiem na wodę.
-    draw(pond(6, POND), [SITTER, 0, 0], ...tackle([6, 0], null)),
-    draw(pond(7, POND), [SITTER, 0, 0], ...tackle([10, 0], null), [['d'], 12, 0]),
-    draw(pond(8, POND), [SITTER, 0, 0], ...tackle([12, 0], [14, 1])),
-    draw(pond(9, POND), [SITTER, 0, 0], ...tackle([12, 0], [16, 3])),
+    draw(pond(6), [SITTER, 0, 0], ...tackle([6, 0], null)),
+    draw(pond(7), [SITTER, 0, 0], ...tackle([10, 0], null), [['d'], 12, 0]),
+    draw(pond(8), [SITTER, 0, 0], ...tackle([12, 0], [14, 1])),
+    draw(pond(9), [SITTER, 0, 0], ...tackle([12, 0], [16, 3])),
   ],
   length: 32,
   loop: fishingLoop,
@@ -161,15 +163,17 @@ function campfireLoop(t: number, frame: number): Frame {
   return draw(...bonfire(FIRE_X, frame, 2), [SQUAT, 0, 0], ...stick, ...bite, ...face)
 }
 
+// Patyk leży obok polan, zanim Krux po niego sięgnie.
+const LAID_STICK: Layer = [['hhhh'], 7, 5]
+
 const campfire: Act = {
   name: 'ognisko',
+  kit: draw(...bonfire(FIRE_X, 0, 0), LAID_STICK),
   intro: [
-    // Polana układają się, iskra, ogień rośnie, Krux kuca.
-    draw([['x'], FIRE_X + 1, 4], [STAND, 0, 0]),
-    draw([['xxxxx'], FIRE_X - 1, 4], [STAND, 0, 0]),
-    draw(...bonfire(FIRE_X, 0, 0), [STAND, 0, 0], [['y'], FIRE_X + 1, 3]),
-    draw(...bonfire(FIRE_X, 1, 1), [STAND, 0, 0]),
-    draw(...bonfire(FIRE_X, 2, 2), [SQUAT, 0, 0]),
+    // Iskra, ogień rośnie, Krux kuca i podnosi patyk.
+    draw(...bonfire(FIRE_X, 0, 0), LAID_STICK, [STAND, 0, 0], [['y'], FIRE_X + 1, 3]),
+    draw(...bonfire(FIRE_X, 1, 1), LAID_STICK, [STAND, 0, 0]),
+    draw(...bonfire(FIRE_X, 2, 2), LAID_STICK, [SQUAT, 0, 0]),
     draw(...bonfire(FIRE_X, 3, 2), [SQUAT, 0, 0], [['', '.hh', 'h'], 7, 1]),
     draw(...bonfire(FIRE_X, 4, 2), [SQUAT, 0, 0], [STICK, 7, 1], [['dd'], 12, 1]),
   ],

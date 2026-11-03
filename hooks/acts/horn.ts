@@ -1,8 +1,8 @@
 import { STAND, draw, lerp, line, pingPong, stander } from '../stage'
 import type { Act, Frame, Layer } from '../stage'
 
-// Wezwanie hordy przy Agent. Rekwizyt przylatuje z prawej albo spada z góry, Krux go łapie
-// i daje sygnał; prawdziwa horda wbiega potem z prawej krawędzi.
+// Wezwanie hordy przy Agent. Krux przynosi rekwizyt ze ściany i daje sygnał;
+// prawdziwa horda wstaje potem z pryczy.
 
 // Fala dźwięku: łuk z trzech pikseli wędruje w prawo od `from`.
 function wave(from: number, age: number, cell: string): Layer {
@@ -21,14 +21,14 @@ function hornLoop(t: number): Frame {
   return draw([HORN_ORC, 0, 0], ...waves)
 }
 
-// Krux patrzy, jak róg leci łukiem z prawej; łapie go oburącz i przykłada do ust.
+// Krux chwyta róg oburącz i przykłada do ust.
 const LOOK: Frame = stander('right')
-const HORN_ARC = [[19, 3], [16, 1], [13, 0], [10, 0], [8, 1]] as const
 
 const horn: Act = {
   name: 'róg',
+  kit: draw([HORN_PROP, 8, 1]),
   intro: [
-    ...HORN_ARC.map(([x, y]) => draw([LOOK, 0, 0], [HORN_PROP, x, y])),
+    draw([LOOK, 0, 0], [HORN_PROP, 8, 1]),
     draw([LOOK, 0, 0], [['', '', '', '......gg'], 0, 0], [HORN_PROP, 6, 2]),
     draw([HORN_ORC, 0, 0]),
   ],
@@ -68,9 +68,10 @@ function drumLoop(t: number): Frame {
 
 const drum: Act = {
   name: 'bęben',
+  kit: draw([DRUM, DRUM_AT, 3], [['hh'], 8, 2]),
   intro: [
-    // Bęben spada z góry z pałką na skórze, podskakuje i staje; Krux sięga po pałkę.
-    ...[-3, -1, 1, 2, 3].map(y => draw([DRUM, DRUM_AT, y], [['hh'], 8, y - 1], [stander(y < 1 ? 'mid' : 'right'), 0, 0])),
+    // Krux sięga po pałkę leżącą na skórze.
+    draw([DRUM, DRUM_AT, 3], [['hh'], 8, 2], [stander('right'), 0, 0]),
     draw([DRUM, DRUM_AT, 3], [['hh'], 8, 2], [STAND, 0, 0], [['g'], 6, 3]),
   ],
   length: DRUM_CYCLE.length,
@@ -98,10 +99,9 @@ const planted = (top: number, length: number, frame: number): Layer[] => [[Array
 
 const flag: Act = {
   name: 'flaga',
+  kit: draw(...planted(2, 4, 0)),
   intro: [
-    // Flaga spada z nieba i wbija się w ziemię obok Kruxa.
-    ...[-5, -3, -1, 1, 2].map((top, i) => draw([stander(top < 0 ? 'mid' : 'right'), 0, 0], ...planted(top, 4, i))),
-    // Chwycić drzewce i wyrwać je z ziemi.
+    // Chwycić drzewce i unieść flagę.
     draw([stander('mid', 'gg'), 0, 0], ...planted(2, 4, 5)),
     draw([stander('mid', 'gg'), 0, 0], ...planted(1, 3, 6)),
   ],

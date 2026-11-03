@@ -13,7 +13,7 @@ export const EMPTY_CREW: KruxCrew = { members: [], bubble: null, cues: [] }
 const CUES_KEPT = 8
 
 export type CrewEvent =
-  // Subagent z głównej pętli wbiega na scenę.
+  // Subagent z głównej pętli wchodzi na scenę.
   | { kind: 'spawn'; member: KruxHordeMember }
   // Narzędzie albo faza kumpla (dumanie, pisanie): jego poza i dymek z krokiem, chyba że wisi świeży wtręt.
   | { kind: 'mate-tool'; agentId: string; doing: KruxActivity }

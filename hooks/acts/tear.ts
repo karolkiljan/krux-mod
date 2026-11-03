@@ -1,9 +1,8 @@
-import { SLIDE, STAND, at, croucher, dots, draw, head, line, noise, pusher, stander } from '../stage'
+import { STAND, at, croucher, dots, draw, head, line, noise, pusher, stander } from '../stage'
 import type { Act, Frame, Layer, Look, Point } from '../stage'
 
-// Rozbiórka przy rm, git rm, git clean, git reset i git restore. Skała wyrasta z ziemi,
-// kupka gruzu z taczką albo stary mur wjeżdża z prawej; Krux rozwala, wywozi i zgarnia,
-// a przy zejściu wszystko wraca tą samą drogą, którą przyszło.
+// Rozbiórka przy rm, git rm, git clean, git reset i git restore. Skałę, taczkę z gruzem albo
+// stary mur ork przynosi ze sztolni; rozwala, wywozi i zgarnia, a przy zejściu odnosi to samo.
 
 // Pętla z kolejnych ujęć: każde trwa swoją liczbę klatek i dostaje klatkę od swojego początku.
 type Beat = readonly [number, (k: number, frame: number) => Frame]
@@ -115,12 +114,12 @@ const dynamiteBeats: Beat[] = [
   [1, () => HOLD],
 ]
 
-// Dynamit: skała wyrasta z ziemi, Krux wyciąga laskę z fartucha; pętla to marsz do skały,
+// Dynamit: skała stoi, Krux wyciąga laskę z fartucha; pętla to marsz do skały,
 // lont rozwinięty tyłem, iskra, huk, dym i gruz, który zapada się pod nową skałę.
 const dynamite: Act = {
   name: 'dynamit',
+  kit: draw(rockAt(0)),
   intro: [
-    ...[4, 3, 2, 1, 0].map(sink => draw(rockAt(sink), [STAND, 0, 0])),
     draw(rockAt(0), [stander('right'), 0, 0]),
     draw(rockAt(0), [STAND, 0, 0], at('g', 5, 4)),
     draw(rockAt(0), [holder(0, 'mid'), 0, 0], [['d', 'd'], 6, 4]),
@@ -152,8 +151,8 @@ function hauling(t: number): Frame {
 
 const haul: Act = {
   name: 'gruz',
+  kit: draw(...cart(CART_X, true)),
   intro: [
-    ...SLIDE.map(dx => draw(...cart(CART_X + dx, true), [STAND, 0, 0])),
     draw(...cart(CART_X, true), [stander('right', 'g'), 0, 0]),
     hauling(0),
   ],
@@ -193,8 +192,8 @@ function wallWork(t: number): Frame {
 
 const wall: Act = {
   name: 'mur',
+  kit: draw([WALL, WALL_X, 1], [['hhhhSS'], 8, 4]),
   intro: [
-    ...SLIDE.map(dx => draw([WALL, WALL_X + dx, 1], [['hhhhSS'], 8 + dx, 4], [STAND, 0, 0])),
     draw(...wallLayers(0), [['hhhhSS'], 8, 4], [stander('right', 'g'), 0, 0]),
     draw(...wallLayers(0), [['hhhhSS'], 8, 3], [pusher(0), 1, 0]),
     wallWork(3),
@@ -219,11 +218,11 @@ const SPANS = [8, 11, 14] as const
 const CHALK = SPANS.map(x => x + 2)
 const CUT = 17
 
-// Ława przesunięta o `dx`: lont od `from` do szpuli, przerwa w `gap`, kreda na `marks`.
-function bench(dx: number, from: number, opts: { gap?: number; marks?: readonly number[]; turn?: number } = {}): Layer[] {
+// Ława: lont od `from` do szpuli, przerwa w `gap`, kreda na `marks`.
+function bench(from: number, opts: { gap?: number; marks?: readonly number[]; turn?: number } = {}): Layer[] {
   const fuse: Layer[] = []
-  for (let x = from; x < SPOOL_AT; x += 1) if (x !== opts.gap) fuse.push(at((opts.marks ?? []).includes(x) ? 'j' : 'h', x + dx, 2))
-  return [[BENCH, BENCH_AT + dx, 3], ...fuse, [SPOOL[(opts.turn ?? 0) % 2]!, SPOOL_AT + dx, 0]]
+  for (let x = from; x < SPOOL_AT; x += 1) if (x !== opts.gap) fuse.push(at((opts.marks ?? []).includes(x) ? 'j' : 'h', x, 2))
+  return [[BENCH, BENCH_AT, 3], ...fuse, [SPOOL[(opts.turn ?? 0) % 2]!, SPOOL_AT, 0]]
 }
 
 // Lont w kroku: `step` przestawia nogi, gdy przesuwa się wzdłuż ławy.
@@ -239,13 +238,13 @@ function reach(orcX: number, hand: Point): Layer[] {
 // Miara `k`: nóż leży na lontie, Lont trzyma rękojeść.
 function laid(k: number, look: Look, marks: readonly number[]): Frame {
   const x0 = SPANS[k]!
-  return draw(...bench(0, BENCH_AT, { marks }), lont(x0 - 8, look), [KNIFE, x0, 1], ...reach(x0 - 8, [x0 - 1, 1]))
+  return draw(...bench(BENCH_AT, { marks }), lont(x0 - 8, look), [KNIFE, x0, 1], ...reach(x0 - 8, [x0 - 1, 1]))
 }
 
 // Między miarami nóż przeskakuje nad lontem, Lont przestępuje.
 function hop(k: number, marks: readonly number[]): Frame {
   const x0 = SPANS[k]! + 1
-  return draw(...bench(0, BENCH_AT, { marks }), lont(x0 - 8, 'right', 1), [KNIFE, x0 + 1, 0], ...reach(x0 - 8, [x0, 0]))
+  return draw(...bench(BENCH_AT, { marks }), lont(x0 - 8, 'right', 1), [KNIFE, x0 + 1, 0], ...reach(x0 - 8, [x0, 0]))
 }
 
 function measuring(t: number): Frame {
@@ -258,7 +257,7 @@ function measuring(t: number): Frame {
   // 6–8: unieść nóż ostrzem w dół nad lont i ciąć tuż za trzecim znakiem.
   if (t < 9) {
     const down = t === 7 ? 1 : 0
-    return draw(...bench(0, BENCH_AT, { marks: CHALK, gap: t === 6 ? undefined : CUT }), lont(6, 'right'),
+    return draw(...bench(BENCH_AT, { marks: CHALK, gap: t === 6 ? undefined : CUT }), lont(6, 'right'),
       ...reach(6, [CUT - 1, down]), [['x', 's'], CUT, down])
   }
   // 9–11: zwinąć odcięty kawałek do dłoni, cofając się wzdłuż ławy.
@@ -267,64 +266,62 @@ function measuring(t: number): Frame {
     const orcX = Math.max(0, end - 8)
     const piece: Layer[] = []
     for (let x = BENCH_AT; x <= end; x += 1) piece.push(at(CHALK.includes(x) ? 'j' : 'h', x, 2))
-    return draw(...bench(0, CUT + 1), ...piece, lont(orcX, 'right', t), ...reach(orcX, [end, 2]), [['s', 'x'], end, 0])
+    return draw(...bench(CUT + 1), ...piece, lont(orcX, 'right', t), ...reach(orcX, [end, 2]), [['s', 'x'], end, 0])
   }
   // 12–14: szpula odwija nowy lont na całą ławę; 15: nóż wraca nad pierwszą miarę.
-  if (t < 15) return draw(...bench(0, [15, 11, BENCH_AT][t - 12]!, { turn: t }), lont(0, 'right'), ...reach(0, [7, 2]), [['s', 'x'], 7, 0])
-  return draw(...bench(0, BENCH_AT), lont(0, 'right'), [KNIFE, 8, 0], ...reach(0, [7, 1]))
+  if (t < 15) return draw(...bench([15, 11, BENCH_AT][t - 12]!, { turn: t }), lont(0, 'right'), ...reach(0, [7, 2]), [['s', 'x'], 7, 0])
+  return draw(...bench(BENCH_AT), lont(0, 'right'), [KNIFE, 8, 0], ...reach(0, [7, 1]))
 }
 
 const measure: Act = {
   name: 'miarka',
   who: ['Lont'],
+  kit: draw(...bench(BENCH_AT), [KNIFE, 8, 1]),
   intro: [
-    // Ława z lontem, szpulą i nożem wjeżdża z prawej.
-    ...SLIDE.map(dx => draw(...bench(dx, BENCH_AT), [KNIFE, 8 + dx, 1], [STAND, 0, 0])),
     // Spojrzeć na lont i sięgnąć po nóż.
-    draw(...bench(0, BENCH_AT), [KNIFE, 8, 1], [stander('right'), 0, 0]),
-    draw(...bench(0, BENCH_AT), [KNIFE, 8, 1], [stander('right', 'g'), 0, 0]),
-    draw(...bench(0, BENCH_AT), [KNIFE, 8, 1], lont(0, 'right'), ...reach(0, [7, 1])),
+    draw(...bench(BENCH_AT), [KNIFE, 8, 1], [stander('right'), 0, 0]),
+    draw(...bench(BENCH_AT), [KNIFE, 8, 1], [stander('right', 'g'), 0, 0]),
+    draw(...bench(BENCH_AT), [KNIFE, 8, 1], lont(0, 'right'), ...reach(0, [7, 1])),
   ],
   length: 16,
   loop: measuring,
 }
 
 // ——— Łom Lonta ———
-// Stara belka na dwóch podporach wjeżdża z łomem wsuniętym pod lewy koniec. Lont trzy razy
+// Stara belka na dwóch podporach stoi z łomem wsuniętym pod lewy koniec. Lont trzy razy
 // ostrożnie sprawdza opór, dopiero potem odgina belkę wysoko i powoli opuszcza ją do następnej próby.
 const BEAM_AT = 14
 const BEAM_END = 20
 const BEAM_LIFT = [0, 1, 0, 1, 0, 1, 2, 3, 3, 2, 2, 1, 1, 0, 0, 0] as const
 
 // Prawy koniec belki zostaje na gwoździu; lewy podnosi łom. Podpory stoją na ziemi.
-function beamAt(dx: number, lift = 0): Layer[] {
+function beamAt(lift = 0): Layer[] {
   return [
-    [['x....x', 'x....x'], BEAM_AT + 1 + dx, 4],
-    ...line([BEAM_AT + dx, 3 - lift], [BEAM_END + dx, 3], 'h'),
-    at('s', BEAM_END + dx, 3),
+    [['x....x', 'x....x'], BEAM_AT + 1, 4],
+    ...line([BEAM_AT, 3 - lift], [BEAM_END, 3], 'h'),
+    at('s', BEAM_END, 3),
   ]
 }
 
 // Zakrzywiony koniec łomu pod belką, długi stalowy trzon do dłoni.
-function crowbarAt(dx: number, lift = 0): Layer[] {
-  const grip: Point = [8 + dx, 3 - Math.min(2, lift)]
-  return [...line(grip, [BEAM_AT - 1 + dx, 4 - lift], 's'), at('S', BEAM_AT + dx, 4 - lift)]
+function crowbarAt(lift = 0): Layer[] {
+  const grip: Point = [8, 3 - Math.min(2, lift)]
+  return [...line(grip, [BEAM_AT - 1, 4 - lift], 's'), at('S', BEAM_AT, 4 - lift)]
 }
 
 function prying(t: number): Frame {
   const lift = BEAM_LIFT[t]!
   // Trzy małe pociągnięcia przed mocnym ruchem: rozbiórka dopiero po sprawdzeniu podpory.
-  return draw(...beamAt(0, lift), [stander('right'), 0, 0],
-    ...line([6, 3], [7, 3 - Math.min(2, lift)], 'g'), ...crowbarAt(0, lift))
+  return draw(...beamAt(lift), [stander('right'), 0, 0],
+    ...line([6, 3], [7, 3 - Math.min(2, lift)], 'g'), ...crowbarAt(lift))
 }
 
 const crowbar: Act = {
   name: 'podważanie belki',
   who: ['Lont'],
+  kit: draw(...beamAt(), ...crowbarAt()),
   intro: [
-    // Belka z podporami i wsuniętym łomem wjeżdża z prawej.
-    ...SLIDE.map(dx => draw(...beamAt(dx), ...crowbarAt(dx), [STAND, 0, 0])),
-    draw(...beamAt(0), ...crowbarAt(0), [stander('right', 'g'), 0, 0]),
+    draw(...beamAt(), ...crowbarAt(), [stander('right', 'g'), 0, 0]),
     prying(0),
   ],
   length: BEAM_LIFT.length,
