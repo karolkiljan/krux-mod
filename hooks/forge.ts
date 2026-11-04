@@ -2,7 +2,7 @@ import type { ClientModule } from 'claude-code'
 
 import type { KruxCue, KruxEvent, KruxMate, KruxMood, KruxSpeaker } from '../types'
 import { CATCH_X, CUE_FRAMES, DUET_FRAMES, DUET_GAP, ERRAND_FRAMES, ERRAND_SWAP, FRAME_MS, MUGS, ORC_GAP, ORC_WIDTH, RISE_FRAMES, SILL_LIFT, SPEAKER_COLOR, TOAST_HELD, TOAST_RETURN, WALL_MIN, bandColumns, behind, bubbleAt, canvasColumns, carried, catchStep, caughtScroll, depthSpot, dayPhase, doorX, dress, duetPose, episodeKit, errandPose, farMugs, farPose, floorHomes, floorStart, frameGrid, hasHearth, headX, hearthProp, kitAt, kitReach, nextEpisode, paint, quartersDoor, roomGrid, runsOf, sameStation, sliceRuns, slotX, stageGrid, stationX, tossFlight, tossFrames, tossGrid, tossScroll, trackArrive, trackBare, trackDozing, trackDue, trackFace, trackGrid, trackKit, trackLooping, trackOff, trackOut, trackResume, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withNap } from './sprites'
-import type { DuetKind, Episode, Face, Far, Placed, Run, StageScene, Track } from './sprites'
+import type { DuetKind, Episode, Face, Far, FloorOrc, Placed, Run, StageScene, Track } from './sprites'
 import { draw } from './stage'
 import type { Frame } from './stage'
 import { MATES, ROSTER } from './roster'
@@ -417,13 +417,19 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
   const pinned = (actor: Actor) => frozen || actor.errand !== undefined || actor.left !== undefined || trackKit(actor.track) !== undefined || (duet !== undefined && (actors[duet.host] === actor || actors[duet.guest] === actor)) || (actor.pending === undefined && (fetching || frame - actor.arrived < STAY_FRAMES))
   const bounds = [floorStart(hearth), stage - ORC_WIDTH] as const
   const onFloor = (x: number) => Math.max(bounds[0], Math.min(bounds[1], x))
+  // Przypięty ork i rekwizyt zostawiony przy scence stoją, więc dla reszty są przeszkodą: inaczej
+  // dom sąsiada liczyłby się tak, jakby przypięty ustąpił, i sąsiad stanąłby na nim.
   const homes = floorHomes(
-    standing.map(([key, actor]) => ({
-      key,
-      slot: actor.slot,
-      want: props.still ? slotX(actor.slot) : !born.has(key) && pinned(actor) ? onFloor(actor.home) : stationX(scenes.get(key)!, stage, hearth),
-    })),
+    [
+      ...standing.map(([key, actor]): FloorOrc => {
+        if (props.still) return { key, slot: actor.slot, want: slotX(actor.slot) }
+        if (born.has(key)) return { key, slot: actor.slot, want: stationX(scenes.get(key)!, stage, hearth) }
+        return pinned(actor) ? { key, slot: actor.slot, want: onFloor(actor.home), fixed: true } : { key, slot: actor.slot, want: stationX(scenes.get(key)!, stage, hearth), stay: onFloor(actor.home) }
+      }),
+      ...(props.still ? [] : standing.flatMap(([key, actor]): FloorOrc[] => (actor.left === undefined || actor.left.x === actor.home ? [] : [{ key: `${key}#left`, slot: actor.slot, want: onFloor(actor.left.x), fixed: true }]))),
+    ],
     stage,
+    floorStart(hearth),
   )
   for (const [key, actor] of standing) {
     const home = homes[key]!

@@ -688,6 +688,48 @@ test('homes move once a frame at most, so a crowded table cannot trip the engine
   expect(writes).toBeLessThanOrEqual(2)
 })
 
+// Pary orków, które stoją przy robocie (bez marszu, wyprawy, wstawania i scenki) bliżej niż ork z przerwą.
+const crowded = (state: Seen): string[] => {
+  const keys = Object.keys(state.actors).filter(key => {
+    const actor = state.actors[key]!
+    return actor.leftAt === null && actor.pending === undefined && actor.errand === undefined && actor.rise === undefined && state.duet?.host !== key && state.duet?.guest !== key
+  })
+  return keys.flatMap((a, i) => keys.slice(i + 1).filter(b => Math.abs(state.actors[a]!.home - state.actors[b]!.home) < 24).map(b => `${state.frame}:${a}/${b}`))
+}
+
+test('nobody walks onto a pinned mate: Krux going to the forge stands beside the mate already there', () => {
+  const seen = surfaceOf()
+  const at = (krux: ForgeOrc['scene'], mates: ForgeOrc[]): ForgeProps => ({ ...FLOOR, orcs: [{ ...KRUX, scene: krux }, ...mates] })
+  draw(at('read', []), seen.surface)
+  for (let i = 0; i < 40; i++) { seen.tick(); draw(at('read', []), seen.surface) }
+  for (let i = 0; i < 80; i++) { seen.tick(); draw(at('read', [GROM]), seen.surface) }
+  const overlaps: string[] = []
+  for (let i = 0; i < 300; i++) {
+    seen.tick()
+    draw(at('hammer', [GROM]), seen.surface)
+    overlaps.push(...crowded(seen.surface.state as Seen))
+  }
+  expect(overlaps).toEqual([])
+  // Krux doszedł do kuźni i robi obok kumpla.
+  expect((seen.surface.state as Seen).actors.krux!.track.scene).toBe('hammer')
+})
+
+test('two mates working by Krux waiting for the horde never stand one on another', () => {
+  const seen = surfaceOf()
+  draw({ ...FLOOR, orcs: [{ ...KRUX, scene: 'horn' }] }, seen.surface)
+  for (let i = 0; i < 10; i++) { seen.tick(); draw({ ...FLOOR, orcs: [{ ...KRUX, scene: 'horn' }] }, seen.surface) }
+  const overlaps: string[] = []
+  for (const [grom, mlot] of [['hammer', 'pick'], ['read', 'pick'], ['hammer', 'hammer'], ['pick', 'read'], ['hammer', 'build']] as const) {
+    const props: ForgeProps = { ...FLOOR, orcs: [KRUX, { ...GROM, scene: grom }, { key: 'a2', face: 'Młot', scene: mlot, mood: 'calm' }] }
+    for (let i = 0; i < 150; i++) {
+      seen.tick()
+      draw(props, seen.surface)
+      overlaps.push(...crowded(seen.surface.state as Seen))
+    }
+  }
+  expect(overlaps).toEqual([])
+})
+
 test('the hearth waits until nobody has it underfoot', () => {
   const { surface, tick } = surfaceOf()
   draw({ ...FLOOR, floor: 70 }, surface)

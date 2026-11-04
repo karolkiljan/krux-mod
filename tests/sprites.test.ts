@@ -338,6 +338,16 @@ test('homes on the shared floor keep the orcs apart and inside it', () => {
   expect(hasHearth(140, 1)).toBe(false)
 })
 
+test('a pinned orc is an obstacle on the floor: the others stand in the nearest free gap, never on it', () => {
+  // Krux idzie do kuźni, przy której już stoi przypięty kumpel: staje obok, nie na nim.
+  expect(floorHomes([{ key: 'krux', want: 12, slot: 0 }, { key: 'a1', want: 12, slot: 1, fixed: true }], 140, 12)).toEqual({ a1: 12, krux: 36 })
+  // Rekwizyt zostawiony przy scence też stoi: trzeci ork nie wchodzi na niego.
+  expect(floorHomes([{ key: 'a2', want: 40, slot: 2 }, { key: 'a1#left', want: 40, slot: 1, fixed: true }, { key: 'krux', want: 12, slot: 0, fixed: true }], 140, 12)).toEqual({ krux: 12, 'a1#left': 40, a2: 64 })
+  // Bez wolnej luki ork zostaje na swoim domu, a nowy staje tam, gdzie najmniej nachodzi.
+  expect(floorHomes([{ key: 'krux', want: 4, slot: 0, stay: 20 }, { key: 'a1', want: 15, slot: 1, fixed: true }], 50)).toEqual({ a1: 15, krux: 20 })
+  expect(floorHomes([{ key: 'a1', want: 15, slot: 1 }, { key: 'krux', want: 15, slot: 0, fixed: true }], 50)).toEqual({ krux: 15, a1: 0 })
+})
+
 test('the room lives on its own and answers the chronicle', () => {
   const calm = roomGrid(120, 7, true)
   expect(calm).toHaveLength(12)

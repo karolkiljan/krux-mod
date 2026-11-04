@@ -456,13 +456,31 @@ export function stationX(scene: StageScene, floor: number, hearth: boolean): num
 
 // Domy orków na podłodze: każdy jak najbliżej swojego stanowiska, bez nachodzenia
 // na sąsiada. `want` równe wiąże `slot`, więc kolejność nie mruga między rysunkami.
-export function floorHomes(orcs: readonly { key: string; want: number; slot: number }[], floor: number): Record<string, number> {
-  const line = [...orcs].sort((a, b) => a.want - b.want || a.slot - b.slot)
+// `fixed`: ork przypięty albo rekwizyt na ziemi, który się nie ruszy. Reszta staje w najbliższej
+// wolnej luce podłogi od `start`; bez luki zostaje na swoim domu (`stay`), a nowy ork staje
+// tam, gdzie najmniej nachodzi na innych.
+export type FloorOrc = { key: string; want: number; slot: number; fixed?: true; stay?: number }
+
+export function floorHomes(orcs: readonly FloorOrc[], floor: number, start = 0): Record<string, number> {
+  const line = orcs.filter(orc => orc.fixed === undefined).sort((a, b) => a.want - b.want || a.slot - b.slot)
   const step = ORC_WIDTH + ORC_GAP
   const xs = line.map(orc => orc.want)
   xs.forEach((x, i) => { xs[i] = Math.max(x, i === 0 ? 0 : xs[i - 1]! + step) })
   for (let i = xs.length - 1; i >= 0; i -= 1) xs[i] = Math.min(xs[i]!, i === xs.length - 1 ? floor - ORC_WIDTH : xs[i + 1]! - step)
-  return Object.fromEntries(line.map((orc, i) => [orc.key, xs[i]!]))
+  // Bez przeszkód `xs` się nie nakłada, więc każdy ork bierze swoje `xs`, jak bez `fixed`.
+  const fixed = orcs.filter(orc => orc.fixed !== undefined)
+  const homes: Record<string, number> = Object.fromEntries(fixed.map(orc => [orc.key, orc.want]))
+  const taken = fixed.map(orc => orc.want)
+  const room = (x: number) => Math.min(step, ...taken.map(t => Math.abs(t - x)))
+  const inside = (x: number) => Math.max(start, Math.min(floor - ORC_WIDTH, x))
+  line.forEach((orc, i) => {
+    const x = xs[i]!
+    const spots = [x, ...[start, floor - ORC_WIDTH, ...taken.flatMap(t => [t - step, t + step])].map(inside)].sort((a, b) => Math.abs(a - x) - Math.abs(b - x) || a - b)
+    const home = spots.find(at => room(at) >= step) ?? orc.stay ?? spots.reduce((best, at) => (room(at) > room(best) ? at : best))
+    homes[orc.key] = home
+    taken.push(home)
+  })
+  return homes
 }
 
 // Czy dwie sceny mają sprzęt na tym samym meblu: wymiana bez chodzenia po podłodze.
