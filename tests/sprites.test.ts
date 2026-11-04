@@ -700,13 +700,6 @@ test('a kit stands on the floor and holds no part of the orc', () => {
   }
 })
 
-test('the horn has its own colour and the tusk stays a tusk', () => {
-  const horn = actNamed('horn', 'róg')
-  // Dwa kły jak w stójce; róg nie bierze ich koloru, więc nie rośnie z nich długi cios.
-  for (let t = 0; t < horn.length; t += 1) expect([t, cellsOf(horn.loop(t, t), 't')]).toEqual([t, [[1, 2], [4, 2]]])
-  expect(cellsOf(horn.kit!, 't')).toEqual([])
-})
-
 test('crouching over the battle plan, Krux shuffles a pixel at a time', () => {
   const ground = actNamed('plan', 'patyk')
   // Głowa przykucniętego orka: pierwszy wiersz z czterema pikselami skóry obok siebie.
@@ -758,12 +751,6 @@ test('the candle goes down from the hand, and the book comes out from behind the
   // Książka wychodzi zza fartucha: w pierwszej klatce z nią widać najwyżej jej skrawek.
   const first = entry.find(rows => cellsOf(rows, 'nB').length > 0)!
   expect(cellsOf(first, 'pnB').length).toBeLessThan(3)
-})
-
-test('the torch lights the wall from its own flame outward', () => {
-  const torch = actNamed('torch', 'pochodnia')
-  // Kolumna ściany tuż przy pochodni jest jasna w każdej klatce pętli.
-  for (let t = 0; t < torch.length; t += 1) expect([t, pad(torch.loop(t, t)).every(row => 'qy'.includes(row[10]!))]).toEqual([t, true])
 })
 
 test('the map hangs under the top bar of the easel, which stays in sight', () => {

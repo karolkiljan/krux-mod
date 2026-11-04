@@ -11,12 +11,12 @@ const BEAM = 3
 const VEINS = new Set(['13,1', '14,1', '17,3', '18,4', '20,2'])
 const SWEEP = 2 * (WALL_WIDTH - BEAM)
 
-// Ściana odsłonięta na `reveal` kolumn od pochodni; światło od pochodni sięga do kolumny `left + BEAM`.
+// Ściana odsłonięta na `reveal` kolumn od pochodni; snop światła od kolumny `left`.
 function wall(reveal: number, left: number): Layer[] {
   const cells: Layer[] = []
   for (let x = WALL_FROM; x < WALL_FROM + reveal; x += 1) {
     for (let y = 0; y < 6; y += 1) {
-      const lit = x < left + BEAM
+      const lit = x >= left && x < left + BEAM
       cells.push(at(lit ? (VEINS.has(`${x},${y}`) ? 'y' : 'q') : 'k', x, y))
     }
   }
@@ -35,7 +35,7 @@ function torchInHand(frame: number, fire: number): Layer[] {
 }
 
 function wallLoop(t: number, frame: number): Frame {
-  // Światło sięga coraz dalej w głąb ściany i cofa się do pochodni; oczy idą za jego skrajem.
+  // Snop jeździ tam i z powrotem; oczy idą za nim.
   const left = WALL_FROM + pingPong(t, WALL_WIDTH - BEAM)
   return draw(...wall(WALL_WIDTH, left), [stander(left >= 15 ? 'right' : 'mid'), 0, 0], ...torchInHand(frame, 2))
 }
