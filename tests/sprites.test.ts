@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import { GESTURES } from '../hooks/fidget'
 import { MATES } from '../hooks/roster'
-import { ACTS, BUBBLE_TEXT, CATCH_X, DUET_FRAMES, carried, doorX, dayPhase, duetPose, floorHomes, kitAt, kitReach, quartersDoor, roomGrid, hasHearth, stationX, CUE_FRAMES, FRAME_MS, HOLD_FRAMES, actsFor, routeOf, trackDozing, trackFace, ORC_GAP, ORC_WIDTH, PALETTE, bandColumns, behind, bubbleLines, canvasColumns, catchStep, caughtScroll, dress, frameGrid, forgeColumns, runsOf, slotX, stageGrid, tossFrames, trackGrid, trackOff, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withNap } from '../hooks/sprites'
+import { ACTS, BUBBLE_TEXT, WALL_MIN, wallSpans, CATCH_X, DUET_FRAMES, carried, doorX, dayPhase, duetPose, floorHomes, kitAt, kitReach, quartersDoor, roomGrid, hasHearth, stationX, CUE_FRAMES, FRAME_MS, HOLD_FRAMES, actsFor, routeOf, trackDozing, trackFace, ORC_GAP, ORC_WIDTH, PALETTE, bandColumns, behind, bubbleLines, canvasColumns, catchStep, caughtScroll, dress, frameGrid, forgeColumns, runsOf, slotX, stageGrid, tossFrames, trackGrid, trackOff, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withNap } from '../hooks/sprites'
 import type { DayPhase, StageScene } from '../hooks/sprites'
 import { H, STAND, W, actFrame, entryOf, head, kitLead, legAt, moodOf, pad, stander } from '../hooks/stage'
 
@@ -430,6 +430,28 @@ test('the horde rests behind the door of the quarters, not on the floor: no slee
   expect(doorX('Grom', 46, false)).toBe(doorX(null, 46, false))
   const room = roomGrid(200, 8, false).join('')
   for (const apron of ['N', 'M', 'P', 'O', 'L', 'T', 'u']) expect(room).not.toContain(apron)
+})
+
+test('wall furniture never overlaps on any room width, and each torch keeps a free column on both sides', () => {
+  for (let width = WALL_MIN; width <= 300; width += 1) {
+    for (const hearth of [false, true]) {
+      const label = `${width}:${hearth}`
+      const spans = wallSpans(width, hearth)
+      const [forge, table, trial, mine] = spans
+      expect([label, spans.every(([left, right], i) => left >= 0 && right < width && (i === 0 || left > spans[i - 1]![1]))]).toEqual([label, true])
+      // Pochodnia zwiadu wisi tuż przed sztolnią, z przerwą od skrzyni z kanarkiem.
+      expect([label, mine![0] - 1 > trial![1]]).toEqual([label, true])
+      // Pochodnia między kuźnią a regałem: tylko w przerwie, nigdy na rogu półki.
+      const room = roomGrid(width, 0, hearth)
+      const torches = [...room[3]!].flatMap((cell, x) => (cell === 'E' && room[4]![x] === 'E' && x >= forge![1] && x < table![0] ? [x] : []))
+      expect([label, torches.every(x => x > forge![1] && x < table![0] - 1)]).toEqual([label, true])
+      for (let frame = 0; frame < 12; frame += 1) {
+        const grid = roomGrid(width, frame, hearth)
+        const burning = grid.slice(0, 6).some(row => /[QZ]/u.test(row.slice(table![0], table![1])))
+        expect([label, frame, burning]).toEqual([label, frame, false])
+      }
+    }
+  }
 })
 
 test('gear leaves the wall when an orc takes it and the wall keeps the gap', () => {

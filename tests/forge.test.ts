@@ -3,7 +3,7 @@ import { expect, test } from 'claude-code/testing'
 import Forge from '../hooks/forge'
 import type { ForgeOrc, ForgeProps } from '../hooks/forge'
 import { MATES } from '../hooks/roster'
-import { ACTS, DUET_FRAMES, DUET_GAP, ERRAND_FRAMES, PALETTE, RISE_FRAMES, TOAST_RETURN, carried, doorX, kitAt, kitReach, quartersDoor, trackGrid } from '../hooks/sprites'
+import { ACTS, DUET_FRAMES, WALL_MIN, DUET_GAP, ERRAND_FRAMES, PALETTE, RISE_FRAMES, TOAST_RETURN, carried, doorX, kitAt, kitReach, quartersDoor, trackGrid } from '../hooks/sprites'
 import type { Track } from '../hooks/sprites'
 import { STAND, pad } from '../hooks/stage'
 
@@ -34,6 +34,16 @@ const BAND: ForgeProps = { variant: 'band', scale: 1, still: false, rest: false,
 const FLAT: ForgeProps = { ...BAND, bubbleRows: false }
 
 const draw = (props: ForgeProps, surface: ReturnType<typeof surfaceOf>['surface']) => Forge(props, surface as never)
+
+test('a band too narrow for the wall keeps its bubble rows but stays flat, without the room', () => {
+  for (const [floor, room] of [[WALL_MIN - 1, false], [WALL_MIN, true]] as const) {
+    const { surface } = surfaceOf()
+    const tree = draw({ ...BAND, floor, orcs: [{ ...KRUX, scene: 'hammer' }] }, surface) as unknown as { props: { children: unknown[] } }
+    // Wysokość ta sama: trzy wiersze dymka i trzy wiersze podłogi albo sześć wierszy pokoju.
+    expect([floor, tree.props.children.length]).toEqual([floor, 6])
+    expect([floor, JSON.stringify(tree).includes(PALETTE.E!)]).toEqual([floor, room])
+  }
+})
 
 test('on a flat band the last mate done at rest marches out right and the clock runs until it is gone', () => {
   const { surface, tick } = surfaceOf()

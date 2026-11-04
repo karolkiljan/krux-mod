@@ -519,6 +519,15 @@ const STASH: Record<StageScene, { x: number; y: number; rows: Frame }> = {
   raven: { x: 5, y: 1, rows: ['wy', 'ww'] },
 }
 
+// Pusta przerwa przed meblem; przed sztolnią dwie kolumny: w drugiej wisi pochodnia, którą bierze zwiad,
+// więc nie przykleja się do skrzyni z kanarkiem.
+const WALL_GAP: Record<Station, number> = { forge: 0, table: 1, trial: 1, mine: 2 }
+const WALL_WIDE = WALL_ORDER.map(station => Math.max(...WALL_PROPS[station].rows.map(row => row.length)))
+
+// Najwęższe płótno, na którym meble stają obok siebie z przerwami i kolumną wolną z prawej.
+// Węższy pas z wierszami dymka zostaje płaski, bez pokoju (`forge.ts`).
+export const WALL_MIN = WALL_ORDER.reduce((sum, station, i) => sum + WALL_GAP[station] + WALL_WIDE[i]!, 0) + 1
+
 const wallCache = new Map<string, Record<Station, number>>()
 
 // Lewe krawędzie mebli: każdy jak najbliżej stanowiska, bez nachodzenia na sąsiada.
@@ -526,10 +535,11 @@ function wallSpots(floor: number, hearth: boolean): Record<Station, number> {
   const key = `${floor}:${hearth}`
   const known = wallCache.get(key)
   if (known) return known
-  const wide = WALL_ORDER.map(station => Math.max(...WALL_PROPS[station].rows.map(row => row.length)))
+  const wide = WALL_WIDE
+  const gap = (i: number) => WALL_GAP[WALL_ORDER[i]!]
   const xs = WALL_ORDER.map(station => stationX(SCENE_OF[station], floor, hearth) + WALL_PROPS[station].x)
-  xs.forEach((x, i) => { xs[i] = i === 0 ? x : Math.max(x, xs[i - 1]! + wide[i - 1]! + 1) })
-  for (let i = xs.length - 1; i >= 0; i -= 1) xs[i] = Math.max(0, Math.min(xs[i]!, i === xs.length - 1 ? floor - wide[i]! - 1 : xs[i + 1]! - wide[i]! - 1))
+  xs.forEach((x, i) => { xs[i] = i === 0 ? x : Math.max(x, xs[i - 1]! + wide[i - 1]! + gap(i)) })
+  for (let i = xs.length - 1; i >= 0; i -= 1) xs[i] = Math.max(0, Math.min(xs[i]!, i === xs.length - 1 ? floor - wide[i]! - 1 : xs[i + 1]! - wide[i]! - gap(i + 1)))
   const spots = Object.fromEntries(WALL_ORDER.map((station, i) => [station, xs[i]!])) as Record<Station, number>
   wallCache.set(key, spots)
   return spots
@@ -537,6 +547,11 @@ function wallSpots(floor: number, hearth: boolean): Record<Station, number> {
 
 function wallX(station: Station, floor: number, hearth: boolean): number {
   return wallSpots(floor, hearth)[station]
+}
+
+// Kolumny mebli od lewej: pierwsza i za ostatnią, w kolejności ściany.
+export function wallSpans(floor: number, hearth: boolean): (readonly [number, number])[] {
+  return WALL_ORDER.map((station, i) => [wallX(station, floor, hearth), wallX(station, floor, hearth) + WALL_WIDE[i]!] as const)
 }
 
 // Drzwi kwater w wolnym miejscu ściany przy sztolni: za nimi odpoczywa horda, której nie ma
@@ -697,9 +712,12 @@ export function roomGrid(width: number, frame: number, hearth: boolean, state: P
   const bright = feel?.kind === 'test-pass' || feel?.kind === 'build-pass' || feel?.kind === 'commit'
   // Pierwsza pochodnia świeci między kuźnią a regałem, druga przy wejściu do sztolni:
   // tę ork bierze ze sobą, gdy idzie szukać.
-  const between = Math.round((wallX('forge', width, hearth) + WALL_PROPS.forge.rows[2]!.length + wallX('table', width, hearth)) / 2)
+  // Pierwsza tylko w przerwie z wolną kolumną po obu stronach: inaczej płomień siada na rogu półki.
+  const after = wallX('forge', width, hearth) + WALL_PROPS.forge.rows[2]!.length
+  const table = wallX('table', width, hearth)
+  const between = table - after >= 3 ? Math.round((after + table - 1) / 2) : null
   for (const x of [between, wallX('mine', width, hearth) - 1]) {
-    if (x >= width || x < 0) continue
+    if (x === null || x >= width || x < 0) continue
     room[3]![x] = 'E'
     room[4]![x] = 'E'
     if (x !== between && full.taken.includes('torch')) continue
