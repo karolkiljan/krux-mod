@@ -70,6 +70,8 @@ type Actor = {
   // Gość z kwater niesie kufle: przynosi je na scenkę i z nimi wraca.
   mugs?: true
   handoff?: { at: number; flight: number }
+  // Tempo marszu z chwili planu odejścia (kolumny na klatkę).
+  pace?: number
   // `held`: zdarzenie przyszło w drodze albo w głębi; reakcja rusza dopiero na stanowisku.
   cue?: { id: string; kind: KruxEvent; at: number; held?: true }
   workAt?: number
@@ -83,7 +85,8 @@ type Duet = { host: string; guest: string; kind: DuetKind; at: number | null; me
 
 // Odwiedziny: `visit` to klucz kumpla, który wpadł z kwater do Kruxa; `visitDue` klatka, od której
 // może wpaść następny; `visitor` ostatni gość, żeby ten sam nie wpadał dwa razy z rzędu.
-type ForgeState = { frame: number; actors: Record<string, Actor>; idle: boolean; reduced?: boolean; snoozing?: boolean; said?: { id: string; at: number }; laidAt?: number; duet?: Duet; duetAt?: number; visit?: string; visitDue?: number; visitor?: KruxMate }
+// `ground`: podłoga z ostatniego zapisu; gdy się zmieni, odchodzący dostają nowe drzwi.
+type ForgeState = { frame: number; actors: Record<string, Actor>; idle: boolean; ground?: string; reduced?: boolean; snoozing?: boolean; said?: { id: string; at: number }; laidAt?: number; duet?: Duet; duetAt?: number; visit?: string; visitDue?: number; visitor?: KruxMate }
 
 // Kolumny na klatkę w marszu: szybciej na szerokiej podłodze, ale najwyżej 4, żeby kolejne
 // sylwetki (6 pikseli) na siebie zachodziły i ork szedł, zamiast przeskakiwać własną szerokość.
@@ -98,8 +101,8 @@ function walkSpeed(stage: number): number {
 // Droga między ścianą a podłogą trwa co najmniej tyle klatek, nawet gdy drzwi stoją tuż za orkiem.
 const DEPTH_FRAMES = 8
 
-function depthSpan(from: number, to: number, stage: number): number {
-  return Math.max(DEPTH_FRAMES, Math.ceil(Math.abs(to - from) / walkSpeed(stage)))
+function depthSpan(from: number, to: number, speed: number): number {
+  return Math.max(DEPTH_FRAMES, Math.ceil(Math.abs(to - from) / speed))
 }
 
 // Po dojściu ork robi swoje co najmniej 3 s: szybkie Read, Bash, Read nie mogą gonić go po podłodze.
@@ -149,18 +152,20 @@ const HANDOFF_GAP = 12
 // Gdzie stoi ork w danej klatce; `null`, gdy już wszedł do kwater albo zszedł za prawą krawędź.
 function placeOf(actor: Actor, frame: number, stage: number): { x: number; walking: boolean; depth: number } | null {
   const { home, from } = actor
-  const speed = walkSpeed(stage)
+  // Odchodzący idzie tempem z planu (`pace`): plan i rysunek liczą tę samą drogę, choć podłoga się zmieni.
+  const speed = actor.pace ?? walkSpeed(stage)
   if (actor.leftAt !== null && frame >= actor.leftAt) {
     if (actor.door === undefined) {
       const x = home + speed * (frame - actor.leftAt)
       return x >= stage ? null : { x, walking: true, depth: 0 }
     }
-    const t = (frame - actor.leftAt) / depthSpan(home, actor.door, stage)
+    // Ostatni krok staje w samych drzwiach (`t` = 1), więc otwierają się przed nim; klatkę później znika.
+    const t = (frame - actor.leftAt) / depthSpan(home, actor.door, speed)
     const sink = actor.sink ?? 0
-    return t >= 1 ? null : { x: Math.round(home + (actor.door - home) * t), walking: true, depth: sink + (1 - sink) * t }
+    return t > 1 ? null : { x: Math.round(home + (actor.door - home) * t), walking: true, depth: sink + (1 - sink) * t }
   }
   if (actor.rise !== undefined) {
-    const t = Math.min(1, Math.max(0, frame - actor.enter) / depthSpan(from, home, stage))
+    const t = Math.min(1, Math.max(0, frame - actor.enter) / depthSpan(from, home, speed))
     return { x: Math.round(from + (home - from) * t), walking: frame >= actor.enter && t < 1, depth: actor.rise * (1 - t) }
   }
   const gone = speed * Math.max(0, frame - actor.enter)
@@ -178,7 +183,7 @@ function freeSlot(actors: Record<string, Actor>, slots: number, frame: number): 
 // Oddanie zwoju od klatki `at`: blisko Kruxa rzut, dalej kumpel najpierw podchodzi.
 // Lot zależy od odległości od dłoni Kruxa, marsz do kwater rusza po nim. Kumpel, który
 // już idzie po rekwizyt zostawiony przy scence (`walks`), rzuca stamtąd, bez drugiego marszu.
-function tossFrom(actor: Actor, at: number, kruxX: number, stage: number, walks = false): Pick<Actor, 'handoff' | 'leftAt'> & Partial<Pick<Actor, 'home' | 'from' | 'enter'>> {
+function tossFrom(actor: Actor, at: number, kruxX: number, stage: number, walks = false): Pick<Actor, 'handoff' | 'leftAt'> & Partial<Pick<Actor, 'home' | 'from' | 'enter' | 'pace'>> {
   if (walks) {
     const flight = tossFlight(actor.home - kruxX)
     return { handoff: { at, flight }, leftAt: at + tossFrames(flight) }
@@ -186,9 +191,10 @@ function tossFrom(actor: Actor, at: number, kruxX: number, stage: number, walks 
   const gap = actor.home - kruxX
   const near = gap >= HANDOFF_GAP && gap <= TOSS_REACH
   const home = near ? actor.home : kruxX + HANDOFF_GAP
-  const walk = Math.ceil(Math.abs(actor.home - home) / walkSpeed(stage))
+  const pace = actor.pace ?? walkSpeed(stage)
+  const walk = Math.ceil(Math.abs(actor.home - home) / pace)
   const flight = tossFlight(home - kruxX)
-  return { home, from: actor.home, enter: at, handoff: { at: at + walk, flight }, leftAt: at + walk + tossFrames(flight) }
+  return { home, from: actor.home, enter: at, handoff: { at: at + walk, flight }, leftAt: at + walk + tossFrames(flight), pace }
 }
 
 // Ork przerwał wyprawę, bo skończył robotę: nowego rekwizytu już nie bierze. Gdy niósł go
@@ -207,15 +213,17 @@ function depart(actor: Actor, frame: number, still: boolean, handoff: boolean, s
   // Zwój oddaje się na nogach: kumpel w drodze z kwater najpierw dochodzi, potem rzuca.
   if (handoff && actor.rise !== undefined) {
     const { pending: _cut, ...walking } = actor
-    const at = actor.enter + depthSpan(actor.from, actor.home, stage)
-    const stopped: Actor = { ...walking, ...(room ? { door: doorX(actor.face, stage, hearth) } : {}) }
+    const pace = walkSpeed(stage)
+    const at = actor.enter + depthSpan(actor.from, actor.home, pace)
+    const stopped: Actor = { ...walking, pace, ...(room ? { door: doorX(actor.face, stage, hearth) } : {}) }
     return { ...stopped, ...tossFrom(stopped, at, kruxX, stage, true) }
   }
   const place = placeOf(actor, frame, stage)
   const x = place?.x ?? actor.home
   const track = trackOff(actor.track, frame, room)
   const { pending: _cut, rise: _up, errand: _gone, ...rest } = actor
-  const stopped: Actor = { ...rest, track, home: x, from: x, ...(room ? { door: doorX(actor.face, stage, hearth) } : {}), ...(place !== null && place.depth > 0 ? { sink: place.depth } : {}) }
+  const pace = walkSpeed(stage)
+  const stopped: Actor = { ...rest, track, home: x, from: x, pace, ...(room ? { door: doorX(actor.face, stage, hearth) } : {}), ...(place !== null && place.depth > 0 ? { sink: place.depth } : {}) }
   // Z pustymi rękami i bez zejścia nie ma na co czekać: `since` to już nieaktualny plan marszu.
   let at = track.stops === 'bare' && track.leaving === null ? frame : Math.max(frame, track.since)
   if (actor.errand !== undefined) {
@@ -237,7 +245,7 @@ function depart(actor: Actor, frame: number, still: boolean, handoff: boolean, s
       // Rekwizyt został na ziemi przy scence: najpierw do niego, potem z nim na ścianę.
       const home = actor.left?.x ?? x
       const spot = depthSpot(track.scene, stage, hearth)
-      const walk = Math.ceil(Math.abs(home - x) / walkSpeed(stage))
+      const walk = Math.ceil(Math.abs(home - x) / pace)
       stopped.home = home
       stopped.enter = at
       stopped.errand = { at: at + walk, from: home, spot, back: spot, took: kit, of: track.scene }
@@ -319,8 +327,19 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
   const calling = fetching && !first && layout && hosting && state.duet === undefined && state.visit === undefined && frame >= visitDue && props.orcs.length === 1 && Object.keys(state.actors).length === 1 && ready && meetAt + DUET_GAP <= stage - ORC_WIDTH
   const frozen = props.still || (props.rest && !leaving && tucked && !calling)
   const actors: Record<string, Actor> = { ...state.actors }
+  // Podłoga zmieniła się pod odchodzącymi: drzwi kwater stoją gdzie indziej. Kto jeszcze nie ruszył,
+  // dostaje nowe drzwi; kto już idzie w głąb, rusza do nich od nowa z miejsca, w którym stoi, bez skoku.
+  const regrounded = !first && room && state.ground !== undefined && state.ground !== ground
+  if (regrounded) {
+    for (const [key, actor] of Object.entries(actors)) {
+      if (actor.leftAt === null || actor.door === undefined) continue
+      const door = doorX(actor.face, stage, hearth)
+      const place = frame >= actor.leftAt ? placeOf(actor, frame, stage) : null
+      actors[key] = place === null ? { ...actor, door } : { ...actor, home: place.x, from: place.x, leftAt: frame, door, sink: place.depth }
+    }
+  }
   const kruxAt = () => (actors.krux === undefined ? 0 : (placeOf(actors.krux, frame, stage)?.x ?? actors.krux.home))
-  let changed = first
+  let changed = first || regrounded
   const present = new Set<string>()
   const born = new Set<string>()
   let duet = state.duet
@@ -361,7 +380,7 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
     const lost = outside && spare === null
     // Wraca, zanim ruszył w marsz: zostaje w swoim slocie i wraca do roboty.
     if (prior !== undefined && prior.leftAt !== null && frame < prior.leftAt && !lost) {
-      const { handoff: _kept, door: _none, sink: _deep, ...returned } = was!
+      const { handoff: _kept, door: _none, sink: _deep, pace: _plan, ...returned } = was!
       const x = placeOf(prior, frame, stage)?.x ?? prior.home
       was = { ...returned, leftAt: null, ...(fetching ? { pending: orc.scene, from: x, enter: Math.max(frame, prior.track.since) } : {}) }
     }
@@ -786,8 +805,8 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
   const speech = state.said?.id === saidId ? state.said : { id: saidId, at: frame }
   const typing = props.bubble !== null && (frame - speech.at + 1) * 3 < Math.min(40, graphemes(props.bubble.text).length)
   const idle = props.still || (frozen && !moving && !typing)
-  if (changed || idle !== state.idle || speech !== state.said || state.reduced !== props.still) {
-    surface.setState({ frame, actors, idle, said: speech, reduced: props.still, snoozing: idle ? state.snoozing : false, ...(laid ? { laidAt: frame } : state.laidAt === undefined ? {} : { laidAt: state.laidAt }), ...(duet === undefined ? {} : { duet }), ...(duetAt === undefined ? {} : { duetAt }), ...(visit === undefined ? {} : { visit }), visitDue: nextVisit, ...(visitor === undefined ? {} : { visitor }) })
+  if (changed || idle !== state.idle || speech !== state.said || state.reduced !== props.still || state.ground !== ground) {
+    surface.setState({ frame, actors, idle, ground, said: speech, reduced: props.still, snoozing: idle ? state.snoozing : false, ...(laid ? { laidAt: frame } : state.laidAt === undefined ? {} : { laidAt: state.laidAt }), ...(duet === undefined ? {} : { duet }), ...(duetAt === undefined ? {} : { duetAt }), ...(visit === undefined ? {} : { visit }), visitDue: nextVisit, ...(visitor === undefined ? {} : { visitor }) })
   }
   if (first) {
     let quietTicks = 0

@@ -596,6 +596,54 @@ test('reduced motion switched on mid-march stops the walk even when the slot is 
   expect((surface.state as Seen).actors.krux!.pending).toBe(undefined)
 })
 
+test('a floor that changes under a mate on the way out moves its door, and the mate walks there without a jump', () => {
+  // Fartuch Groma na płótnie: lewa kolumna, także w głębi.
+  const gromAt = (tree: unknown) => {
+    const xs = pixelsOf(tree).map(row => row.indexOf(PALETTE.M!)).filter(x => x >= 0)
+    return xs.length === 0 ? null : Math.min(...xs)
+  }
+  // `wait`: tyknięcia po końcu roboty, zanim podłoga zwęzi się ze 140; 70 to już zejście w głąb.
+  // Podłoga 60 przy dwóch miejscach ma wolniejszy marsz i drzwi tylko w sztolni.
+  const cases = [
+    { wait: 2, slots: 3, floor: 80, door: quartersDoor(80, false)!, quarters: true },
+    { wait: 70, slots: 3, floor: 80, door: quartersDoor(80, false)!, quarters: true },
+    { wait: 2, slots: 2, floor: 60, door: doorX('Grom', 60, true), quarters: false },
+  ]
+  for (const { wait, slots, floor, door, quarters } of cases) {
+    const seen = surfaceOf()
+    const work: ForgeProps = { ...FLOOR, slots, orcs: [KRUX, { ...GROM, scene: 'pick' }] }
+    draw(work, seen.surface)
+    for (let i = 0; i < 150; i++) { seen.tick(); draw(work, seen.surface) }
+    const done: ForgeProps = { ...FLOOR, slots, orcs: [KRUX], cues: [{ key: 'a1', kind: 'handoff', until: 9_000_000 }] }
+    draw(done, seen.surface)
+    const leftAt = (seen.surface.state as Seen).actors.a1!.leftAt!
+    let before: number | null = null
+    for (let i = 0; i < wait; i++) { seen.tick(); before = gromAt(draw(done, seen.surface)) }
+    expect([wait, (seen.surface.state as Seen).frame >= leftAt]).toEqual([wait, wait > 2])
+    const narrow: ForgeProps = { ...done, floor }
+    // Kto stał za nową krawędzią, wchodzi na płótno marszem: skok liczy się tylko między widocznymi klatkami.
+    let last = before !== null && before < floor ? before : null
+    let jump = 0
+    let open = false
+    const throwing = new Set<number | null>()
+    for (let i = 0; i < 160 && (seen.surface.state as Seen).actors.a1 !== undefined; i++) {
+      const tree = draw(narrow, seen.surface)
+      const state = seen.surface.state as Seen
+      expect(state.actors.a1?.door ?? door).toBe(door)
+      const x = gromAt(tree)
+      if (x !== null && last !== null) jump = Math.max(jump, Math.abs(x - last))
+      if (x !== null) last = x
+      // Plan liczy marsz tempem z chwili decyzji: rzut zaczyna się, gdy Grom już stoi.
+      const toss = state.actors.a1?.handoff
+      if (toss !== undefined && state.frame >= toss.at && state.frame < toss.at + tossFrames(toss.flight)) throwing.add(x)
+      open ||= [1, 2, 3, 4].every(y => pixelsOf(tree)[y]![door + 1] === PALETTE.I)
+      seen.tick()
+    }
+    // Ostatni krok Groma kończy się w nowych drzwiach (kwatery się przed nim otwierają), nie w ścianie ani za krawędzią.
+    expect([floor, wait, jump <= 4, open, Math.abs(last! - door) <= 1, throwing.size]).toEqual([floor, wait, true, quarters, true, wait > 2 ? 0 : 1])
+  }
+})
+
 test('a floor narrowed at the end of an errand keeps the orc on the canvas', () => {
   const seen = surfaceOf()
   untilErrand(onFloor, seen)
