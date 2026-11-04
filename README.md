@@ -76,7 +76,7 @@ claude plugin disable krux@krux-marketplace
 
 Bez `on`/`off` komenda przełącza tryb na przeciwny. `/krux` działa także w trakcie tury i nie kosztuje wywołania modelu. Stare frazy z pluginu (`włącz krux`, `wyłącz konkret`, …) dalej działają, gdy stanowią całą wiadomość. Stan trybów jest trwały i przeżywa restart sesji.
 
-Mapa hordy ładuje się na żądanie: `/krux-mod:krux-horda`. Kumple to typy subagentów z `agents/`: `krux-mod:niuch`, `krux-mod:grom`, `krux-mod:piryt`, `krux-mod:ochra`, `krux-mod:mlot`, `krux-mod:lont`. Każdy ma fach, narzędzia, model i format raportu: Niuch, Piryt i Młot nie mają narzędzi edycji, a Bash dostają do odczytu i testów; Lont rusza tylko czyste pliki śledzone przez git. Te granice stoją w prompcie kumpla, a zgody na każde wywołanie daje silnik, jak w głównej pętli (`docs/adr/0001-lont-zakaz-w-prompcie.md`). Niuch i Młot chodzą na Haiku. Wysłany typem kumpel wychodzi z kwater we własnym fartuchu, także gdy opis zadania nie ma jego imienia.
+Mapa hordy ładuje się na żądanie: `/krux-mod:krux-horda`. Kumple to typy subagentów z `agents/`: `krux-mod:niuch`, `krux-mod:grom`, `krux-mod:piryt`, `krux-mod:ochra`, `krux-mod:mlot`, `krux-mod:lont`. Każdy ma fach, metodę pracy, narzędzia, model i format raportu: Niuch, Piryt i Młot nie mają narzędzi edycji, a Bash dostają do odczytu i testów; Lont rusza tylko czyste pliki śledzone przez git. Te granice stoją w prompcie kumpla, a zgody na każde wywołanie daje silnik, jak w głównej pętli (`docs/adr/0001-lont-zakaz-w-prompcie.md`). Niuch i Młot chodzą na Haiku, Niuch z `effort: high`. Wysłany typem kumpel wychodzi z kwater we własnym fartuchu, także gdy opis zadania nie ma jego imienia.
 
 ## Animacje
 
