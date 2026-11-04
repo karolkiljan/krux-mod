@@ -10,8 +10,9 @@ function wave(from: number, age: number, cell: string): Layer {
 }
 
 // ——— Róg ———
-const HORN_ORC: Frame = ['.gggg....', 'grggrg..t', '.tggtttt', 'bbbbbbggt', '.bGGb....', '.G..G....']
-const HORN_PROP: Frame = ['...t', 'ttt.', '...t']
+// Róg w kolorze drewna, nie kła: kremowy ustnik zlałby się z prawym kłem w jeden długi cios.
+const HORN_ORC: Frame = ['.gggg....', 'grggrg..h', '.tggthhh', 'bbbbbbggh', '.bGGb....', '.G..G....']
+const HORN_PROP: Frame = ['...h', 'hhh.', '...h']
 const HORN_FRAMES = 24
 
 function hornLoop(t: number): Frame {
@@ -26,9 +27,10 @@ const LOOK: Frame = stander('right')
 
 const horn: Act = {
   name: 'róg',
-  kit: draw([HORN_PROP, 8, 1]),
+  // Róg leży na ziemi, zanim Krux go podniesie.
+  kit: draw([HORN_PROP, 8, 3]),
   intro: [
-    draw([LOOK, 0, 0], [HORN_PROP, 8, 1]),
+    draw([LOOK, 0, 0], [HORN_PROP, 8, 3]),
     draw([LOOK, 0, 0], [['', '', '', '......gg'], 0, 0], [HORN_PROP, 6, 2]),
     draw([HORN_ORC, 0, 0]),
   ],

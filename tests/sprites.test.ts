@@ -682,3 +682,91 @@ test('Skarbnik comes only in a green moment after failures, and the night shows 
   const changed = night.flatMap((row, y) => [...row].flatMap((cell, x) => (cell === day[y]![x] ? [] : [`${cell}${day[y]![x]}`])))
   expect(new Set(changed)).toEqual(new Set(['79', 'j9']))
 })
+
+const actNamed = (scene: StageScene, name: string) => ACTS[scene].find(act => act.name === name)!
+const cellsOf = (rows: readonly string[], wanted: string) => pad(rows).flatMap((row, y) => [...row].flatMap((cell, x) => (wanted.includes(cell) ? [[x, y] as const] : [])))
+
+test('a kit stands on the floor and holds no part of the orc', () => {
+  for (const [scene, acts] of Object.entries(ACTS)) {
+    for (const act of acts) {
+      if (act.kit === undefined) continue
+      const label = `${scene}/${act.name}`
+      // Skóra, oczy i fartuch należą do orka: na ziemi zostałaby ucięta dłoń.
+      expect([label, cellsOf(act.kit, 'gGrb')]).toEqual([label, []])
+      // Najniższy piksel rekwizytu leży na podłodze, nic nie wisi w powietrzu.
+      const lowest = Math.max(...pad(act.kit).flatMap((row, y) => (row.replaceAll('.', '') === '' ? [] : [y])))
+      expect([label, lowest]).toEqual([label, H - 1])
+    }
+  }
+})
+
+test('the horn has its own colour and the tusk stays a tusk', () => {
+  const horn = actNamed('horn', 'róg')
+  // Dwa kły jak w stójce; róg nie bierze ich koloru, więc nie rośnie z nich długi cios.
+  for (let t = 0; t < horn.length; t += 1) expect([t, cellsOf(horn.loop(t, t), 't')]).toEqual([t, [[1, 2], [4, 2]]])
+  expect(cellsOf(horn.kit!, 't')).toEqual([])
+})
+
+test('crouching over the battle plan, Krux shuffles a pixel at a time', () => {
+  const ground = actNamed('plan', 'patyk')
+  // Głowa przykucniętego orka: pierwszy wiersz z czterema pikselami skóry obok siebie.
+  const headX = (rows: readonly string[]) => pad(rows).map(row => row.indexOf('gggg')).find(x => x >= 0)!
+  const frames = [entryOf(ground).at(-1)!, ...Array.from({ length: ground.length + 1 }, (_, t) => ground.loop(t % ground.length, t))]
+  for (let i = 1; i < frames.length; i += 1) expect([i, Math.abs(headX(frames[i]!) - headX(frames[i - 1]!)) <= 1]).toEqual([i, true])
+})
+
+test('the finger leaves the runes it lit in sight', () => {
+  const runes = actNamed('read', 'tablica')
+  const glowing = (t: number, rows: readonly number[]) => cellsOf(runes.loop(t, t), 'y').filter(([, y]) => rows.includes(y)).length
+  // Koniec wiersza: palec stoi na ostatniej runie, reszta zapalonych świeci na widoku.
+  expect(glowing(5, [2])).toBeGreaterThanOrEqual(3)
+  expect(glowing(13, [2, 4])).toBeGreaterThanOrEqual(7)
+})
+
+// Ramię liczone od prawego brzegu orka: piksele skóry na prawo od jego sześciu kolumn.
+function reachOf(rows: readonly string[]): number {
+  const x = pad(rows)[0]!.indexOf('gggg') - 1
+  return cellsOf(rows, 'g').filter(([cx]) => cx >= x + 6).length
+}
+
+test('Piryt steps after the tuning fork and the lens, so the arm stays short', () => {
+  for (const name of ['kamerton', 'rysa pod lupą']) {
+    const act = actNamed('think', name)
+    for (let t = 0; t < act.length; t += 1) expect([name, t, reachOf(act.loop(t, t)) <= 5]).toEqual([name, t, true])
+  }
+})
+
+test('Piryt keeps both eyes open on the crack while it glows in the lens', () => {
+  const crack = actNamed('think', 'rysa pod lupą')
+  const found = Array.from({ length: crack.length }, (_, t) => crack.loop(t, t)).filter(rows => cellsOf(rows, 'R').length > 0)
+  expect(found.length).toBeGreaterThan(0)
+  for (const rows of found) expect(cellsOf(rows, 'r')).toHaveLength(2)
+})
+
+test('the candle goes down from the hand, and the book comes out from behind the apron', () => {
+  const candle = actNamed('read', 'świeca')
+  const entry = entryOf(candle).slice(kitLead(candle))
+  for (const [i, rows] of entry.entries()) {
+    // Spodek świecy: trzy piksele drewna pod najniższym pikselem wosku.
+    const wax = cellsOf(rows, 'j')
+    if (wax.length === 0) continue
+    const [x, y] = wax.at(-1)!
+    const hands = cellsOf(rows, 'g')
+    const held = [x - 1, x, x + 1].some(sx => hands.some(([gx, gy]) => Math.abs(gx - sx) <= 1 && Math.abs(gy - y - 1) <= 1))
+    expect([i, y + 1 === H - 1 || held]).toEqual([i, true])
+  }
+  // Książka wychodzi zza fartucha: w pierwszej klatce z nią widać najwyżej jej skrawek.
+  const first = entry.find(rows => cellsOf(rows, 'nB').length > 0)!
+  expect(cellsOf(first, 'pnB').length).toBeLessThan(3)
+})
+
+test('the torch lights the wall from its own flame outward', () => {
+  const torch = actNamed('torch', 'pochodnia')
+  // Kolumna ściany tuż przy pochodni jest jasna w każdej klatce pętli.
+  for (let t = 0; t < torch.length; t += 1) expect([t, pad(torch.loop(t, t)).every(row => 'qy'.includes(row[10]!))]).toEqual([t, true])
+})
+
+test('the map hangs under the top bar of the easel, which stays in sight', () => {
+  const easel = actNamed('plan', 'sztaluga')
+  for (let t = 0; t < easel.length; t += 1) expect([t, pad(easel.loop(t, t))[0]!.slice(9, 19)]).toEqual([t, 'h'.repeat(10)])
+})
