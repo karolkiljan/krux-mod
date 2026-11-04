@@ -3,7 +3,7 @@ import { expect, test } from 'claude-code/testing'
 import { GESTURES, headOf } from '../hooks/fidget'
 import { MATE_APRONS } from '../hooks/palette'
 import { MATES } from '../hooks/roster'
-import { ACTS, BUBBLE_TEXT, WALL_MIN, wallSpans, errandPose, farPose, CATCH_X, DUET_FRAMES, DUET_GAP, carried, doorX, dayPhase, duetPose, floorHomes, kitAt, kitReach, quartersDoor, roomGrid, hasHearth, stationX, CUE_FRAMES, FRAME_MS, HOLD_FRAMES, actsFor, routeOf, trackDozing, trackFace, ORC_GAP, ORC_WIDTH, PALETTE, bandColumns, behind, bubbleLines, canvasColumns, catchStep, caughtScroll, dress, frameGrid, forgeColumns, runsOf, slotX, stageGrid, tossFrames, trackGrid, trackOff, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withNap } from '../hooks/sprites'
+import { ACTS, BUBBLE_TEXT, WALL_MIN, WALL_ROOMY, depthSpot, wallSpans, errandPose, farPose, CATCH_X, DUET_FRAMES, DUET_GAP, carried, doorX, dayPhase, duetPose, floorHomes, kitAt, kitReach, quartersDoor, roomGrid, hasHearth, stationX, CUE_FRAMES, FRAME_MS, HOLD_FRAMES, actsFor, routeOf, trackDozing, trackFace, ORC_GAP, ORC_WIDTH, PALETTE, bandColumns, behind, bubbleLines, canvasColumns, catchStep, caughtScroll, dress, frameGrid, forgeColumns, runsOf, slotX, stageGrid, tossFrames, trackGrid, trackOff, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withNap } from '../hooks/sprites'
 import type { DayPhase, StageScene } from '../hooks/sprites'
 import { H, STAND, W, actFrame, entryOf, head, kitLead, legAt, moodOf, pad, settleFrames, stander } from '../hooks/stage'
 import type { Frame } from '../hooks/stage'
@@ -522,11 +522,17 @@ test('wall furniture never overlaps on any room width, and each torch keeps a fr
       const label = `${width}:${hearth}`
       const spans = wallSpans(width, hearth)
       const [forge, table, trial, mine] = spans
-      expect([label, spans.every(([left, right], i) => left >= 0 && right < width && (i === 0 || left > spans[i - 1]![1]))]).toEqual([label, true])
+      // Meble w płótnie i bez nachodzenia; od `WALL_ROOMY` każdy z przerwą i wolną kolumną z prawej.
+      expect([label, spans.every(([left, right], i) => left >= 0 && right <= width && (i === 0 || left >= spans[i - 1]![1]))]).toEqual([label, true])
+      if (width >= WALL_ROOMY) expect([label, spans.every(([left, right], i) => right < width && (i === 0 || left > spans[i - 1]![1]))]).toEqual([label, true])
+      // Węższa ściana dosuwa tylko skrzynię do regału: kuźnia zawsze ma przerwę, inaczej belka wchodzi w księgę.
+      expect([label, table![0] > forge![1]]).toEqual([label, true])
       // Pochodnia zwiadu wisi tuż przed sztolnią, z przerwą od skrzyni z kanarkiem.
       expect([label, mine![0] - 1 > trial![1]]).toEqual([label, true])
-      // Pochodnia między kuźnią a regałem: tylko w przerwie, nigdy na rogu półki.
       const room = roomGrid(width, 0, hearth)
+      // Bez kolumny za sztolnią prawą krawędź płótna i tak trzyma pusta ostatnia kolumna sztolni.
+      if (width < WALL_ROOMY) expect([label, room.every(row => row[width - 1] === '.')]).toEqual([label, true])
+      // Pochodnia między kuźnią a regałem: tylko w przerwie, nigdy na rogu półki.
       const torches = [...room[3]!].flatMap((cell, x) => (cell === 'E' && room[4]![x] === 'E' && x >= forge![1] && x < table![0] ? [x] : []))
       expect([label, torches.every(x => x > forge![1] && x < table![0] - 1)]).toEqual([label, true])
       for (let frame = 0; frame < 12; frame += 1) {
@@ -534,6 +540,39 @@ test('wall furniture never overlaps on any room width, and each torch keeps a fr
         const burning = grid.slice(0, 6).some(row => /[QZ]/u.test(row.slice(table![0], table![1])))
         expect([label, frame, burning]).toEqual([label, frame, false])
       }
+    }
+  }
+})
+
+test('the depth spot reaches its stash and every exit stays on the canvas, on narrow and wide room widths', () => {
+  // Najszerszy ork w głębi ma 5 pikseli.
+  const far = 5
+  // Każda szerokość wąskiej ściany, dalej co kilka kolumn: tam meble stoją już przy stanowiskach.
+  const widths = Array.from({ length: 301 - WALL_MIN }, (_, i) => WALL_MIN + i).filter(width => width <= WALL_ROOMY + 30 || width % 13 === 0)
+  for (const width of widths) {
+    for (const hearth of [false, true]) {
+      const label = `${width}:${hearth}`
+      const [, , trial, mine] = wallSpans(width, hearth)
+      // Kilka klatek, bo dym znad paleniska chwilami zasłania sprzęt kuźni.
+      const frames = hearth ? [0, 2, 4, 6, 8] : [0]
+      const walls = frames.map(frame => roomGrid(width, frame, hearth).slice(0, 6))
+      for (const scene of Object.keys(ACTS) as StageScene[]) {
+        // Sprzęt sceny to piksele, które znikają ze ściany, gdy ork go zdejmie; ork w głębi staje tuż przed nim.
+        const gone = frames.flatMap((frame, i) => {
+          const taken = roomGrid(width, frame, hearth, { taken: [scene] })
+          return walls[i]!.flatMap((row, y) => row === taken[y] ? [] : [...row].flatMap((cell, x) => (cell !== taken[y]![x] ? [x] : [])))
+        })
+        if (gone.length === 0) continue
+        expect([label, scene, Math.min(...gone) - 1]).toEqual([label, scene, depthSpot(scene, width, hearth)])
+        expect([label, scene, Math.max(...gone) < width]).toEqual([label, scene, true])
+      }
+      // Wyjście z kwater albo ze sztolni mieści orka w głębi; drzwi stoją między skrzynią a sztolnią albo ich nie ma.
+      for (const face of [null, ...MATES]) {
+        const x = doorX(face, width, hearth)
+        expect([label, face, x >= 0 && x + far <= width]).toEqual([label, face, true])
+      }
+      const door = quartersDoor(width, hearth)
+      expect([label, door === null || (door - 1 > trial![1] && door + 4 < mine![0] - 1)]).toEqual([label, true])
     }
   }
 })

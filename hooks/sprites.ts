@@ -519,27 +519,43 @@ const STASH: Record<StageScene, { x: number; y: number; rows: Frame }> = {
   raven: { x: 5, y: 1, rows: ['wy', 'ww'] },
 }
 
-// Pusta przerwa przed meblem; przed sztolnią dwie kolumny: w drugiej wisi pochodnia, którą bierze zwiad,
-// więc nie przykleja się do skrzyni z kanarkiem.
-const WALL_GAP: Record<Station, number> = { forge: 0, table: 1, trial: 1, mine: 2 }
+// Pusta przerwa przed meblem (`gap`) i wolne kolumny za sztolnią (`edge`), od najluźniejszej ściany.
+// Przed sztolnią zawsze dwie kolumny: w drugiej wisi pochodnia, którą bierze zwiad, więc nie
+// przykleja się do skrzyni z kanarkiem. Na wąskim płótnie (terminal 80 kolumn) odpada najpierw
+// kolumna za sztolnią, bo ostatnia kolumna sztolni i tak jest pusta, potem przerwa przed skrzynią,
+// która styka się z regałem samą dolną deską. Przerwa przed regałem zostaje: bez niej belka kuźni
+// wchodzi w księgę, haki w półkę, szezlong w dolną deskę i ściana od kuźni po skrzynię zlewa się w jedną masę.
+type WallLayout = { gap: Record<Station, number>; edge: number }
+const WALL_LAYOUTS: readonly WallLayout[] = [
+  { gap: { forge: 0, table: 1, trial: 1, mine: 2 }, edge: 1 },
+  { gap: { forge: 0, table: 1, trial: 1, mine: 2 }, edge: 0 },
+  { gap: { forge: 0, table: 1, trial: 0, mine: 2 }, edge: 0 },
+]
 const WALL_WIDE = WALL_ORDER.map(station => Math.max(...WALL_PROPS[station].rows.map(row => row.length)))
 
-// Najwęższe płótno, na którym meble stają obok siebie z przerwami i kolumną wolną z prawej.
-// Węższy pas z wierszami dymka zostaje płaski, bez pokoju (`forge.ts`).
-export const WALL_MIN = WALL_ORDER.reduce((sum, station, i) => sum + WALL_GAP[station] + WALL_WIDE[i]!, 0) + 1
+function wallNeed({ gap, edge }: WallLayout): number {
+  return WALL_ORDER.reduce((sum, station, i) => sum + gap[station] + WALL_WIDE[i]!, 0) + edge
+}
+
+// Najwęższe płótno, na którym meble jeszcze stają obok siebie bez nachodzenia; od `WALL_ROOMY`
+// każdy z przerwą. Węższy pas z wierszami dymka zostaje płaski, bez pokoju (`forge.ts`).
+export const WALL_MIN = wallNeed(WALL_LAYOUTS[WALL_LAYOUTS.length - 1]!)
+export const WALL_ROOMY = wallNeed(WALL_LAYOUTS[0]!)
 
 const wallCache = new Map<string, Record<Station, number>>()
 
-// Lewe krawędzie mebli: każdy jak najbliżej stanowiska, bez nachodzenia na sąsiada.
+// Lewe krawędzie mebli: każdy jak najbliżej stanowiska, bez nachodzenia na sąsiada, z najluźniejszymi
+// przerwami, które mieszczą się w płótnie.
 function wallSpots(floor: number, hearth: boolean): Record<Station, number> {
   const key = `${floor}:${hearth}`
   const known = wallCache.get(key)
   if (known) return known
   const wide = WALL_WIDE
-  const gap = (i: number) => WALL_GAP[WALL_ORDER[i]!]
+  const layout = WALL_LAYOUTS.find(each => wallNeed(each) <= floor) ?? WALL_LAYOUTS[WALL_LAYOUTS.length - 1]!
+  const gap = (i: number) => layout.gap[WALL_ORDER[i]!]
   const xs = WALL_ORDER.map(station => stationX(SCENE_OF[station], floor, hearth) + WALL_PROPS[station].x)
   xs.forEach((x, i) => { xs[i] = i === 0 ? x : Math.max(x, xs[i - 1]! + wide[i - 1]! + gap(i)) })
-  for (let i = xs.length - 1; i >= 0; i -= 1) xs[i] = Math.max(0, Math.min(xs[i]!, i === xs.length - 1 ? floor - wide[i]! - 1 : xs[i + 1]! - wide[i]! - gap(i + 1)))
+  for (let i = xs.length - 1; i >= 0; i -= 1) xs[i] = Math.max(0, Math.min(xs[i]!, i === xs.length - 1 ? floor - wide[i]! - layout.edge : xs[i + 1]! - wide[i]! - gap(i + 1)))
   const spots = Object.fromEntries(WALL_ORDER.map((station, i) => [station, xs[i]!])) as Record<Station, number>
   wallCache.set(key, spots)
   return spots
