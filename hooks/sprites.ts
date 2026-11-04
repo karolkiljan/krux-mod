@@ -110,14 +110,14 @@ const DOZE_FRAMES = Math.round(60 * SECOND)
 
 // Trasa orka w scenie: `first` to czynność, od której rusza epizod roboty; `done` to odcinki
 // czekania już zagrane, bo między nimi ork chodzi po nowy mebel.
-export function routeOf(scene: StageScene, face: Face, seed: number, first = seed, done = 0): Route {
+export function routeOf(scene: StageScene, face: Face, seed: number, first = seed, done = 0, cold = false): Route {
   const gestures = gesturesFor(face)
   const every = 3 + (seed % 2)
   if (scene === 'lounge') {
     const legs = waitLegs(seed)
     return { legs: legs.slice(Math.min(done, legs.length - 1)), cyclic: false, gestures, every, seed }
   }
-  return { legs: rotation(actsFor(scene, face), first, WORK_FRAMES), cyclic: true, gestures, every, seed }
+  return { legs: rotation(actsFor(scene, face).filter(act => !(cold && act.fire === true)), first, WORK_FRAMES), cyclic: true, gestures, every, seed }
 }
 
 // Siatka pikseli jednej klatki: `step` liczy od początku sceny, `seed` wybiera pierwszą czynność,
@@ -153,10 +153,12 @@ export type Track = {
   leaving: { scene: StageScene; face: Face; seed: number; first: number; done: number; step: number; at: number; fast?: boolean; kept?: boolean } | null
   // Ork skończył i czeka na następny epizod: przy rekwizycie na ziemi albo z pustymi rękami.
   stops?: 'kit' | 'bare'
+  // Na podłodze nie ma paleniska: czynności przy ogniu (`Act.fire`) wypadają z trasy.
+  cold?: true
 }
 
-function routeOfTrack(track: Pick<Track, 'scene' | 'face' | 'seed' | 'first' | 'done'>): Route {
-  return routeOf(track.scene, track.face, track.seed, track.first, track.done)
+function routeOfTrack(track: Pick<Track, 'scene' | 'face' | 'seed' | 'first' | 'done' | 'cold'>): Route {
+  return routeOf(track.scene, track.face, track.seed, track.first, track.done, track.cold === true)
 }
 
 // Przed zmianą sceny: następny epizod tej sceny ruszy od czynności po obecnej.
@@ -456,13 +458,31 @@ export function stationX(scene: StageScene, floor: number, hearth: boolean): num
 
 // Domy orków na podłodze: każdy jak najbliżej swojego stanowiska, bez nachodzenia
 // na sąsiada. `want` równe wiąże `slot`, więc kolejność nie mruga między rysunkami.
-export function floorHomes(orcs: readonly { key: string; want: number; slot: number }[], floor: number): Record<string, number> {
-  const line = [...orcs].sort((a, b) => a.want - b.want || a.slot - b.slot)
+// `fixed`: ork przypięty albo rekwizyt na ziemi, który się nie ruszy. Reszta staje w najbliższej
+// wolnej luce podłogi od `start`; bez luki zostaje na swoim domu (`stay`), a nowy ork staje
+// tam, gdzie najmniej nachodzi na innych.
+export type FloorOrc = { key: string; want: number; slot: number; fixed?: true; stay?: number }
+
+export function floorHomes(orcs: readonly FloorOrc[], floor: number, start = 0): Record<string, number> {
+  const line = orcs.filter(orc => orc.fixed === undefined).sort((a, b) => a.want - b.want || a.slot - b.slot)
   const step = ORC_WIDTH + ORC_GAP
   const xs = line.map(orc => orc.want)
   xs.forEach((x, i) => { xs[i] = Math.max(x, i === 0 ? 0 : xs[i - 1]! + step) })
   for (let i = xs.length - 1; i >= 0; i -= 1) xs[i] = Math.min(xs[i]!, i === xs.length - 1 ? floor - ORC_WIDTH : xs[i + 1]! - step)
-  return Object.fromEntries(line.map((orc, i) => [orc.key, xs[i]!]))
+  // Bez przeszkód `xs` się nie nakłada, więc każdy ork bierze swoje `xs`, jak bez `fixed`.
+  const fixed = orcs.filter(orc => orc.fixed !== undefined)
+  const homes: Record<string, number> = Object.fromEntries(fixed.map(orc => [orc.key, orc.want]))
+  const taken = fixed.map(orc => orc.want)
+  const room = (x: number) => Math.min(step, ...taken.map(t => Math.abs(t - x)))
+  const inside = (x: number) => Math.max(start, Math.min(floor - ORC_WIDTH, x))
+  line.forEach((orc, i) => {
+    const x = xs[i]!
+    const spots = [x, ...[start, floor - ORC_WIDTH, ...taken.flatMap(t => [t - step, t + step])].map(inside)].sort((a, b) => Math.abs(a - x) - Math.abs(b - x) || a - b)
+    const home = spots.find(at => room(at) >= step) ?? orc.stay ?? spots.reduce((best, at) => (room(at) > room(best) ? at : best))
+    homes[orc.key] = home
+    taken.push(home)
+  })
+  return homes
 }
 
 // Czy dwie sceny mają sprzęt na tym samym meblu: wymiana bez chodzenia po podłodze.
@@ -805,6 +825,14 @@ export const ERRAND_FRAMES = 2 * ERRAND_IN + ERRAND_HOLD
 // Przy sprzęcie, w tej klatce wyprawy, ork odkłada jedno i bierze drugie.
 export const ERRAND_SWAP = ERRAND_IN + Math.floor(ERRAND_HOLD / 2)
 
+// Wyprawa z drzwi kwater: droga do sprzętu wzdłuż ściany trwa `lead` klatek zamiast `ERRAND_IN`.
+export function errandEnd(route: { lead?: number }): number {
+  return (route.lead ?? ERRAND_IN) + ERRAND_HOLD + ERRAND_IN
+}
+export function errandSwap(route: { lead?: number }): number {
+  return (route.lead ?? ERRAND_IN) + Math.floor(ERRAND_HOLD / 2)
+}
+
 // Kolumna orka przy miejscu sprzętu tej sceny na ścianie.
 export function depthSpot(scene: StageScene, floor: number, hearth: boolean): number {
   const station = STATIONS[scene]
@@ -823,16 +851,20 @@ function shrunk(kit: Frame, size: number): string[] {
   }).join(''))
 }
 
-export type ErrandRoute = { spot: number; back: number; took?: Frame; brings?: Frame }
+// `start`: wyprawa rusza z drzwi kwater i idzie do sprzętu wzdłuż ściany (`lead` klatek), bez zejścia na podłogę.
+export type ErrandRoute = { spot: number; back: number; took?: Frame; brings?: Frame; start?: number; lead?: number }
 
 // Poza w klatce `t` wyprawy: do sprzętu i z powrotem, wielkość z głębokości, rekwizyt razem z orkiem.
-export function errandPose(t: number, from: number, route: ErrandRoute, face: Face): Far[] {
-  const going = t < ERRAND_IN
-  const holding = !going && t < ERRAND_IN + ERRAND_HOLD
-  const depth = going ? t / ERRAND_IN : holding ? 1 : Math.max(0, ERRAND_FRAMES - t) / ERRAND_IN
-  const x = holding ? lerp(route.spot, route.back, (t - ERRAND_IN) / ERRAND_HOLD) : lerp(from, going ? route.spot : route.back, depth)
-  const orc = farPose(depth, x, t, face)
-  const kit = t < ERRAND_SWAP ? route.took : route.brings
+// `lift`: ork z drzwi schodzi jeszcze z progu.
+export function errandPose(t: number, from: number, route: ErrandRoute, face: Face, lift = 0): Far[] {
+  const lead = route.lead ?? ERRAND_IN
+  const going = t < lead
+  const holding = !going && t < lead + ERRAND_HOLD
+  const along = going && route.start !== undefined
+  const depth = along ? 1 : going ? t / lead : holding ? 1 : Math.max(0, errandEnd(route) - t) / ERRAND_IN
+  const x = along ? lerp(route.start!, route.spot, t / lead) : holding ? lerp(route.spot, route.back, (t - lead) / ERRAND_HOLD) : lerp(from, going ? route.spot : route.back, depth)
+  const orc = farPose(depth, x, t, face, along ? lift : 0)
+  const kit = t < errandSwap(route) ? route.took : route.brings
   return kit === undefined ? [orc] : [{ rows: shrunk(kit, orc.rows.length), x, y: orc.y }, orc]
 }
 
