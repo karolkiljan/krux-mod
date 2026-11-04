@@ -67,28 +67,36 @@ function cellsOf(text: string): number {
 
 type Lettered = { y: number; x: number; text: string; color: string | undefined }
 
+// Wnętrze dymka na Desktopie: ciemne i prawie kryjące, z jasnym tekstem, więc tekst ma ten sam
+// kontrast przy każdym mówcy i w obu motywach; kolor mówcy zostaje na ramce i ogonku.
+export const BUBBLE_FILL = '#1b1b1b'
+export const BUBBLE_INK = '#ececec'
+
 // Dymek z trzech wierszy ramki (`╭─╮`, `│ tekst │`, `╰─┬─╯`): zaokrąglony prostokąt, ogonek nad mówcą.
+// Wiersz tekstu bywa kilkoma ciągami (ramka w kolorze mówcy, tekst bez koloru): sklejamy je.
 function bubbleOf(letters: readonly Lettered[]): { svg: string; used: Set<Lettered> } | null {
   const top = letters.find(run => run.text.includes('╭'))
   if (top === undefined) return null
-  const body = letters.find(run => run.y === top.y + 1 && run.text.includes('│'))
+  const parts = letters.filter(run => run.y === top.y + 1).sort((a, b) => a.x - b.x)
+  const text = parts.map(run => run.text).join('')
   const foot = letters.find(run => run.y === top.y + 2 && run.text.includes('┬'))
-  if (body === undefined || foot === undefined) return null
+  if (!text.includes('│') || foot === undefined) return null
   const start = top.x + cellsOf(top.text.slice(0, top.text.indexOf('╭')))
   const width = cellsOf(top.text.slice(top.text.indexOf('╭'), top.text.indexOf('╮') + 1))
-  const inner = body.text.slice(body.text.indexOf('│') + 1, body.text.lastIndexOf('│'))
+  const inner = text.slice(text.indexOf('│') + 1, text.lastIndexOf('│'))
   const words = inner.startsWith(' ') && inner.endsWith(' ') ? inner.slice(1, -1) : inner.trim()
   const tail = foot.x + cellsOf(foot.text.slice(0, foot.text.indexOf('┬'))) + 0.5
-  const color = body.color ?? top.color ?? '#999999'
+  const color = top.color ?? parts.find(run => run.color !== undefined)?.color ?? '#999999'
   const y = 2 * top.y + 1
+  // Czubek ogonka kończy się nad pierwszym wierszem orka, nie wchodzi w głowę.
   const svg = [
-    `<g shape-rendering="geometricPrecision" fill="${color}" stroke="${color}">`,
-    `<rect x="${start + 0.5}" y="${y}" width="${width - 1}" height="4" rx="1.4" fill-opacity="0.14" stroke-width="0.3"/>`,
-    `<path d="M${tail - 0.7} ${y + 4}L${tail} ${y + 5.4}L${tail + 0.8} ${y + 4}" fill-opacity="0.14" stroke-width="0.3" stroke-linejoin="round"/>`,
-    `<text x="${start + 2}" y="${y + 2}" dominant-baseline="central" font-family="${FONT}" font-size="${FONT_SIZE}" stroke="none">${escape(words)}</text>`,
+    `<g shape-rendering="geometricPrecision" fill="${BUBBLE_FILL}" stroke="${color}">`,
+    `<rect x="${start + 0.5}" y="${y}" width="${width - 1}" height="4" rx="1.4" fill-opacity="0.88" stroke-width="0.3"/>`,
+    `<path d="M${tail - 0.75} ${y + 4}L${tail} ${y + 4.9}L${tail + 0.75} ${y + 4}" fill-opacity="0.88" stroke-width="0.3" stroke-linejoin="round"/>`,
+    `<text x="${start + 2}" y="${y + 2}" dominant-baseline="central" font-family="${FONT}" font-size="${FONT_SIZE}" fill="${BUBBLE_INK}" stroke="none">${escape(words)}</text>`,
     '</g>',
   ].join('')
-  return { svg, used: new Set([top, body, foot]) }
+  return { svg, used: new Set([top, ...parts, foot]) }
 }
 
 // Klatka płótna jako dokument SVG: każda komórka to dwa kwadratowe piksele, wiersz pikseli

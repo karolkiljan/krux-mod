@@ -639,7 +639,7 @@ test('a dispatched Niuch runs onto the stage in his apron and takes the bubble',
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(await forgeColors(ui)).toContain(NIUCH)
   await ui.advance(600)
-  expect(await ui.find({ type: 'Text', in: 'forge', text: /│ węszyć lore │/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', in: 'forge', text: /^węszyć lore$/ })).toBeDefined()
 })
 
 test('a horde agent type puts its mate on stage and in the muster even when the task does not name him', async ($, on) => {
@@ -787,20 +787,23 @@ test('the orc leaves the stage when its loop completes', async ($, on) => {
   expect(await forgeColors(done)).not.toContain(MLOT)
 })
 
+// Tekst dymka: osobny ciąg bez koloru między ramką `│ ` i ` │`, nie piksele ani ramka.
+const SAID = /^[^\s▀▄█│╭╰]/u
+
 test('failing tests make Krux frown and say how many failed, for four seconds', async ($, on) => {
   const clock = engine(on, new Map(), { toolError: 'FAIL' })
   await start($)
   await $.turn.start({ text: 'testy', turnId: 't1' })
   await $.tool.call({ tool: 'Bash', command: 'npm test' })
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  const bubble = (await ui.findAll({ type: 'Text', in: 'forge', text: /│ .* │/ })).map(element => JSON.stringify(element.children)).join('')
+  const bubble = (await ui.findAll({ type: 'Text', in: 'forge', text: SAID })).map(element => JSON.stringify(element.children)).join('')
   expect(bubble.length > 0).toBe(true)
   expect(bubble).not.toContain('npm test')
   await ui.unmount()
   await clock.advance(4100)
   const again = await $.ui.mount({ ...BAND, surface: 'terminal' })
   await again.advance(2100)
-  const later = (await again.findAll({ type: 'Text', in: 'forge', text: /│ .* │/ })).map(element => JSON.stringify(element.children)).join('')
+  const later = (await again.findAll({ type: 'Text', in: 'forge', text: SAID })).map(element => JSON.stringify(element.children)).join('')
   expect(later).toContain('npm test')
 })
 
@@ -916,7 +919,7 @@ test('a background agent stays on stage while listed as running, idle or not', a
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal', props: { ...BAND.props, isWorking: false } })
   expect(await forgeColors(ui)).toContain(LONT)
   await ui.advance(1200)
-  expect(await ui.find({ type: 'Text', in: 'forge', text: /│ czytać runy api\.ts │/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', in: 'forge', text: /^czytać runy api\.ts$/ })).toBeDefined()
 })
 
 test('a mate resumed with SendMessage comes back on stage and into the muster on his first tool', async ($, on) => {

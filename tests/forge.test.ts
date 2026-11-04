@@ -3,9 +3,10 @@ import { expect, test } from 'claude-code/testing'
 import Forge from '../hooks/forge'
 import type { ForgeOrc, ForgeProps } from '../hooks/forge'
 import { MATES } from '../hooks/roster'
-import { ACTS, DUET_FRAMES, WALL_MIN, DUET_GAP, ERRAND_FRAMES, PALETTE, RISE_FRAMES, TOAST_RETURN, carried, doorX, kitAt, kitReach, quartersDoor, trackGrid } from '../hooks/sprites'
+import { ACTS, DUET_FRAMES, SPEAKER_COLOR, WALL_MIN, DUET_GAP, ERRAND_FRAMES, PALETTE, RISE_FRAMES, TOAST_RETURN, carried, doorX, kitAt, kitReach, quartersDoor, trackGrid } from '../hooks/sprites'
 import type { Track } from '../hooks/sprites'
 import { STAND, pad } from '../hooks/stage'
+import { drawHeadless, headless, svgOf } from '../hooks/vector'
 
 // Powierzchnia na niby: stan, zegar klatek i elementy jako zwykłe obiekty.
 function surfaceOf() {
@@ -375,11 +376,11 @@ test('animated speech reveals complete emoji and combining graphemes on every ti
   for (const grapheme of ['🇵🇱', '👨‍👩‍👧‍👦', 'a\u0301']) {
     const { surface, tick } = surfaceOf()
     const props: ForgeProps = { ...BAND, rest: true, orcs: [KRUX], bubble: { key: 'krux', text: `ab${grapheme}cdef`, speaker: 'Krux' } }
-    expect(JSON.stringify(draw(props, surface))).toContain(`│ ab${grapheme} │`)
+    expect(JSON.stringify(draw(props, surface))).toContain(`["ab${grapheme}"]`)
     tick()
-    expect(JSON.stringify(draw(props, surface))).toContain(`│ ab${grapheme}cde │`)
+    expect(JSON.stringify(draw(props, surface))).toContain(`["ab${grapheme}cde"]`)
     tick()
-    expect(JSON.stringify(draw(props, surface))).toContain(`│ ab${grapheme}cdef │`)
+    expect(JSON.stringify(draw(props, surface))).toContain(`["ab${grapheme}cdef"]`)
     expect((surface.state as Seen).idle).toBe(true)
   }
 })
@@ -905,6 +906,48 @@ const pixelsOf = (tree: unknown): (string | null)[][] => ((tree as Drawn).props.
 })
 // Środek drzwi kwater w wierszach nad głową orka w progu: ciemność, gdy stoją otworem.
 const doorOpen = (tree: unknown) => [1, 2, 3, 4].every(y => pixelsOf(tree)[y]![quartersDoor(140, true)! + 1] === PALETTE.I)
+
+// Znaki wiersza płótna po kolei, piksele i ramka dymka po jednej kolumnie.
+const rowText = (tree: unknown, y: number) => (((tree as Drawn).props.children as Drawn[])[y]!.props.children as Drawn[]).map(run => ((run.props.children ?? []) as string[]).join('')).join('')
+
+test('the bubble tail points at the head, also of Krux lying on the chaise', () => {
+  const { surface } = surfaceOf()
+  // W bezruchu dymek stoi od razu w całości, a Krux leży w pierwszej pozie czekania.
+  const tree = draw({ ...FLOOR, still: true, orcs: [{ ...KRUX, scene: 'lounge' }], bubble: { key: 'krux', text: 'Krux czekać na hordę', speaker: 'Krux' } }, surface)
+  const pixels = pixelsOf(tree)
+  // Czubek głowy: pierwszy od góry ciąg czterech pikseli skóry na podłodze (wiersze 6–11).
+  const crownY = pixels.findIndex((row, y) => y >= 6 && row.some((_, x) => [0, 1, 2, 3].every(dx => row[x + dx] === PALETTE.g)))
+  const crown = pixels[crownY]!.findIndex((_, x) => [0, 1, 2, 3].every(dx => pixels[crownY]![x + dx] === PALETTE.g))
+  const tail = rowText(tree, 2).indexOf('┬')
+  expect([crown, tail >= crown && tail <= crown + 3]).toEqual([crown, true])
+})
+
+test('bubble text stays readable: the terminal draws it in its own color, the desktop light on a dark fill', () => {
+  // Terminal: ramka w kolorze mówcy, tekst bez koloru, więc w kolorze tekstu terminala.
+  const { surface } = surfaceOf()
+  const said = { key: 'a1', text: 'Grom: kuć ostrze', speaker: 'Grom' } as const
+  const tree = JSON.stringify(draw({ ...FLOOR, still: true, orcs: [{ ...KRUX, scene: 'hammer' }, GROM], bubble: said }, surface))
+  expect(tree).toContain(JSON.stringify({ type: 'Text', props: { children: ['Grom: kuć ostrze'] } }))
+  expect(tree).toContain(JSON.stringify({ type: 'Text', props: { color: SPEAKER_COLOR.Grom, children: ['│ '] } }))
+  // Desktop: kontrast tekstu do wnętrza dymka co najmniej 4,5:1 dla każdego mówcy w obu motywach.
+  const luminance = (hex: string) => {
+    const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255).map(c => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4))
+    return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!
+  }
+  const mix = (top: string, opacity: number, under: string) => `#${[1, 3, 5].map(i => Math.round(parseInt(top.slice(i, i + 2), 16) * opacity + parseInt(under.slice(i, i + 2), 16) * (1 - opacity)).toString(16).padStart(2, '0')).join('')}`
+  const contrast = (a: string, b: string) => (Math.max(luminance(a), luminance(b)) + 0.05) / (Math.min(luminance(a), luminance(b)) + 0.05)
+  const weak: string[] = []
+  for (const speaker of Object.keys(SPEAKER_COLOR) as (keyof typeof SPEAKER_COLOR)[]) {
+    const desk = headless()
+    const svg = svgOf(drawHeadless(Forge, { ...FLOOR, still: true, orcs: [{ ...KRUX, scene: 'hammer' }], bubble: { key: 'krux', text: 'kuć ostrze', speaker } }, desk), 7).source
+    const group = svg.slice(svg.indexOf('<g shape-rendering="geometricPrecision"'))
+    const fill = /^<g [^>]*fill="(#[0-9a-f]{6})"/u.exec(group)![1]!
+    const opacity = Number(/<rect [^>]*fill-opacity="([\d.]+)"/u.exec(group)![1])
+    const ink = /<text [^>]*fill="(#[0-9a-f]{6})"/u.exec(group)?.[1] ?? fill
+    for (const page of ['#1e1e1e', '#ffffff']) if (contrast(ink, mix(fill, opacity, page)) < 4.5) weak.push(`${speaker} on ${page}`)
+  }
+  expect(weak).toEqual([])
+})
 
 test('now and then a mate drops in from the quarters: Krux puts the hammer down, walks over, they play and he goes back', () => {
   const seen = surfaceOf()

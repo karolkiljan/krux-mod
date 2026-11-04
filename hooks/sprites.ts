@@ -910,6 +910,13 @@ export function walkerRows(step: number, face: Face, look: Look = 'mid'): string
 
 export type Placed = { rows: readonly string[]; x: number }
 
+// Lewa krawędź głowy orka w klatce od kolumny `x`, liczona jak w stójce (czubek o piksel w prawo):
+// pierwszy od góry wiersz z czterema pikselami skóry, tak samo szuka jej `dress`.
+export function headX(rows: readonly string[], x: number): number {
+  const crown = rows.findIndex(row => /[gG]{4}/u.test(row))
+  return crown < 0 ? x : x + rows[crown]!.search(/[gG]{4}/u) - 1
+}
+
 // Scena o stałej szerokości: każdy ork wklejony od swojego x, poza płótnem ucięty.
 export function stageGrid(placed: readonly Placed[], width: number): string[] {
   const canvas = Array.from({ length: H }, () => Array.from({ length: width }, () => '.'))
@@ -929,14 +936,15 @@ export function bubbleLines(text: string, index: number, width: number): string[
   return bubbleAt(text, slotX(index), width)
 }
 
-// Dymek nad orkiem stojącym od kolumny `x`; idzie za nim po podłodze.
-export function bubbleAt(text: string, x: number, width: number): string[] {
+// Dymek nad orkiem stojącym od kolumny `x`; idzie za nim po podłodze. Ogonek celuje w głowę:
+// `head` to lewa krawędź głowy w stójce (ork leżący na szezlongu ma ją dalej niż `x`).
+export function bubbleAt(text: string, x: number, width: number, head = x): string[] {
   const body = terminalText(text, BUBBLE_TEXT)
   const inner = body.columns + 2
   const box = inner + 2
   const center = x + 2
   const left = Math.max(0, Math.min(width - box, center - Math.floor(box / 2)))
-  const tail = Math.max(1, Math.min(inner, center - left))
+  const tail = Math.max(1, Math.min(inner, head + 2 - left))
   const place = (line: string) => `${' '.repeat(left)}${line}${' '.repeat(Math.max(0, width - left - box))}`
   return [
     place(`╭${'─'.repeat(inner)}╮`),
