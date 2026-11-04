@@ -5,10 +5,9 @@ import type { BoxProps, ButtonProps, ElementConstructor, RenderElement, RenderNo
 
 import type { KruxBoard, KruxGit, KruxShaftTab, KruxThreads, KruxUsage } from '../types'
 import { limitName, meter, planCount, planRows, readiness, resetIn, stuckMinutes, testLine, testsStale, tokens } from './board'
-import { gitBusy, gitShort } from './git'
 import type { MusterRow } from './muster'
 import { ALARM_COLOR, OK_COLOR, PALETTE, SPEAKER_COLOR } from './sprites'
-import { EMPTY_THREADS, THREAD_MARK } from './threads'
+import { THREAD_MARK } from './threads'
 
 // Kolor Kruxa (iskra z palety) i skóry orka; dzielą je panele i pas.
 export const KRUX_COLOR = SPEAKER_COLOR.Krux
@@ -312,61 +311,4 @@ function gitRows(git: KruxGit): { key: string; text: string; color?: string }[] 
   ].filter(row => row !== null)
   if (rows.length > 0) return rows
   return [{ key: 'clean', text: git.upstream === null || git.upstreamGone ? '✓ czysto' : '✓ czysto, równo z upstreamem', color: OK_COLOR }]
-}
-
-// Skrót tablicy na pas nad promptem, gdy panelu Sztolni nie widać: po linii na
-// wątki, repo, gotowość do commita, plan, testy i kontekst. Wątki zachowują
-// pierwszeństwo, gotowość stoi przy repo; pas bierze linie od góry do wysokości
-// płótna, więc testy i kontekst ustępują im miejsca. Brak danych (albo czyste
-// i równe repo) oznacza brak linii; gotowość wymaga zmienionych lub nowych plików.
-// Horda stoi na płótnie obok, więc skrót jej nie powtarza.
-export type DigestLine = { key: string; mark: string; text: string; color?: string }
-
-export type DigestExtra = {
-  git: KruxGit | null
-  threads: KruxThreads
-  // Zegar sesji w ms od epoki; bez odczytu nie potwierdzamy utknięcia.
-  now?: number
-}
-
-export function shaftDigest(board: KruxBoard, usage: KruxUsage | null, extra: DigestExtra = { git: null, threads: EMPTY_THREADS }): DigestLine[] {
-  const lines: DigestLine[] = []
-  const latest = extra.threads.items.at(-1)
-  if (latest !== undefined) {
-    const count = extra.threads.items.length
-    lines.push({ key: 'threads', mark: THREAD_MARK[latest.kind], text: count > 1 ? `${count} · ${latest.text}` : latest.text, ...threadColor(latest.kind) })
-  }
-  const git = extra.git
-  if (git !== null && gitBusy(git)) {
-    // Gałąź z upstreamem, potem znaki stanu: `main → origin/main ↑2 ●3`.
-    const marks = gitShort(git).slice(git.branch.length)
-    lines.push({ key: 'git', mark: '⎇', text: `${git.branch}${git.upstream === null ? '' : ` → ${git.upstream}`}${marks}`, ...(git.conflicted > 0 ? { color: ALARM_COLOR } : git.ahead > 0 || git.behind > 0 ? { color: KRUX_COLOR } : {}) })
-  }
-  if (git !== null && git.changed + git.untracked > 0) {
-    const commit = readiness(board, git)
-    lines.push({ key: 'readiness', mark: commit.ready ? '✓' : '·', text: commit.ready ? 'do commita' : `do commita: ${commit.missing.join(', ')}`, ...(commit.ready ? { color: OK_COLOR } : {}) })
-  }
-  const { tasks, test: run } = board
-  if (tasks.length > 0) {
-    const current = tasks.find(task => task.status === 'in_progress') ?? tasks.find(task => task.status === 'pending')
-    const minutes = current === undefined || extra.now === undefined ? null : stuckMinutes(current, extra.now)
-    // Wiek przed tematem, żeby nie zginął przy ucinaniu długiego zadania.
-    const age = minutes === null ? '' : `⧗ ${minutes} min `
-    lines.push(
-      current === undefined
-        ? { key: 'plan', mark: '✓', text: `plan ${planCount(tasks)}`, color: OK_COLOR }
-        : { key: 'plan', mark: current.status === 'in_progress' ? '▸' : '·', text: `${planCount(tasks)} ${age}${current.subject}`, color: KRUX_COLOR },
-    )
-  }
-  if (run !== null) {
-    const counts = testLine(run)
-    // Nieświeżość na początku, żeby nie zginęła przy ucinaniu długiej komendy.
-    const text = `${testsStale(board) ? '◌ nieświeże · ' : ''}${run.command}${counts ? ` · ${counts}` : ''}`
-    lines.push({ key: 'tests', mark: run.ok ? '✓' : '✗', text, color: run.ok ? OK_COLOR : ALARM_COLOR })
-  }
-  if (usage !== null && usage.percent !== null) {
-    // Tylko zapełnienie kontekstu; okna limitów pozostają w panelu Sztolni.
-    lines.push({ key: 'usage', mark: '◔', text: `kontekst ${usage.percent}%`, ...(usage.percent >= 80 ? { color: ALARM_COLOR } : {}) })
-  }
-  return lines
 }
