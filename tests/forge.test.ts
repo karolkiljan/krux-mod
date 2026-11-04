@@ -1,7 +1,9 @@
 import { expect, test } from 'claude-code/testing'
 
+import { bandPlan } from '../hooks/band'
 import Forge from '../hooks/forge'
 import type { ForgeOrc, ForgeProps } from '../hooks/forge'
+import { CALM } from '../hooks/mood'
 import { MATES } from '../hooks/roster'
 import { ACTS, DUET_FRAMES, SPEAKER_COLOR, WALL_MIN, DUET_GAP, ERRAND_FRAMES, PALETTE, RISE_FRAMES, TOAST_RETURN, carried, doorX, kitAt, kitReach, quartersDoor, trackGrid } from '../hooks/sprites'
 import type { Track } from '../hooks/sprites'
@@ -44,6 +46,14 @@ test('a band too narrow for the wall keeps its bubble rows but stays flat, witho
     expect([floor, tree.props.children.length]).toEqual([floor, 6])
     expect([floor, JSON.stringify(tree).includes(PALETTE.E!)]).toEqual([floor, room])
   }
+})
+
+test('an 80-column terminal keeps the room: the wall tightens its gaps instead of going flat', () => {
+  // Podpis 28 kolumn i przerwa 2 zostawiają płótnu 50 kolumn z wierszami dymka.
+  const plan = bandPlan({ working: true, activity: { scene: 'hammer', verb: 'Krux kuć', target: '' }, strikes: 1, total: 1, moods: CALM, members: [], held: null, waiting: false, still: false, now: 10_000, columns: 80, rows: 10, hasClient: true })
+  const { surface } = surfaceOf()
+  const tree = draw(plan.stage!.props, surface)
+  expect([plan.stage!.props.floor, plan.stage!.props.bubbleRows, JSON.stringify(tree).includes(PALETTE.E!)]).toEqual([50, true, true])
 })
 
 test('a marching orc looks where it goes: a mate running in from the right has its pupils on the left', () => {
