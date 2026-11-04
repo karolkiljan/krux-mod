@@ -306,8 +306,9 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
   const stage = Math.max(bandColumns(slots), props.variant === 'band' ? (props.floor ?? 0) : 0)
   // W bezruchu orkowie stoją w slotach od lewej krawędzi, więc palenisko nie ma gdzie stanąć.
   const hearth = props.variant === 'band' && !props.still && hasHearth(stage, slots)
-  // Pokój stoi tam, gdzie pas ma wiersze na dymek: dymek kładzie się na ścianie. Na węższym
-  // płótnie meble weszłyby na siebie, więc pas zostaje płaski, z dymkiem nad podłogą.
+  // Pokój stoi tam, gdzie pas ma wiersze na dymek: dymek kładzie się na ścianie. `bandPlan` daje
+  // je tylko płótnu, które mieści dymek (`canvasColumns`), a takie nie jest węższe od `WALL_MIN`;
+  // węższa podłoga z dymkiem (props spoza planu) zostaje płaska, bo meble weszłyby na siebie.
   const room = props.variant === 'band' && props.bubbleRows && stage >= WALL_MIN
   // Tam, gdzie jest pokój, sprzęt chodzi przez ściany i drzwi, a nie przez płótno.
   const fetching = room && !props.still
