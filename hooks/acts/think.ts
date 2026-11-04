@@ -95,11 +95,17 @@ function forkAt(x: number, ringing: boolean): Layer[] {
   return [[fork, x, 0]]
 }
 
+// Piryt drepcze za widełkami, jak przy skrobaniu run: ramię zostaje krótkie, nogi idą, gdy ciało się przesuwa.
+const forkStep = (t: number) => Math.max(0, FORK_X[(t + FORK_X.length) % FORK_X.length]! - 9)
+
 function forkLoop(t: number): Frame {
   const x = FORK_X[t]!
+  const orcX = forkStep(t)
   const listening = t >= 8 && t <= 11
+  const orc = stander(listening ? 'shut' : 'right', 'gg')
+  const legs = orcX !== forkStep(t - 1) ? '..GG..' : '.G..G.'
   return draw(...soundBench(), ...forkAt(x, t >= 4 && t <= 11 && t % 2 === 1),
-    [stander(listening ? 'shut' : 'right', 'gg'), 0, 0], ...line([8, 3], [x + 1, 3], 'g'))
+    [[...orc.slice(0, 5), legs], orcX, 0], ...line([orcX + 8, 3], [x + 1, 3], 'g'))
 }
 
 const tuningFork: Act = {
@@ -117,20 +123,29 @@ const tuningFork: Act = {
 
 // ——— Rysa pod lupą Piryta ———
 // Lupa sunie wzdłuż stalowej belki, a ciemna rysa przechodzi przez szkło.
-// Piryt zatrzymuje wzrok na pęknięciu: nawet tę stal trzeba podejrzewać.
+// Piryt zatrzymuje lupę na pęknięciu i patrzy, jak rysa żarzy się w szkle: nawet tę stal trzeba podejrzewać.
 const CRACKED_BEAM: Frame = ['sssssnsssss', 'SSSSnSSSSSS', '..x.....x..', '..x.....x..']
 const CRACK_LENS: Frame = ['.jij.', 'j...j', '.jij.']
-const LENS_SCAN = [10, 10, 11, 12, 13, 14, 15, 16, 16, 16, 15, 14, 13, 12, 11, 10] as const
+// Środek szkła to x + 2; w x = 13 stoi nad rysą (15, 2).
+const LENS_SCAN = [10, 10, 11, 12, 13, 13, 13, 13, 14, 15, 16, 15, 14, 13, 12, 11] as const
+const CRACK: Point = [15, 2]
 
 function crackAt(x: number): Layer[] {
   return [[CRACKED_BEAM, 10, 2],
     ...line([x - 1, 4], [x + 1, 3], 'h'), [CRACK_LENS, x, 1]]
 }
 
+// Piryt idzie za lupą o krok, żeby ramię nie rosło.
+const lensStep = (t: number) => Math.max(0, LENS_SCAN[(t + LENS_SCAN.length) % LENS_SCAN.length]! - 11)
+
 function crackLoop(t: number): Frame {
   const x = LENS_SCAN[t]!
-  return draw(...crackAt(x), [stander(t >= 4 && t <= 6 ? 'shut' : 'right', 'gg'), 0, 0],
-    ...line([8, 3], [x - 2, 4], 'g'))
+  const orcX = lensStep(t)
+  const found = t >= 5 && t <= 7
+  const orc = stander('right', 'gg')
+  const legs = orcX !== lensStep(t - 1) ? '..GG..' : '.G..G.'
+  return draw(...crackAt(x), ...(found ? [at('R', ...CRACK)] : []), [[...orc.slice(0, 5), legs], orcX, 0],
+    ...line([orcX + 8, 3], [x - 2, 4], 'g'))
 }
 
 const crack: Act = {

@@ -11,20 +11,20 @@ const BEAM = 3
 const VEINS = new Set(['13,1', '14,1', '17,3', '18,4', '20,2'])
 const SWEEP = 2 * (WALL_WIDTH - BEAM)
 
-// Ściana odsłonięta na `reveal` kolumn od pochodni; snop światła od kolumny `left`.
+// Ściana odsłonięta na `reveal` kolumn od pochodni; światło od pochodni sięga do kolumny `left + BEAM`.
 function wall(reveal: number, left: number): Layer[] {
   const cells: Layer[] = []
   for (let x = WALL_FROM; x < WALL_FROM + reveal; x += 1) {
     for (let y = 0; y < 6; y += 1) {
-      const lit = x >= left && x < left + BEAM
+      const lit = x < left + BEAM
       cells.push(at(lit ? (VEINS.has(`${x},${y}`) ? 'y' : 'q') : 'k', x, y))
     }
   }
   return cells
 }
 
-// Pochodnia zgaszona, zanim ork ją uniesie.
-const UNLIT: Layer[] = [at('h', 8, 2), at('h', 8, 3)]
+// Pochodnia zgaszona stoi na ziemi, zanim ork ją uniesie.
+const UNLIT: Layer[] = [at('h', 8, 4), at('h', 8, 5)]
 
 // Ręka z pochodnią; `fire` 0 zgaszona, 1 tli się, 2 płonie.
 function torchInHand(frame: number, fire: number): Layer[] {
@@ -35,7 +35,7 @@ function torchInHand(frame: number, fire: number): Layer[] {
 }
 
 function wallLoop(t: number, frame: number): Frame {
-  // Snop jeździ tam i z powrotem; oczy idą za nim.
+  // Światło sięga coraz dalej w głąb ściany i cofa się do pochodni; oczy idą za jego skrajem.
   const left = WALL_FROM + pingPong(t, WALL_WIDTH - BEAM)
   return draw(...wall(WALL_WIDTH, left), [stander(left >= 15 ? 'right' : 'mid'), 0, 0], ...torchInHand(frame, 2))
 }
@@ -44,8 +44,9 @@ const torchWall: Act = {
   name: 'pochodnia',
   kit: draw(...UNLIT),
   intro: [
-    // Sięgnąć po pochodnię, unieść ją, skrzesać iskrę.
-    draw([STAND, 0, 0], at('g', 6, 3), ...UNLIT),
+    // Sięgnąć po pochodnię, unieść ją z ziemi, skrzesać iskrę.
+    draw([STAND, 0, 0], ...line([6, 3], [7, 4], 'g'), ...UNLIT),
+    draw([STAND, 0, 0], [['gg'], 6, 3], at('h', 8, 3), at('h', 8, 4)),
     draw([STAND, 0, 0], ...torchInHand(0, 0)),
     draw([stander('right'), 0, 0], ...torchInHand(0, 0)),
     draw([stander('right'), 0, 0], ...torchInHand(0, 0), at('y', 9, 1)),
@@ -86,9 +87,11 @@ function magnifyLoop(t: number): Frame {
 
 const magnify: Act = {
   name: 'lupa',
-  kit: draw(...lens(0, 0)),
+  kit: draw(...lens(0, 2)),
   intro: [
-    // Chwycić rączkę lupy i spojrzeć przez szkło.
+    // Chwycić rączkę lupy leżącej na ziemi, podnieść ją i spojrzeć przez szkło.
+    draw([STAND, 0, 0], at('g', 6, 4), ...lens(0, 2)),
+    draw([STAND, 0, 0], at('g', 6, 4), ...lens(0, 1)),
     draw([STAND, 0, 0], at('g', 6, 3), ...lens(0, 0)),
     draw([stander('right'), 0, 0], at('g', 6, 3), ...lens(0, 0)),
   ],

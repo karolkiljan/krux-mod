@@ -35,6 +35,8 @@ const bush: Act = {
 // Rura od oka w prawo: dwa skórzane człony, dwa stalowe, szkło na końcu.
 const TUBE = 'hhSSi'
 const CLOSED_GLASS: Layer = [['hS'], 7, 3]
+// Złożona luneta leży na ziemi, zanim ork ją podniesie.
+const LAID_GLASS: Layer = [['hS'], 7, 5]
 
 function spyglass(length: number, tilt: -1 | 0 | 1): Layer[] {
   const cells: Layer[] = [at('g', 6, 3), at('g', 7, 2)]
@@ -58,10 +60,11 @@ function bird(t: number): Layer[] {
 
 const spy: Act = {
   name: 'luneta',
-  // Złożona luneta w dłoni.
-  kit: draw(CLOSED_GLASS),
+  kit: draw(LAID_GLASS),
   intro: [
-    // Unieść rękę do oka i rozsunąć lunetę człon po członie.
+    // Podnieść lunetę z ziemi, unieść rękę do oka i rozsunąć lunetę człon po członie.
+    draw([stander('right'), 0, 0], at('g', 6, 4), LAID_GLASS),
+    draw([stander('right'), 0, 0], at('g', 6, 4), [['hS'], 7, 4]),
     draw([stander('right'), 0, 0], at('g', 6, 3), CLOSED_GLASS),
     ...[1, 2, 3, 4].map(n => draw([stander('right'), 0, 0], ...spyglass(n, 0))),
   ],
