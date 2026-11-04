@@ -177,9 +177,10 @@ async function loadModes($: EngineInterface): Promise<void> {
   await update($, modes, () => loaded)
 }
 
-// Zapis trybu i notka dla modelu, jeśli ten tryb ją ma.
+// Zapis trybu i notka dla modelu, jeśli ten tryb ją ma. Przełącznik bez `on`/`off`
+// odwraca to, co pokazuje ta sesja (przycisk, status), nie wpis innej sesji w `$.store`.
 async function setModes($: EngineInterface, toggle: Toggle): Promise<{ next: KruxModes; on: boolean; note: string | null }> {
-  let next = applyToggle(await readSavedModes($), toggle)
+  let next = applyToggle(await read($, modes), toggle)
   const on = next[toggle.mode]
   await $.store.set(`mode.${toggle.mode}`, on)
   await update($, modes, current => {
@@ -204,6 +205,7 @@ async function readText($: EngineInterface, name: string): Promise<string> {
 async function loadSession($: EngineInterface): Promise<void> {
   messageTimes.clear()
   groupedTools.clear()
+  resetPlates()
   journalWatch?.cancel()
   journalWatch = null
   journalWatchVersion += 1
@@ -412,14 +414,31 @@ async function syncShaftPane($: EngineInterface, on: boolean): Promise<void> {
 // bloku po grupie narzędzi, a stanu w trakcie rysowania zapisać nie wolno:
 // `turn.start` zaznacza turę, pierwszy blok z kropką zabiera tabliczkę po
 // `requestId` (przerysowanie go nie gubi). Historia sprzed pierwszej żywej tury
-// po wczytaniu modułu dostaje tabliczkę na każdej kropce, bez zapamiętywania.
-// Żywe bloki zachowują tabliczkę przy przerysowaniu przez ostatnie 32 tury.
+// (po wczytaniu modułu, `/clear`, `/resume` i forku) dostaje tabliczkę na każdej
+// kropce i zostaje w pamięci (`history`), więc resize jej nie gubi. Żywe bloki
+// zachowują tabliczkę przy przerysowaniu przez ostatnie 32 tury.
 const PLATES_LIMIT = 32
-const plates = { live: false, pending: false, ids: new Set<string>(), echoed: false, echoes: new Map<string, string | null>() }
+// Bloki historii i decyzje echa: z zapasem jak godziny czatu, żeby przerysowana dawna
+// wiadomość nie zgubiła tabliczki ani nie wzięła echa bieżącej prośby.
+const SEEN_LIMIT = MESSAGE_TIMES_LIMIT
+const plates = { live: false, pending: false, ids: new Set<string>(), history: new Set<string>(), echoed: false, echoes: new Map<string, string | null>() }
+
+function resetPlates(): void {
+  plates.live = false
+  plates.pending = false
+  plates.echoed = false
+  plates.ids.clear()
+  plates.history.clear()
+  plates.echoes.clear()
+}
 
 function claimPlate(id: string): boolean {
-  if (!plates.live) return true
-  if (plates.ids.has(id)) return true
+  if (!plates.live) {
+    plates.history.add(id)
+    trimOldest(plates.history, SEEN_LIMIT)
+    return true
+  }
+  if (plates.ids.has(id) || plates.history.has(id)) return true
   if (!plates.pending) return false
   plates.pending = false
   plates.ids.add(id)
@@ -429,16 +448,17 @@ function claimPlate(id: string): boolean {
 
 // Echo prośby: jeden raz na turę, na pierwszym bloku z kropką, gdy praca już
 // jest długa. Decyzja zapada przy pierwszym rysunku bloku i zostaje przy
-// przerysowaniu, więc późniejsze narzędzia nie zmieniają starej odpowiedzi.
+// przerysowaniu, więc późniejsze narzędzia nie zmieniają starej odpowiedzi. Historia
+// echa nie dostaje: to nie blok bieżącej tury.
 async function echoAt($: EngineInterface, id: string): Promise<string | null> {
-  if (!plates.live) return null
+  if (!plates.live || plates.history.has(id)) return null
   if (plates.echoes.has(id)) return plates.echoes.get(id) ?? null
   const started = await read($, turnAt)
   const elapsed = started === null ? 0 : (await $.clock.now()) - started
   const line = plates.echoed ? null : echoLine(await read($, lastPrompt), await read($, strikes), elapsed)
   if (line !== null) plates.echoed = true
   plates.echoes.set(id, line)
-  if (plates.echoes.size > PLATES_LIMIT) plates.echoes.delete(plates.echoes.keys().next().value!)
+  trimOldest(plates.echoes, SEEN_LIMIT)
   return line
 }
 
@@ -484,6 +504,21 @@ function refreshGit($: EngineInterface): Promise<void> {
     }
   })()
   return gitRefresh
+}
+
+// Odczyt repo po narzędziu i turze idzie zegarem: silnik oddaje wynik narzędzia modelowi
+// i kończy turę dopiero po hooku, a w dużym repo każda komenda gita to sekundy.
+function refreshGitLater($: EngineInterface): void {
+  $.clock.after(0, () => refreshGit($).catch(error => $.ui.log(`git: ${String(error)}`, { to: 'debug' })))
+}
+
+// Zużycie i repo na starcie i po komendach, które zerują `$.state`. Też zegarem: silnik
+// czeka na te hooki przed promptem, a git to do 5 komend po 5 s.
+function refreshSessionLater($: EngineInterface): void {
+  $.clock.after(0, async () => {
+    await refreshUsage($)
+    await refreshGit($).catch(error => $.ui.log(`git: ${String(error)}`, { to: 'debug' }))
+  })
 }
 
 async function shaftShown($: EngineInterface, on: boolean): Promise<boolean> {
@@ -547,7 +582,7 @@ function blessedOf(chronicle: KruxLore): Pick<BandInput, 'blessed'> {
 type Desk = { surface: Headless; timer: Timer | null; drawnAt: number }
 const desks = new Map<string, Desk>()
 
-type DeskState = { frame: number; idle: boolean; snoozing?: boolean }
+type DeskState = { frame: number; idle: boolean; reduced?: boolean; snoozing?: boolean }
 
 async function deskArt($: EngineInterface, site: string, props: ForgeProps, alt: string): Promise<{ source: string; alt: string }> {
   await read($, deskFrame)
@@ -559,7 +594,8 @@ async function deskArt($: EngineInterface, site: string, props: ForgeProps, alt:
   if (!state.idle && desk.timer === null) {
     desk.timer = $.clock.every(FRAME_MS, () => {
       const now = desk.surface.state as DeskState
-      if (now.frame - desk.drawnAt > DESK_STALE || (now.idle && now.snoozing === true)) {
+      // Płótno w bezruchu (`still`) nie liczy klatek, więc nie zestarzeje się ani nie zaśnie.
+      if (now.frame - desk.drawnAt > DESK_STALE || now.reduced === true || (now.idle && now.snoozing === true)) {
         desk.timer?.cancel()
         desk.timer = null
         return
@@ -625,15 +661,19 @@ function watchJournalVisibility($: EngineInterface, visible: boolean): void {
 }
 
 // Panel i skrót pasa odświeżają utknięcie przy 15 min, potem na pełnych minutach.
-// Nowy plan unieważnia poprzedni timer; zegar apelu pozostaje wspólną zależnością.
+// Nowy plan anuluje poprzedni timer, a numer rewizji odcina odczyt w locie; zegar
+// apelu pozostaje wspólną zależnością.
 let boardClock = 0
+let boardTimer: Timer | null = null
 
 function tickBoard($: EngineInterface, plan: KruxBoard, now: number): void {
   const revision = ++boardClock
+  boardTimer?.cancel()
+  boardTimer = null
   const starts = plan.tasks.flatMap(task => task.status === 'in_progress' && task.startedAt !== undefined ? [task.startedAt] : [])
   if (starts.length === 0) return
   const at = Math.min(...starts.map(start => start + Math.max(15, Math.floor((now - start) / 60_000) + 1) * 60_000))
-  $.clock.after(Math.max(1, at - now), async () => {
+  boardTimer = $.clock.after(Math.max(1, at - now), async () => {
     if (revision !== boardClock) return
     const current = await read($, board)
     const time = await $.clock.now()
@@ -750,22 +790,19 @@ export const register: Register = on => {
     } catch (error) {
       $.ui.log(`nie zarejestrować /krux: ${String(error)}`)
     }
-    // Silnik czeka na ten hook przed pierwszym promptem: zużycie i git (do 5 komend po 5 s)
-    // czyta zegar, nie start sesji.
-    $.clock.after(0, async () => {
-      await refreshUsage($)
-      await refreshGit($)
-    })
+    refreshSessionLater($)
     return next(e)
   })
 
-  // /clear, /resume i /branch zerują $.state, a session.start już nie wraca.
+  // /clear, /resume i /branch zerują $.state, a session.start już nie wraca. Zużycie
+  // czytamy od nowa, bo pomiar silnik pcha dopiero po turze: bez odczytu pierwsza tura
+  // szłaby bez auto konkretu.
   on('classic.SessionStart', { source: ['clear', 'resume', 'fork'] }, async ($, e, next) => {
     usageVersion += 1
     await loadSession($)
     await update($, journal, () => EMPTY_JOURNAL)
     await update($, shaftTab, () => 'stan')
-    await refreshGit($)
+    refreshSessionLater($)
     return next(e)
   })
 
@@ -1000,7 +1037,7 @@ export const register: Register = on => {
         await update($, muster, current => musterTool(current, agentId, tool, input))
         await afterMateTool($, agentId, tool, input, isError, text, run?.failures[0], result.result)
       }
-      if (changesRepo(tool, input)) await refreshGit($)
+      if (changesRepo(tool, input)) refreshGitLater($)
     }
     return result
   })
@@ -1029,7 +1066,7 @@ export const register: Register = on => {
     await update($, turnAt, () => null)
     if (e.durationMs >= 300_000) $.ui.toast(`Krux skończyć po ${Math.floor(e.durationMs / 60_000)} min.`)
     await update($, activity, () => null)
-    await refreshGit($)
+    refreshGitLater($)
     if (e.reason === 'answer' && (await read($, modes)).persona) {
       // Poprawka jedzie raz: krótka odpowiedź nie świadczy o dryfie, więc stary werdykt gaśnie.
       const verdict = gauge(e.answer, await read($, longAnswer))
