@@ -146,7 +146,7 @@ function hauling(t: number): Frame {
     : cart(CART_X + x, loaded)
   const spill: Layer[] = t >= 10 && t < 16 ? [[['qk', 'kqk'], 20, t < 12 ? 3 : 4]] : []
   const refill: Layer[] = t >= 22 && t < 27 ? [[['qkq'], CART_X + 2, Math.min(3, t - 22)]] : []
-  return draw(...tippedCart, ...spill, ...refill, [pusher(t, tipped ? 'g' : 'gg'), x, 0])
+  return draw(...tippedCart, ...spill, ...refill, [pusher(x, tipped ? 'g' : 'gg'), x, 0])
 }
 
 const haul: Act = {
@@ -175,7 +175,9 @@ function wallLayers(crack: number): Layer[] {
 
 function wallWork(t: number): Frame {
   if (t >= 14 && t < 20) {
-    return draw([WALL, WALL_X, 20 - t], [stander('right', 'gg'), 2, 0],
+    // 14–15: rozbity mur z gruzem osiada w ziemię; 16–19: nowy mur wyrasta, bez znikania naraz.
+    const wall = t < 16 ? wallLayers(3).map(([sprite, x, y]) => [sprite, x, y + (t - 13) * 2] as Layer) : [[WALL, WALL_X, 21 - t] as Layer]
+    return draw(...wall, [stander('right', 'gg'), 2, 0],
       ...line([9, 3], [11, 1], 'h'), [['SS', 'SS'], 11, 0])
   }
   const hit = t >= 5 && t <= 8

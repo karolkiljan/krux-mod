@@ -136,7 +136,7 @@ const grind: Act = {
   kit: draw(...wheel(WHEEL_AT, 0), blade(8, 4)),
   intro: [
     // Schylić rękę po klingę.
-    draw(...wheel(WHEEL_AT, 7), blade(8, 4), [[...STAND.slice(0, 3), 'bbbbbbg', '.bGGb..g', STAND[5]!], 0, 0]),
+    draw(...wheel(WHEEL_AT, 0), blade(8, 4), [[...STAND.slice(0, 3), 'bbbbbbg', '.bGGb..g', STAND[5]!], 0, 0]),
   ],
   length: 16,
   loop: grindLoop,
@@ -160,9 +160,9 @@ function rivetWork(x: number, y: number, strike = false): Frame {
 const rivets: Act = {
   name: 'nity',
   who: ['Grom'],
-  kit: draw([PLATES, 9, 4], [['hhhhhSSS'], 8, 2]),
+  kit: draw([PLATES, 9, 4], [['hhhhhSSS'], 8, 3]),
   intro: [
-    draw([PLATES, 9, 4], [['hhhhhSSS'], 8, 2], [REACH, 0, 0]),
+    draw([PLATES, 9, 4], [['hhhhhSSS'], 8, 3], [REACH, 0, 0]),
     rivetWork(11, 2), rivetWork(10, 1), rivetWork(9, 0),
   ],
   length: RIVET_SWING.length,
@@ -197,19 +197,21 @@ const level: Act = {
 }
 
 // ——— Pilnik ———
-const CLAMP: Frame = ['..s..', '..s..', '.SSS.', 'xxxxx']
+// Trzy kolory, żeby było widać, co czym się obrabia: ciemny pilnik, jasna stal, drewniane imadło.
+const CLAMP: Frame = ['..s..', '..s..', '.xxx.', 'xxxxx']
 
 function fileTool(dx: number, y: number): Layer[] {
-  return [[['hh'], 7 + dx, y], ...line([9 + dx, y], [15 + dx, y + 1], 's')]
+  return [[['hh'], 7 + dx, y], ...line([9 + dx, y], [15 + dx, y + 1], 'S')]
 }
 
 function fileWork(t: number): Frame {
-  const dx = lerp(0, 2, pingPong(t, 8) / 8)
+  // Dwa pociągnięcia na pętlę: pchnięcie i powrót po cztery klatki.
+  const dx = lerp(0, 2, pingPong(t, 4) / 4)
   const chips: Layer[] = []
-  // Opiłki rodzą się na krawędzi przy pchnięciu, opadają przez dwie klatki.
+  // Opiłki rodzą się na krawędzi przy każdym pchnięciu, opadają przez dwie klatki.
   for (let age = 0; age < 2; age++) {
     const born = t - age
-    if (born >= 2 && born <= 8) chips.push(at('m', 16 + age, 4 + age))
+    if (born % 8 >= 1 && born % 8 <= 4) chips.push(at('m', 16 + age, 4 + age))
   }
   return draw([BENCH, BENCH_AT + 2, 4], [CLAMP, 13, 2],
     [stander('right'), 0, 0], ...line([6, 3], [7 + dx, 2], 'g'),
@@ -269,9 +271,10 @@ function gildingProps(): Layer[] {
   return [[GILT_PANEL, 12, 1], [['.x.x.'], 12, 5], [['.yy.', 'kyyk'], 18, 4]]
 }
 
-// Drewniany trzonek, biała skuwka i złota farba na czubku pędzla.
+// Drewniany trzonek, biała skuwka i mokre złoto na czubku pędzla: ciemniejsze od wyzłoconej ramy,
+// więc czubek widać także na niej.
 function giltBrush(tip: number, y: number): Layer[] {
-  return [[['hhhj'], tip - 4, y], at('y', tip, y)]
+  return [[['hhhj'], tip - 4, y], at('o', tip, y)]
 }
 
 function gildingWork(t: number): Frame {
