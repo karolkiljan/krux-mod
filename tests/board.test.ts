@@ -337,6 +337,104 @@ test('node --test reads its default reporter: ✖ names, ℹ counts, the failing
   expect(run('node --test a.mjs', spec, true)).toMatchObject({ ok: false, passed: 1, failed: 2, failures: ['cache przy drugim żądaniu', 'walidacja brzegów'] })
 })
 
+// Wyjścia poniżej to prawdziwe przebiegi (ścieżki skrócone); kod potoku 0, więc kolor daje samo wyjście.
+test('a pytest collection error behind a pipe stays red with its module and error count', () => {
+  const tail = [
+    '    import nie_ma_modulu',
+    "E   ModuleNotFoundError: No module named 'nie_ma_modulu'",
+    '=========================== short test summary info ============================',
+    'ERROR pyimp/test_imp.py',
+    '!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!',
+    '=============================== 1 error in 0.06s ===============================',
+  ].join('\n')
+  const board = boardAfter(EMPTY_BOARD, 'Bash', { command: 'python -m pytest pyimp 2>&1 | tail -6' }, undefined, { text: tail, isError: false, who: 'Krux' })
+  expect(board.test).toMatchObject({ ok: false, failed: 1, failures: ['pyimp/test_imp.py'] })
+  expect(readiness(board, GIT)).toEqual({ ready: false, missing: ['testy padłe'] })
+  expect(run('pytest 2>&1 | tail -1', '1 error in 0.05s')).toMatchObject({ ok: false, failed: 1 })
+  expect(run('pytest | tail -2', "ERROR tests/test_x.py - ModuleNotFoundError: No module named 'x'\n1 error in 0.05s")?.failures).toEqual(["tests/test_x.py - ModuleNotFoundError: No module named 'x'"])
+  // Błędy pytest liczą się z padłymi; ostrzeżenia nie, a log z plikiem i linią to nie test.
+  expect(run('pytest | tail -1', '=== 1 failed, 3 passed, 2 warnings, 2 errors in 0.20s ===')).toMatchObject({ ok: false, passed: 3, failed: 3 })
+  expect(run('pytest -rA', 'ERROR    sync:test_jobs.py:5 lost connection\n=== 2 passed, 1 warning in 0.01s ===')).toMatchObject({ ok: true, passed: 2, failed: null, failures: [] })
+})
+
+test('a cargo build error behind a pipe stays red with the crate that did not compile', () => {
+  const tail = [
+    'error[E0425]: cannot find function `nie_ma` in this scope',
+    ' --> a/src/lib.rs:3:23',
+    '  |',
+    '3 |     #[test] fn ok() { nie_ma(); }',
+    '  |                       ^^^^^^ not found in this scope',
+    '',
+    'For more information about this error, try `rustc --explain E0425`.',
+    'error: could not compile `a` (lib test) due to 1 previous error',
+  ].join('\n')
+  expect(run('cargo test 2>&1 | tail -8', tail)).toMatchObject({ ok: false, passed: null, failed: null, failures: ['could not compile `a` (lib test) due to 1 previous error'] })
+})
+
+test('dotnet and phpunit summaries put the count after the word', () => {
+  const dotnet = '  Failed MyTests.FooTests.Bar [12 ms]\n  Error Message:\n   Assert.Equal() Failure\n\nFailed!  - Failed:     1, Passed:     5, Skipped:     0, Total:     6, Duration: 50 ms - MyTests.dll (net8.0)\n'
+  expect(run('dotnet test 2>&1 | tail -5', dotnet)).toMatchObject({ ok: false, passed: 5, failed: 1 })
+  const projects = 'Passed!  - Failed:     0, Passed:     6, Skipped:     0, Total:     6, Duration: 50 ms - A.dll (net8.0)\nPassed!  - Failed:     0, Passed:     2, Skipped:     0, Total:     2, Duration: 9 ms - B.dll (net8.0)'
+  expect(run('dotnet test', projects)).toMatchObject({ ok: true, passed: 8, failed: 0 })
+  expect(run('make test | tail -2', 'FAILURES!\nTests: 4, Assertions: 4, Failures: 1.')).toMatchObject({ ok: false, passed: null, failed: 1 })
+  expect(run('make test | tail -2', 'ERRORS!\nTests: 4, Assertions: 3, Errors: 1, Failures: 1.')).toMatchObject({ ok: false, failed: 2 })
+  expect(run('make test', 'OK, but some tests were skipped!\nTests: 5, Assertions: 5, Skipped: 1.')).toMatchObject({ ok: true, failed: 0 })
+})
+
+test('lint warnings before the tests and todo tests do not fail a passing run', () => {
+  // `npm test` z `pretest: eslint .`: same ostrzeżenia, kod 0.
+  const lint = '\n/repo/lint/a.js\n  1:7  warning  \'unused\' is assigned a value but never used  no-unused-vars\n\n✖ 1 problem (0 errors, 1 warning)\n\nTAP version 13\n# Subtest: works\nok 1 - works\n1..1\n# tests 1\n# pass 1\n# fail 0\n'
+  expect(run('npm test', lint)).toMatchObject({ ok: true, passed: 1, failed: 0, failures: [] })
+  // Błędy lintera dalej zatrzymują przebieg za potokiem.
+  expect(run('npm test 2>&1 | tail -3', '✖ 2 problems (2 errors, 0 warnings)\n')).toMatchObject({ ok: false, failures: ['2 problems (2 errors, 0 warnings)'] })
+  const tap = 'TAP version 13\n# Subtest: works\nok 1 - works\n# Subtest: flaky thing\nnot ok 2 - flaky thing # TODO not yet\n  ---\n  error: \'1 == 2\'\n  ...\nnot ok 3 - later # skip\n1..3\n# tests 3\n# pass 1\n# fail 0\n# todo 1\n'
+  expect(run('node --test', tap)).toMatchObject({ ok: true, passed: 1, failed: 0, failures: [] })
+  const spec = '✔ works (0.587263ms)\n✖ flaky thing (0.560083ms) # not yet\nℹ tests 2\nℹ pass 1\nℹ fail 0\nℹ todo 1\n\n✖ failing tests:\n\ntest at a.test.mjs:4:1\n✖ flaky thing (0.560083ms) # not yet\n  AssertionError [ERR_ASSERTION]: 1 == 2\n'
+  expect(run('node --test', spec)).toMatchObject({ ok: true, passed: 1, failed: 0, failures: [] })
+  expect(run('node --test', 'not ok 1 - flaky # TODO\n# pass 0\n# fail 1\n', true)).toMatchObject({ ok: false, failed: 1 })
+})
+
+test('counts come only from summary lines, not from logs or test names in a green run', () => {
+  // `go test -v` z `t.Log`, pytest `-rA` z przechwyconym logiem: prawdziwe zielone przebiegi.
+  const go = '=== RUN   TestB\n    b_test.go:3: 3 failed attempts tolerated\n--- PASS: TestB (0.00s)\nPASS\nok  \texample.com/m/b\t(cached)\n'
+  expect(run('go test -v ./b', go)).toMatchObject({ ok: true, passed: null, failed: null, failures: [] })
+  const pytest = [
+    '------------------------------ Captured log call -------------------------------',
+    'WARNING  sync:test_jobs.py:5 batch done: 2 failed, 8 ok',
+    '=========================== short test summary info ============================',
+    'PASSED py/test_jobs.py::test_retries_after_3_failed_attempts',
+    'PASSED py/test_jobs.py::test_logs',
+    '============================== 2 passed in 0.01s ===============================',
+  ].join('\n')
+  expect(run('pytest -rA py/test_jobs.py', pytest)).toMatchObject({ ok: true, passed: 2, failed: null })
+  const jest = ' PASS  src/jobs.test.js\n    ✓ retries after 3 failed attempts (5 ms)\n    console.log\n      batch done: 2 failed, 8 ok\n\nTest Suites: 1 passed, 1 total\nTests:       2 passed, 2 total\nSnapshots:   0 total\n'
+  expect(run('npx jest', jest)).toMatchObject({ ok: true, passed: 2, failed: null })
+  expect(run('npx vitest run', ' ✓ src/a.test.ts (3 tests) 2ms\n   ✓ counts 2 failing checks\n\n Test Files  1 passed (1)\n      Tests  3 passed (3)\n')).toMatchObject({ ok: true, passed: 3, failed: null })
+  expect(run('npx mocha', '  report\n    ✔ shows 1 failing job\n\n  5 passing (20ms)\n')).toMatchObject({ ok: true, passed: 5, failed: null })
+  // Podsumowania z etykietą, czasem i separatorami dalej dają liczby.
+  expect(run('pytest', '==== 120 passed, 2 skipped in 65.12s (0:01:05) ====')).toMatchObject({ ok: true, passed: 120 })
+  expect(run('deno test', 'ok | 2 passed (4 steps) | 0 failed (1s)')).toMatchObject({ ok: true, passed: 2, failed: 0 })
+  expect(run('make test', '     Summary [   0.010s] 3 tests run: 2 passed, 1 failed, 0 skipped', true)).toMatchObject({ passed: 2, failed: 1 })
+  expect(run('bundle exec rspec', '5 examples, 1 failure, 1 pending')).toMatchObject({ ok: false, failed: 1 })
+})
+
+test('forced colors do not hide counts or failing names', () => {
+  const pytest = '\x1b[36m\x1b[1m=========================== short test summary info ============================\x1b[0m\n\x1b[31mFAILED\x1b[0m py/test_bad.py::\x1b[1mtest_x\x1b[0m - assert 1 == 2\n\x1b[31m\x1b[31m\x1b[1m1 failed\x1b[0m, \x1b[32m2 passed\x1b[0m\x1b[31m in 0.03s\x1b[0m\x1b[0m\n'
+  expect(run('pytest --color=yes -q py 2>&1 | tail -3', pytest)).toMatchObject({ ok: false, passed: 2, failed: 1, failures: ['py/test_bad.py::test_x - assert 1 == 2'] })
+  const jest = '\x1b[1mTests:       \x1b[22m\x1b[1m\x1b[31m1 failed\x1b[39m\x1b[22m, \x1b[1m\x1b[32m12 passed\x1b[39m\x1b[22m, 13 total\n'
+  expect(run('npx jest | tail -1', jest)).toMatchObject({ ok: false, passed: 12, failed: 1 })
+  const bun = '\x1b[0m\x1b[31m(fail)\x1b[0m a > b \x1b[0m\x1b[2m[0.30ms]\x1b[0m\n\x1b[0m\x1b[32m 3 pass\x1b[0m\n\x1b[0m\x1b[31m 1 fail\x1b[0m\n'
+  expect(run('bun test', bun, true)).toMatchObject({ passed: 3, failed: 1, failures: ['a > b'] })
+})
+
+test('cargo, deno and nextest name their failing tests; the deno summary is not a test', () => {
+  const cargo = 'running 2 tests\ntest tests::ok ... ok\ntest tests::bad ... FAILED\n\nfailures:\n\n---- tests::bad stdout ----\nthread \'tests::bad\' panicked at a/src/lib.rs:4:24:\n\nfailures:\n    tests::bad\n\ntest result: FAILED. 1 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.23s\n'
+  expect(run('cargo test', cargo, true)).toMatchObject({ passed: 1, failed: 1, failures: ['tests::bad'] })
+  const deno = 'running 2 tests from ./a_test.ts\nworks ... ok (2ms)\nfails ... FAILED (3ms)\n\n ERRORS \n\nfails => ./a_test.ts:5:6\nerror: AssertionError\n\n FAILURES \n\nfails => ./a_test.ts:5:6\n\nFAILED | 1 passed | 1 failed (10ms)\n\nerror: Test failed\n'
+  expect(run('deno test', deno, true)).toMatchObject({ passed: 1, failed: 1, failures: ['fails'] })
+  expect(run('make test', '        FAIL [   0.003s] crate tests::b\n     Summary [   0.010s] 3 tests run: 2 passed, 1 failed, 0 skipped\n', true)?.failures).toEqual(['crate tests::b'])
+})
+
 test('printing a quoted test command cannot record green tests', () => {
   expect(run("printf 'x; npm test'", ' 3 pass\n 0 fail')).toBe(null)
 })

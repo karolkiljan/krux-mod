@@ -14,17 +14,19 @@ const git: KruxGit = {
   branch: 'main', upstream: 'origin/main', ahead: 0, behind: 0,
   changed: 0, untracked: 0, conflicted: 0, files: [], commits: [],
 }
+// Początek sesji w ms od epoki; commity sesji mają czas commitera od tej chwili.
+const START = Date.parse('2026-11-04T09:00:00Z')
 
 test('a daily report without reportable data is one neutral Polish line', () => {
-  expect(dayReport(null, board, threads, lore)).toBe('Brak danych do raportu dnia.')
-  expect(dayReport(git, board, threads, lore)).toBe('Brak danych do raportu dnia.')
-  expect(dayReport(null, board, threads, { ...lore, quietTurns: 7, lastMate: 'Grom', edits: 3 }))
+  expect(dayReport(null, board, threads, lore, START)).toBe('Brak danych do raportu dnia.')
+  expect(dayReport(git, board, threads, lore, START)).toBe('Brak danych do raportu dnia.')
+  expect(dayReport(null, board, threads, { ...lore, quietTurns: 7, lastMate: 'Grom', edits: 3 }, START))
     .toBe('Brak danych do raportu dnia.')
 })
 
 test('the daily report contains each populated section in neutral Polish', () => {
   const data = {
-    git: { ...git, commits: [{ hash: 'a1b2c3d', subject: 'Dodaj raport dnia', pushed: false }] },
+    git: { ...git, commits: [{ hash: 'a1b2c3d', subject: 'Dodaj raport dnia', pushed: false, at: START + 60_000 }] },
     board: {
       tasks: [
         { id: '1', subject: 'Dodać raport', status: 'completed' },
@@ -41,7 +43,7 @@ test('the daily report contains each populated section in neutral Polish', () =>
     lore: { ...lore, testRuns: 3, testFails: 1, commits: 2, tears: 1 },
   }
   const before = JSON.stringify(data)
-  expect(dayReport(data.git, data.board, data.threads, data.lore)).toBe([
+  expect(dayReport(data.git, data.board, data.threads, data.lore, START)).toBe([
     '## Commity',
     '- a1b2c3d Dodaj raport dnia',
     '',
@@ -72,8 +74,8 @@ test('the daily report contains each populated section in neutral Polish', () =>
 })
 
 test('the commit section preserves hashes, subjects and newest-first order up to ten', () => {
-  const commits = Array.from({ length: 12 }, (_, i) => ({ hash: `hash-${i + 1}`, subject: `Zmiana Żółci ${i + 1}`, pushed: i > 0 }))
-  const report = dayReport({ ...git, commits }, board, threads, lore)
+  const commits = Array.from({ length: 12 }, (_, i) => ({ hash: `hash-${i + 1}`, subject: `Zmiana Żółci ${i + 1}`, pushed: i > 0, at: START + (12 - i) * 1000 }))
+  const report = dayReport({ ...git, commits }, board, threads, lore, START)
   expect(report.split('\n')).toHaveLength(11)
   expect(report).toContain('- hash-1 Zmiana Żółci 1\n- hash-2 Zmiana Żółci 2')
   expect(report).toContain('- hash-10 Zmiana Żółci 10')
@@ -82,9 +84,27 @@ test('the commit section preserves hashes, subjects and newest-first order up to
   expect(report).not.toContain('## Plan')
 })
 
+test('only commits from this session reach the report, older repo history does not', () => {
+  // Świeża sesja w repo z historią: cudze commity sprzed miesięcy to nie robota dnia.
+  const old = [
+    { hash: '132155b', subject: 'stara zmiana 3 (kogoś innego)', pushed: true, at: Date.parse('2026-08-01T12:00:00Z') },
+    { hash: 'd9e213b', subject: 'stara zmiana 2', pushed: true, at: Date.parse('2026-08-01T11:00:00Z') },
+  ]
+  expect(dayReport({ ...git, commits: old }, board, threads, lore, START)).toBe('Brak danych do raportu dnia.')
+  // Git podaje pełne sekundy: commit z sekundy startu sesji zostaje, czas nieznany i brak startu nic nie potwierdzają.
+  const today = [
+    { hash: 'f00d123', subject: 'poprawka parsera', pushed: false, at: START + 3_600_000 },
+    { hash: 'beef456', subject: 'test parsera', pushed: false, at: START },
+    { hash: 'cafe789', subject: 'bez czasu', pushed: false },
+    ...old,
+  ]
+  expect(dayReport({ ...git, commits: today }, board, threads, lore, START + 400)).toBe('## Commity\n- f00d123 poprawka parsera\n- beef456 test parsera')
+  expect(dayReport({ ...git, commits: today }, board, threads, lore, null)).toBe('Brak danych do raportu dnia.')
+})
+
 test('failed tests include the command, result, known counts, runner and every failure', () => {
   const testRun = { command: 'claude plugin test .', ok: false, passed: 0, failed: 2, failures: ['pierwszy test', 'test Żółci'], who: 'Młot' as const }
-  expect(dayReport(null, { ...board, test: testRun }, threads, lore)).toBe([
+  expect(dayReport(null, { ...board, test: testRun }, threads, lore, START)).toBe([
     '## Ostatni przebieg testów',
     'Komenda: claude plugin test .',
     'Wynik: nieudany',
@@ -100,7 +120,7 @@ test('failed tests include the command, result, known counts, runner and every f
 test('unknown test counts are omitted instead of reported as zero or null', () => {
   expect(dayReport(null, { ...board, test: {
     command: 'pytest -q', ok: false, passed: null, failed: null, failures: [], who: 'ork',
-  } }, threads, lore)).toBe([
+  } }, threads, lore, START)).toBe([
     '## Ostatni przebieg testów',
     'Komenda: pytest -q',
     'Wynik: nieudany',
@@ -110,23 +130,23 @@ test('unknown test counts are omitted instead of reported as zero or null', () =
 
 test('each test count is independently optional', () => {
   const testRun = { command: 'npm test', ok: true, passed: null, failed: 0, failures: [], who: 'Krux' as const }
-  const onlyFailed = dayReport(null, { ...board, test: testRun }, threads, lore)
+  const onlyFailed = dayReport(null, { ...board, test: testRun }, threads, lore, START)
   expect(onlyFailed).toContain('Nieudane: 0')
   expect(onlyFailed).not.toContain('Zaliczone:')
-  const onlyPassed = dayReport(null, { ...board, test: { ...testRun, passed: 8, failed: null } }, threads, lore)
+  const onlyPassed = dayReport(null, { ...board, test: { ...testRun, passed: 8, failed: null } }, threads, lore, START)
   expect(onlyPassed).toContain('Zaliczone: 8')
   expect(onlyPassed).not.toContain('Nieudane:')
 })
 
 test('plans report the number completed for both pending and fully completed plans', () => {
   const task = { id: null, subject: 'Wpiąć raport', status: 'pending' as const }
-  expect(dayReport(null, { ...board, tasks: [task] }, threads, lore)).toBe('## Plan\nZrobione: 0/1\n- [ ] Wpiąć raport')
-  expect(dayReport(null, { ...board, tasks: [{ ...task, status: 'completed' }] }, threads, lore))
+  expect(dayReport(null, { ...board, tasks: [task] }, threads, lore, START)).toBe('## Plan\nZrobione: 0/1\n- [ ] Wpiąć raport')
+  expect(dayReport(null, { ...board, tasks: [{ ...task, status: 'completed' }] }, threads, lore, START))
     .toBe('## Plan\nZrobione: 1/1\n- [x] Wpiąć raport')
 })
 
 test('open threads appear without unrelated empty sections', () => {
-  expect(dayReport(null, board, { next: 13, items: [{ id: 12, kind: 'todo', text: 'Sprawdzić API' }] }, lore))
+  expect(dayReport(null, board, { next: 13, items: [{ id: 12, kind: 'todo', text: 'Sprawdzić API' }] }, lore, START))
     .toBe('## Otwarte wątki\n- #12 [do zrobienia] Sprawdzić API')
 })
 
@@ -138,7 +158,7 @@ test('each reportable lore counter can supply the summary by itself', () => {
     { lore: { ...lore, tears: 1 }, tests: 0, failed: 0, commits: 0, tears: 1 },
   ]
   for (const entry of cases) {
-    expect(dayReport(null, board, threads, entry.lore)).toBe([
+    expect(dayReport(null, board, threads, entry.lore, START)).toBe([
       '## Podsumowanie sesji',
       `Przebiegi testów: ${entry.tests} (nieudane: ${entry.failed})`,
       `Commity: ${entry.commits}`,

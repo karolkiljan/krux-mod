@@ -39,29 +39,86 @@ const FAILURES_LIMIT = 5
 
 // Linia padającego testu w popularnych runnerach: bun, jest, vitest, mocha, TAP,
 // reporter `node --test` (`✖`), go (`--- FAIL:`), unittest (`FAIL:`, `ERROR: test (moduł…)`),
-// pytest (`ERROR plik::test`). Gołe `ERROR` to log albo bundler, nie test.
-const FAILURE_LINE = /^\s*(?:\(fail\)|✗|✕|✖|×|--- FAIL:|FAIL(?:ED)?(?!\p{L}):?|ERROR:(?=\s+\S+\s+\()|ERROR(?=\s+\S+::)|not ok \d+(?: -)?)\s*(.*)$/u
+// pytest (`ERROR plik::test`, błąd kolekcji `ERROR plik.py`), cargo bez kompilacji
+// (`error: could not compile`). Gołe `ERROR` to log albo bundler, nie test.
+const FAILURE_LINE = /^\s*(?:\(fail\)|✗|✕|✖|×|--- FAIL:|FAIL(?:ED)?(?!\p{L}):?|ERROR:(?=\s+\S+\s+\()|ERROR(?=\s+\S+::|\s+\S+\.py(?:\s+-\s|\s*$))|error:(?=\s+could not compile\b)|not ok \d+(?: -)?)\s*(.*)$/u
+
+// Nazwa przed wynikiem: cargo (`test tests::bad ... FAILED`), deno (`fails ... FAILED (3ms)`).
+const FAILED_AFTER = [/^test (\S+) \.\.\. FAILED$/u, /^\s*(.+?) \.\.\. FAILED \(\d+(?:\.\d+)?m?s\)$/u]
 
 // Czas na końcu nazwy: `[3ms]`, `(5 ms)`, `(0.00s)`, `4ms`.
 const TIMING = /\s*(?:\[\d+(?:\.\d+)?\s*m?s\]|\(\d+(?:\.\d+)?\s*m?s\)|\d+(?:\.\d+)?m?s)$/u
 
-// Nazwa bez czasu i bez reszty po tabulatorze (go: pakiet, czas). Pusta albo
-// podsumowanie w nawiasie (`FAILED (failures=1)`) i nagłówek z dwukropkiem
-// (`✖ failing tests:`) to nie test.
+// Test `todo` albo `skip` nie pada: dyrektywa TAP (`not ok 2 - x # TODO`) i reporter
+// `node --test`, który po czasie pisze samą wiadomość dyrektywy (`✖ x (0.5ms) # not yet`).
+const DIRECTIVE = /(?:^|\s)#\s*(?:todo|skip)\b|\(\d+(?:\.\d+)?ms\) # /iu
+
+// Nazwa bez czasu, bez reszty po tabulatorze (go: pakiet, czas) i bez czasu nextest
+// na początku (`FAIL [   0.003s] crate tests::b`). Pusta, podsumowanie w nawiasie
+// (`FAILED (failures=1)`), nagłówek z dwukropkiem (`✖ failing tests:`), podsumowanie
+// deno (`FAILED | 1 passed | 1 failed`) i ESLint bez błędów (`✖ 1 problem (0 errors, …)`) to nie test.
 function failureName(line: string): string | null {
-  const raw = FAILURE_LINE.exec(line)?.[1]
-  if (raw === undefined) return null
-  const name = raw.split('\t')[0]!.replace(TIMING, '').trim()
-  return name === '' || name.startsWith('(') || name.endsWith(':') ? null : name
+  const raw = FAILURE_LINE.exec(line)?.[1] ?? FAILED_AFTER.map(pattern => pattern.exec(line)?.[1]).find(name => name !== undefined)
+  if (raw === undefined || DIRECTIVE.test(raw)) return null
+  const name = raw.split('\t')[0]!.replace(TIMING, '').replace(/^\[\s*\d+(?:\.\d+)?s\]\s*/u, '').trim()
+  return name === '' || name.startsWith('(') || name.startsWith('|') || name.endsWith(':') || /^\d+ problems? \(0 errors?,/u.test(name) ? null : name
 }
 
-// Ostatnie trafienie: podsumowanie stoi na końcu, a wcześniejsze liczby to pliki,
-// zestawy albo nazwy testów („returns 2 failed items”). `node --test` pisze
-// liczbę po słowie: `# pass 4` w TAP, `ℹ pass 4` w domyślnym reporterze, stąd druga grupa.
-function lastCount(output: string, pattern: RegExp): number | null {
+// Linia podsumowania to same frazy `liczba słowo`, etykiety runnerów, czasy i separatory
+// (`Tests:  1 failed, 12 passed, 13 total`, `=== 2 passed in 0.12s ===`, ` 3 pass`,
+// `ok | 2 passed | 0 failed (10ms)`). Log, nazwa testu i komunikat zostawiają inne słowa
+// („b_test.go:3: 3 failed attempts”, „batch done: 2 failed, 8 ok”), więc liczb nie dają.
+const SUMMARY_LABELS: ReadonlySet<string> = new Set(['test', 'tests', 'files', 'suites', 'summary', 'run', 'ok', 'failed'])
+
+function isSummary(line: string): boolean {
+  const rest = line
+    .replace(/\bin \d+(?:\.\d+)?s\b(?:\s*\(\d+:\d{2}:\d{2}\))?/gu, ' ')
+    .replace(/[[(]\s*\d+(?:\.\d+)?\s*m?s\s*[\])]/gu, ' ')
+    .replace(/\(\d+\)/gu, ' ')
+    .replace(/(?<![\p{L}\d])\d+ \p{L}+/gu, ' ')
+    .replace(/[=,|:;#!.()\-\s]+/gu, ' ')
+    .trim()
+  return rest === '' || rest.split(' ').every(word => SUMMARY_LABELS.has(word.toLowerCase()))
+}
+
+// `node --test` pisze liczbę po słowie: `# pass 4` w TAP, `ℹ pass 4` w domyślnym reporterze.
+const TAP_COUNT = /^(?:#|ℹ) (pass|fail) (\d+)$/u
+const PASSED = /(?<![\p{L}\d])(\d+) pass(?:ed|ing)?(?!\p{L})/gu
+// Błędy pytest (`1 failed, 2 errors in 0.20s`, błąd kolekcji `1 error in 0.06s`) psują przebieg jak padłe testy.
+const FAILED = /(?<![\p{L}\d])(\d+) (?:fail(?:ed|ing|ures?)?(?!\p{L})|errors?(?= in \d))/gu
+
+// Ostatnia linia podsumowania z tą liczbą: podsumowanie stoi na końcu, a wcześniejsze
+// to pliki albo zestawy. Frazy w jednej linii się sumują (padłe i błędy pytest).
+function lastCount(lines: readonly string[], word: 'pass' | 'fail', pattern: RegExp): number | null {
   let found: number | null = null
-  for (const match of output.matchAll(pattern)) found = Number(match[1] ?? match[2])
+  for (const line of lines) {
+    const tap = TAP_COUNT.exec(line)
+    if (tap !== null) {
+      if (tap[1] === word) found = Number(tap[2])
+      continue
+    }
+    if (!isSummary(line)) continue
+    const counts = [...line.matchAll(pattern)]
+    if (counts.length > 0) found = counts.reduce((sum, count) => sum + Number(count[1]), 0)
+  }
   return found
+}
+
+// Liczba po słowie, linia na projekt albo przebieg: dotnet (`Failed!  - Failed:     1, Passed:     5, …`)
+// i phpunit (`Tests: 4, Assertions: 4, Errors: 1, Failures: 1.`, bez liczby zaliczonych).
+function labeledCounts(lines: readonly string[]): { passed: number | null; failed: number | null } {
+  let passed: number | null = null
+  let failed: number | null = null
+  for (const line of lines) {
+    const dotnet = /^\s*(?:Failed|Passed)!\s+-\s+Failed:\s+(\d+),\s+Passed:\s+(\d+),/u.exec(line)
+    if (dotnet !== null) {
+      passed = (passed ?? 0) + Number(dotnet[2])
+      failed = (failed ?? 0) + Number(dotnet[1])
+    }
+    const phpunit = /^Tests: \d+, Assertions: \d+((?:, [\w ]+: \d+)*)\.$/u.exec(line)
+    if (phpunit !== null) failed = [...phpunit[1]!.matchAll(/\b(?:Errors|Failures): (\d+)/gu)].reduce((sum, count) => sum + Number(count[1]), failed ?? 0)
+  }
+  return { passed, failed }
 }
 
 // Cargo pisze podsumowanie na każdy binarny test: liczby się sumują.
@@ -81,14 +138,20 @@ function unittestFailures(output: string): number | null {
   return failed
 }
 
+// Sekwencje CSI (kolory): przy wymuszonych kolorach (`--color=yes`, `FORCE_COLOR`)
+// stoją przed liczbami i znacznikami, więc parser czyta tekst bez nich.
+const ANSI = /\x1b\[[0-?]*[ -\/]*[@-~]/gu
+
 // Przebieg testów z wyjścia komendy: liczby, gdy runner je podał, i nazwy padających.
 // Padłe testy w wyjściu wygrywają z kodem 0: `npm test | tail` kończy się kodem `tail`.
 export function testRunOf(command: string, call: BoardCall): KruxTestRun {
-  const output = call.text
-  const failures = [...new Set(output.split(/\r?\n/u).flatMap(line => failureName(line) ?? []))]
+  const output = call.text.replace(ANSI, '')
+  const lines = output.split(/\r?\n/u)
+  const failures = [...new Set(lines.flatMap(line => failureName(line) ?? []))]
   const cargo = cargoCounts(output)
-  const passed = cargo?.passed ?? lastCount(output, /(?<![\p{L}\d])(\d+) pass(?:ed|ing)?(?!\p{L})|^(?:#|ℹ) pass (\d+)$/gmu)
-  const failed = cargo?.failed ?? unittestFailures(output) ?? lastCount(output, /(?<![\p{L}\d])(\d+) fail(?:ed|ing|ures?)?(?!\p{L})|^(?:#|ℹ) fail (\d+)$/gmu)
+  const labeled = labeledCounts(lines)
+  const passed = cargo?.passed ?? labeled.passed ?? lastCount(lines, 'pass', PASSED)
+  const failed = cargo?.failed ?? unittestFailures(output) ?? labeled.failed ?? lastCount(lines, 'fail', FAILED)
   return {
     command,
     ok: !call.isError && !(failed !== null && failed > 0) && failures.length === 0,

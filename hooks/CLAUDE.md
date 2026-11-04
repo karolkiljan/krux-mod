@@ -34,7 +34,7 @@ hooks/outcome.ts          decyzja o nieukończonym Bash: `run_in_background`, `b
 hooks/terminal-text.ts    szerokość komórek terminala
 hooks/board.ts            tablica Sztolni: `boardAfter`, `testRunOf`, `usageOf`; plan, testy, gotowość
 hooks/muster.ts           apel hordy w Sztolni
-hooks/git.ts              czysty odczyt `git status --porcelain=v2 --branch` i `git log` (`gitOf`: liczby, pliki, commity z `pushed`); `GIT_CHECK` i `GIT_CHECK_CACHED` dla `diff --check` drzewa i indeksu; `--no-optional-locks` (nie ruszają indeksu Morry), `core.fsmonitor=false` (bez komendy z `.git/config`), `core.quotePath=false`
+hooks/git.ts              czysty odczyt `git status --porcelain=v2 --branch` i `git log` (`gitOf`: liczby, pliki, commity z `pushed` i czasem commitera, `upstreamGone`); `GIT_CHECK` i `GIT_CHECK_CACHED` dla `diff --check` drzewa i indeksu; `--no-optional-locks` (nie ruszają indeksu Morry), `core.fsmonitor=false` (bez komendy z `.git/config`), `core.quotePath=false`
 hooks/threads.ts          wątki Sztolni
 hooks/report.ts           raport dnia (`dayReport`)
 hooks/shaft.ts            panel Sztolni
@@ -69,7 +69,7 @@ Macierz mówi, co uruchamia zdarzenie i jakich pułapek silnika pilnować. Progi
 | `command.run` `/krux` | argumenty | przełącznik z notką w `context`, `status`, pomoc albo panel |
 | `/krux status` | zawsze | stan trybów; konkret `on`, `auto` (sam `autoKonkret`) albo `off`; bez zapisu |
 | `/krux zapisz <tekst>` | niepusta notatka | `replay`, potem `saveThread` w `update` (id wspólne z `watki`), toast „Wątek #N zapisany.”; duplikat: „Notatka już w otwartych wątkach.”; pusty tekst daje pomoc |
-| `/krux raport` | zawsze | `replay`, potem `{ text: dayReport(git, board, threads, lore) }`; bez modelu i panelu |
+| `/krux raport` | zawsze | `replay`, potem `{ text: dayReport(git, board, threads, lore, since) }` (`since`: `startedAt` z `$.session.usage()`); bez modelu i panelu |
 | `/krux czat`, przycisk 7 | zawsze | przełącznik `czat` (domyślnie off, `mode.czat`), neutralna notka |
 | `/krux sztolnia`, przycisk 6, `session.start` | tryb `sztolnia` | panel `sztolnia` (`columns: 56`); bez pytania silnik stawia go od 144 kolumn |
 | `/krux dziennik` | zawsze | `shaftTab = dziennik`; zamknięta, czekająca albo ukryta Sztolnia dostaje tryb on i `open` |
@@ -83,7 +83,7 @@ Macierz mówi, co uruchamia zdarzenie i jakich pułapek silnika pilnować. Progi
 | `turn.start`, `tool.call`, `turn.complete` | wątek główny | licznik uderzeń tury i sesji, opis roboty dla paska; wynik `tool.call` do kroniki |
 | `turn.step` | główny albo kumpel na scenie | `thinking` → `think`, `text` → `write`, `tool` → `describeToolAhead` (poza `Bash`: jego rodzaj zna dopiero `tool.call`); `startedAt` tylko przy zmianie rodzaju; błąd obserwacji gubi scenę, nie strumień |
 | `tool.call` | główny, zdarzenie kroniki | humor (`mood.ts`), wtręt kumpla z fachem na 4 s (`$.clock.after` po zapisie dymka), co drugie zdarzenie (`seed` parzysty) po nim 4 s odszczekania pary (`reply`), znak reakcji Kruxa w `cues`; bez zdarzenia humor gaśnie po 8 wywołaniach. Zdarzenia rozpoznaje `workOf`: kolor testów jak tablica (`testPassed`), commit tylko prawdziwy `git commit` (także za `git --no-pager`), zawał nie z samych odczytów (także `diff`, `test`/`[`, `git rev-parse`, `git merge-base` z kodem 1); Bash w tle, także za `&`, nie daje ukończonych faktów |
-| `tool.call` | główny, bez `deny` | tablica (`boardAfter`): plan z `TodoWrite`/`TaskCreate`/`TaskUpdate`; przebieg testów (`workOf` = `test`, nie w tle) z ostatniego podsumowania, z nazwami padłych i `✗` mimo kodu 0; zapis przy zmianie |
+| `tool.call` | główny, bez `deny` | tablica (`boardAfter`): plan z `TodoWrite`/`TaskCreate`/`TaskUpdate`; przebieg testów (`workOf` = `test`, nie w tle) z ostatniej linii podsumowania (bez kolorów ANSI; log ani nazwa testu z „N failed” nią nie są), z nazwami padłych (bez `todo`, `skip` i ostrzeżeń ESLint) i `✗` mimo kodu 0, także przy błędzie kolekcji pytest i kompilacji cargo; zapis przy zmianie |
 | `tool.call` | główny albo kumpel, edycja lub testy, bez `deny` | jeden `$.clock.now()` na `boardStep`; edycja poza dokumentacją → `editedAt`, przebieg → `test.at`; późniejsza edycja kodu daje `◌ nieświeże` |
 | `tool.call` z planem | zadanie `in_progress` ze `startedAt` | `tickBoard`: zapis `musterNow` przy 15 min, potem co pełną minutę; nowy plan anuluje stary zegar (test), brak zadań w toku kończy zegar |
 | `tool.call` | `test-fail`, główny albo kumpel | `CrewEvent.failure?` niesie nazwę padłego testu z bieżącego wyniku do `eventLine` |
@@ -167,10 +167,10 @@ Uzupełniają zasady przekrojowe z `.claude/CLAUDE.md` i ich nie powtarzają. Uz
 - Rodzaj roboty narzędzia rozstrzyga tylko `workOf` (`voice.ts`); tablica, scena i podpis `Bash` (`bashKind`) biorą go z tej samej decyzji (test).
 - Czas tablicy: jeden odczyt zegara w `boardStep`; edycje główne i kumpla (także błąd bez `deny`) → `editedAt`, testy → `at`. Dokumentacja (`.md`, `.mdx`, `.txt`, `.rst`, `.adoc`, bez wielkości liter) nie zmienia `editedAt`; brak znanej ścieżki to edycja. `deny` nie rusza tablicy; plan należy do głównego wątku. `testsStale` wymaga obu czasów i `editedAt > test.at`.
 - `startedAt` zadania: wejście w `in_progress`, zostaje przy powtórzeniu statusu, znika przy wyjściu. `stuckMinutes` daje pełne minuty od 15 min. Stary harmonogram zegara planu nie nadpisze nowego, a nowy plan anuluje jego zegar, więc w kolejce czeka najwyżej jeden; `musterNow` to wspólna zależność panelu i skrótu pasa.
-- Odczyty gita koalescowane: równoległe żądania czekają na wspólny odczyt, potem najwyżej jeden zaległy. Każda komenda 5 s, `--no-optional-locks` i `-c core.fsmonitor=false`: git moda biegnie poza sandboksem, więc nie uruchamia komendy z konfiguracji repo (test na prawdziwym repo). `whitespace` z kodów obu kontroli: dowolne 2 → `false`, dwa 0 → `true`, reszta `null`. Toast `behind` porównuje zapisane odczyty; pierwszy, równy i mniejszy milczą.
+- Odczyty gita koalescowane: równoległe żądania czekają na wspólny odczyt, potem najwyżej jeden zaległy. Każda komenda 5 s, `--no-optional-locks` i `-c core.fsmonitor=false`: git moda biegnie poza sandboksem, więc nie uruchamia komendy z konfiguracji repo (test na prawdziwym repo). `whitespace` z kodów obu kontroli: dowolne 2 → `false`, dwa 0 → `true`, reszta `null`. Toast `behind` porównuje zapisane odczyty; pierwszy, równy i mniejszy milczą. Upstream bez `branch.ab` (gałąź usunięta na zdalnym, `[gone]`) to `upstreamGone`: panel pisze „zniknął”, nie „równo z upstreamem” (test na prawdziwym repo).
 - `readiness`: zielone i świeże testy, `whitespace !== false`, brak konfliktów; nieznane białe znaki nie blokują. Linia gotowości tylko przy `changed + untracked > 0`; każdy brak ma tekst i znak.
 - `autoKonkret`, `turnAt`, `seenAt`, `lastPrompt` żyją tylko w `$.state` (`lastPrompt` nie wraca po `replay`). Auto konkret wynika z limitów planu, nie kontekstu; każdy odczyt i pomiar ma rosnącą wersję, flagę przypisuje w `update` tylko najnowszy, start sesji i `clear/resume/fork` unieważniają starsze i czytają limity od nowa. Ręczny konkret przeżywa reset limitów i ma pierwszeństwo w `statusLine`. Kumple nie ruszają zegara głównej tury; `seenAt` zmieniają tylko prompty z `fromPerson`. Toasty czasu i powrotu nic nie dokładają do modelu.
-- `saveThread` dzieli numerację, deduplikację i limity z `watki`; duplikat nie zużywa id. Raport dnia: wyłącznie dane sesji, do 10 commitów, bez modelu i głosu orka.
+- `saveThread` dzieli numerację, deduplikację i limity z `watki`; duplikat nie zużywa id. Raport dnia: wyłącznie dane sesji, do 10 commitów z czasem commitera od startu sesji (starsza historia repo i commit bez czasu nie wchodzą), bez modelu i głosu orka.
 
 ### Pas, scena i dymek
 

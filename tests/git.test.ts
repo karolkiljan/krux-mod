@@ -52,13 +52,21 @@ test('a clean branch even with its upstream has nothing to say, one without upst
   expect(gitOf('# branch.oid (initial)\n# branch.head (detached)\n').branch).toBe('(detached)')
 })
 
+test('an upstream without ahead and behind counts is gone, not even', () => {
+  // Po scaleniu PR i `fetch --prune` porcelain zostawia `branch.upstream` bez `branch.ab`.
+  const gone = gitOf('# branch.oid abc\n# branch.head feature\n# branch.upstream origin/feature\n')
+  expect(gone).toMatchObject({ upstream: 'origin/feature', upstreamGone: true, ahead: 0, behind: 0 })
+  expect(gitOf('# branch.head main\n# branch.upstream origin/main\n# branch.ab +0 -0\n').upstreamGone).toBeUndefined()
+  expect(gitOf('# branch.head feature\n').upstreamGone).toBeUndefined()
+})
+
 test('commits absent from upstream wait to be pushed; without upstream none counts as pushed', () => {
-  const log = 'a6eb0c5-full\ta6eb0c5\tfeat: the Sztolnia shows the repo\n7d3213e-full\t7d3213e\tchore: release 0.6.1\nf610c3e-full\tf610c3e\tfix: a\tb\n'
+  const log = 'a6eb0c5-full\ta6eb0c5\t1790000300\tfeat: the Sztolnia shows the repo\n7d3213e-full\t7d3213e\t1790000200\tchore: release 0.6.1\nf610c3e-full\tf610c3e\t1790000100\tfix: a\tb\n'
   const ahead = gitOf('# branch.head main\n# branch.upstream origin/main\n# branch.ab +2 -0\n', log, 'a6eb0c5-full\n7d3213e-full\n')
   expect(ahead.commits).toEqual([
-    { hash: 'a6eb0c5', subject: 'feat: the Sztolnia shows the repo', pushed: false },
-    { hash: '7d3213e', subject: 'chore: release 0.6.1', pushed: false },
-    { hash: 'f610c3e', subject: 'fix: a\tb', pushed: true },
+    { hash: 'a6eb0c5', subject: 'feat: the Sztolnia shows the repo', pushed: false, at: 1_790_000_300_000 },
+    { hash: '7d3213e', subject: 'chore: release 0.6.1', pushed: false, at: 1_790_000_200_000 },
+    { hash: 'f610c3e', subject: 'fix: a\tb', pushed: true, at: 1_790_000_100_000 },
   ])
   expect(gitOf('# branch.head feature\n', log).commits.every(commit => !commit.pushed)).toBe(true)
   expect(gitOf('# branch.head main\n').commits).toEqual([])
@@ -66,7 +74,7 @@ test('commits absent from upstream wait to be pushed; without upstream none coun
 
 test('git reads disable optional index locks and keep non-ASCII paths readable', () => {
   expect([...GIT_STATUS]).toEqual(['git', '--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'core.quotePath=false', 'status', '--porcelain=v2', '--branch'])
-  expect([...GIT_LOG]).toEqual(['git', '--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'core.quotePath=false', 'log', '--format=%H%x09%h%x09%s', '-n', '10'])
+  expect([...GIT_LOG]).toEqual(['git', '--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'core.quotePath=false', 'log', '--format=%H%x09%h%x09%ct%x09%s', '-n', '10'])
   expect(gitOf('# branch.head main\n? kawał.txt\n1 .M N... 100644 100644 100644 aaa bbb żółw.txt').files).toEqual([
     { code: '?', path: 'kawał.txt' }, { code: 'M', path: 'żółw.txt' },
   ])

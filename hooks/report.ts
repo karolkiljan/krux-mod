@@ -7,9 +7,13 @@ const THREAD_LABEL: Record<KruxThreadKind, string> = {
   ask: 'czeka na decyzję',
 }
 
-export function dayReport(git: KruxGit | null, board: KruxBoard, threads: KruxThreads, lore: KruxLore): string {
+// `since` to początek sesji w ms od epoki (`$.session.usage().startedAt`): starsze commity
+// to historia repo, nie robota sesji. Bez początku albo czasu commita nic nie potwierdza sesji.
+export function dayReport(git: KruxGit | null, board: KruxBoard, threads: KruxThreads, lore: KruxLore, since: number | null): string {
   const sections: string[][] = []
-  const commits = git?.commits.slice(0, 10) ?? []
+  // Git podaje czas w pełnych sekundach: commit z sekundy startu też należy do sesji.
+  const from = since === null ? null : Math.floor(since / 1000) * 1000
+  const commits = from === null ? [] : (git?.commits ?? []).filter(commit => commit.at !== undefined && commit.at >= from).slice(0, 10)
   if (commits.length > 0) {
     sections.push(['## Commity', ...commits.map(commit => `- ${commit.hash} ${commit.subject}`)])
   }
