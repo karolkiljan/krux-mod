@@ -208,6 +208,8 @@ test('test runs behind wrappers, monorepo filters and other ecosystems are still
     'php artisan test',
     'composer test',
     'tox -e py311',
+    'tox',
+    'nox -s tests',
     'cargo nextest run',
     'npx cypress run',
     'swift test',
@@ -227,6 +229,10 @@ test('test runs behind wrappers, monorepo filters and other ecosystems are still
     ['npx cypress open', 'dig'],
     ['make -j4', 'build'],
     ['timeout 5 ./deploy.sh', 'dig'],
+    // Sesja tox/nox od lintu, typów albo dokumentacji to nie próba testów.
+    ['tox -e lint', 'dig'],
+    ['nox -s typecheck', 'dig'],
+    ['tox -e docs', 'dig'],
   ] as const) {
     expect([command, workOf('Bash', { command })]).toEqual([command, kind])
   }
@@ -323,7 +329,8 @@ test('the kind of request is read from the prompt alone', async () => {
 
 // Przy wyjaśnieniu miernik nie sądzi długości (hooks/CLAUDE.md): grzeczna forma i wtręt
 // „ok,” na przedzie nie mogą zrobić z prośby o wyjaśnienie pogawędki ani roboty.
-test('a polite or prefixed request to explain is still explain, a bare interjection stays chat', () => {
+// Krótka rozmowa za wtrętem („Dzięki za pomoc!”, „Hej Krux”) to dalej pogawędka.
+test('a polite or prefixed request to explain is still explain, an interjection with small talk stays chat', () => {
   for (const text of [
     'Możesz wyjaśnić, jak działa cache?',
     'możesz mi wytłumaczyć, czemu to działa',
@@ -333,9 +340,10 @@ test('a polite or prefixed request to explain is still explain, a bare interject
   ]) {
     expect([text, promptKind(text)]).toEqual([text, 'explain'])
   }
-  for (const text of ['ok, dzięki', 'dzięki!', 'ok', 'hej, siema']) {
+  for (const text of ['ok, dzięki', 'dzięki!', 'ok', 'hej, siema', 'Dzięki za pomoc!', 'Hej Krux', 'Siema, Krux!', 'dzięki, działa', 'Super robota!', 'ok, rozumiem']) {
     expect([text, promptKind(text)]).toEqual([text, 'chat'])
   }
+  expect(formatHint('Dzięki za pomoc!')).toBe(FORMAT_HINT.chat)
   for (const text of ['ok, dodaj test dla parsera', 'okej, usuń tabelę users', 'Możesz dodać kolumnę email?', 'ok, możesz dodać kolumnę?']) {
     expect([text, promptKind(text)]).toEqual([text, null])
   }
@@ -407,10 +415,18 @@ test('a polite, plural or unaccented Polish request to destroy data gets the ris
     'usuń ostatnie 3 commity',
     'skasuj commit',
     'możesz puścić migrację na produkcji?',
+    // Przeczenie stoi przed innym słowem albo za przecinkiem: prośba zostaje prośbą.
+    'nie, usuń bazę',
+    'Nie ruszaj kodu, usuń tabelę logs',
   ]) {
     expect([text, riskHint(text)]).toEqual([text, RISK_HINT])
   }
   for (const text of [
+    // Zakaz buduje się z formy niedokonanej („nie usuwaj”), więc „nie” przed czasownikiem to nie prośba.
+    'Dodaj kolumnę email, ale nie usuwaj danych z tabeli users',
+    'Nigdy nie usuwaj gałęzi main',
+    'Nie usuwać bazy!',
+    'Tylko nie kasuj historii!',
     'usuwanie literówek',
     'usun literowke',
     'wyczyść kod',
@@ -446,6 +462,11 @@ test('split, long and bundled flags are as irreversible as the bundled short one
     'git checkout --force main',
     'git switch -f main',
     'git switch --discard-changes main',
+    'rm -rfv build',
+    'rm -rI build',
+    'rm -rf $(dirname x)',
+    'sudo rm -rf /tmp/x',
+    'git rm -rfq src',
   ]) {
     expect([text, isDestructive(text)]).toEqual([text, true])
   }
@@ -455,6 +476,13 @@ test('split, long and bundled flags are as irreversible as the bundled short one
     'git rm -r --cached node_modules',
     'docker run --rm -v data:/x alpine',
     'docker rm -f web',
+    // Prymitywy find z „r” w `$(…)`, plik o nazwie `-rf` za `--` i podkomenda `rm`
+    // menedżera pakietów to nie rekurencyjne `rm`.
+    "rm $(find build -name '*.o' -print)",
+    'rm $(find . -type f -newer stamp)',
+    'rm -- -rf',
+    'pnpm rm -r lodash',
+    'npm rm -r foo',
     'git clean -n',
     'git clean -nd',
     'git push -u origin feature/x',
@@ -464,6 +492,22 @@ test('split, long and bundled flags are as irreversible as the bundled short one
     'git branch -f main HEAD~1',
   ]) {
     expect([text, isDestructive(text)]).toEqual([text, false])
+  }
+})
+
+// `riskHint` biegnie synchronicznie w `prompt.submit`: długi zlepek liter albo łańcuch
+// `update … set` bez `=` nie może zawiesić hooka cofaniem wzorca.
+test('long flag bundles and UPDATE chains are judged without catastrophic backtracking', () => {
+  for (const text of [
+    'git branch -' + 'df'.repeat(1000) + '1',
+    'git push -' + 'f'.repeat(10000) + '1',
+    'git checkout -' + 'f'.repeat(10000) + '1',
+    'update t u set a b c '.repeat(1000),
+    'update t set a b c '.repeat(1000),
+  ]) {
+    const start = Date.now()
+    expect(isDestructive(text)).toBe(false)
+    expect([text.slice(0, 24), Date.now() - start < 250]).toEqual([text.slice(0, 24), true])
   }
 })
 
@@ -477,6 +521,8 @@ test('deleting cloud resources and Mongo collections is irreversible, listing th
     'aws s3api delete-bucket --bucket kubel',
     'aws rds delete-db-instance --db-instance-identifier prod',
     'aws ec2 terminate-instances --instance-ids i-1',
+    'aws --profile prod ec2 terminate-instances --instance-ids i-1',
+    'aws --region eu-west-1 --profile p s3api delete-object --bucket b --key k',
     'tofu destroy',
     'terragrunt run-all destroy',
     'cdk destroy --force',
@@ -492,6 +538,10 @@ test('deleting cloud resources and Mongo collections is irreversible, listing th
     'az group list',
     'aws s3api list-buckets',
     'aws ec2 describe-instances',
+    // Nazwa zasobu albo wartość opcji z „delete-” to nie operacja usuwania.
+    'aws lambda invoke --function-name delete-old out.json',
+    'aws ssm get-parameter --name delete-flag',
+    'aws logs tail /aws/lambda/x --filter-pattern terminate-',
     'tofu plan',
     'terragrunt plan',
     'cdk diff',
@@ -754,11 +804,12 @@ test('arithmetic bit shifts are not heredocs and keep later test commands visibl
   }
 })
 
+// Angielskie „publish” liczy się tylko całym słowem: identyfikator (`publishConfig`, `publisher.ts`) to nie wydanie.
 test('a release question is recognised, performance talk is not', () => {
-  for (const text of ['Wypuszczamy to dziś na produkcję?', 'Co sprawdzić przed wydaniem?', 'można deployować?', 'wdrażamy jutro', 'scalamy PR?', 'wdróż to na staging', 'zmerguj PR', 'zdeployuj', 'npm publish', 'opublikuj paczkę']) {
+  for (const text of ['Wypuszczamy to dziś na produkcję?', 'Co sprawdzić przed wydaniem?', 'można deployować?', 'wdrażamy jutro', 'scalamy PR?', 'wdróż to na staging', 'zmerguj PR', 'zdeployuj', 'npm publish', 'npm publish.', 'zrób publish paczki', 'opublikuj paczkę']) {
     expect([text, asksRelease(text)]).toEqual([text, true])
   }
-  for (const text of ['A co z wydajnością przy dużym ruchu?', 'napraw testy', 'Jak poszło?', 'popraw opis produktu', 'zmień kolor przycisku']) {
+  for (const text of ['A co z wydajnością przy dużym ruchu?', 'napraw testy', 'Jak poszło?', 'popraw opis produktu', 'zmień kolor przycisku', 'Popraw publisher.ts', 'czemu publishConfig nie działa?', 'npm run publish-docs pada', 'Popraw publish.ts']) {
     expect([text, asksRelease(text)]).toEqual([text, false])
   }
 })

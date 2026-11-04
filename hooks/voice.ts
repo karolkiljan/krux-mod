@@ -107,7 +107,8 @@ const DESTRUCTIVE = new RegExp(
     // Git: historia zdalna i lokalna, schowki i zmiany w drzewie roboczym (te bez reflogu).
     String.raw`force[- ]push`,
     // Krótkie flagi bywają sklejone (`-uf`, `-fu`): `-f` i `-d` liczą się w każdym zlepku.
-    String.raw`push\s+(?:${ARG}\s+){0,4}?(?:-[a-z]*[fd][a-z]*|--force(?:-with-lease)?|--mirror|--delete)(?![\p{L}\d-])`,
+    // Zlepek sprawdza lookahead, nie dwa `[a-z]*` wokół litery: długi token nie cofa się kwadratowo.
+    String.raw`push\s+(?:${ARG}\s+){0,4}?(?:-(?=[a-z]*[fd])[a-z]+|--force(?:-with-lease)?|--mirror|--delete)(?![\p{L}\d-])`,
     String.raw`push\s+${ARG}\s+[:+][\p{L}\d]`,
     String.raw`reset\s+--hard`,
     String.raw`clean\s+-[a-z]*f`,
@@ -116,7 +117,7 @@ const DESTRUCTIVE = new RegExp(
     String.raw`git\s+${GIT_OPTS}checkout\s+(?:${ARG}\s+)?--\s+\S`,
     String.raw`git\s+${GIT_OPTS}checkout\s+\.(?:/\S*)?(?!\S)`,
     // Wymuszona zmiana gałęzi porzuca zmiany w drzewie roboczym.
-    String.raw`git\s+${GIT_OPTS}(?:checkout|switch)\s+(?:${ARG}\s+){0,3}?(?:-[a-z]*f[a-z]*|--force|--discard-changes)(?![\p{L}\d-])`,
+    String.raw`git\s+${GIT_OPTS}(?:checkout|switch)\s+(?:${ARG}\s+){0,3}?(?:-(?=[a-z]*f)[a-z]+|--force|--discard-changes)(?![\p{L}\d-])`,
     String.raw`stash\s+(?:clear|drop)(?![\p{L}\d-])`,
     String.raw`reflog\s+(?:expire|delete)`,
     String.raw`gc\s+(?:${ARG}\s+){0,3}?--prune=now`,
@@ -151,7 +152,9 @@ const DESTRUCTIVE = new RegExp(
     // Chmury: podkomenda usuwania stoi za grupą zasobów (`gcloud sql instances delete`).
     String.raw`gcloud\s+(?:${ARG}\s+){0,5}?(?:delete|rm)(?![\p{L}\d-])`,
     String.raw`az\s+(?:[a-z][a-z\d-]*\s+){1,4}delete(?:-batch)?(?![\p{L}\d-])`,
-    String.raw`aws\s+(?:${ARG}\s+){1,4}?(?:delete|terminate)-`,
+    // Operacja `aws` stoi zaraz za usługą; opcje globalne tylko przed nią, więc wartość
+    // opcji (`--function-name delete-old`) nie udaje operacji.
+    String.raw`aws\s+(?:--[a-z-]+(?:[ =](?!-)\S+)?\s+){0,3}[a-z][a-z\d-]*\s+(?:delete|terminate)-`,
     String.raw`eksctl\s+delete(?![\p{L}\d-])`,
     String.raw`kubectl\s+(?:${ARG}\s+){0,4}?delete(?![\p{L}\d-])`,
     String.raw`helm\s+(?:${ARG}\s+){0,4}?(?:uninstall|delete)(?![\p{L}\d-])`,
@@ -172,7 +175,7 @@ const DESTRUCTIVE = new RegExp(
 // `-d` razem z `-f` (`-d -f`, `-df`, `--delete --force`) to to samo co `-D`.
 const BRANCH_FORCE_DELETE = [
   String.raw`-[a-zA-Z]*D`,
-  String.raw`-[a-z]*(?:d[a-z]*f|f[a-z]*d)[a-z]*(?![\p{L}\d-])`,
+  String.raw`-(?=[a-z]*d)(?=[a-z]*f)[a-z]+(?![\p{L}\d-])`,
   String.raw`(?:-d|--delete)\s+(?:${ARG}\s+){0,2}?(?:-f|--force)(?![\p{L}\d-])`,
   String.raw`(?:-f|--force)\s+(?:${ARG}\s+){0,2}?(?:-d|--delete)(?![\p{L}\d-])`,
 ].join('|')
@@ -183,14 +186,24 @@ const DESTRUCTIVE_CASED = new RegExp(
 
 // Rekurencyjne `rm` kasuje całe drzewo, także rozdzielonymi albo długimi flagami
 // (`rm -r -f`, `rm --recursive`). `git rm -r` zdejmuje pliki z gita, a te wracają z historii;
-// zmiany w drzewie roboczym przepadają dopiero z `-f`.
-const RM = new RegExp(String.raw`(?<![\p{L}\d-])(git\s+${GIT_OPTS})?rm((?:[ \t]+${ARG})+)`, 'giu')
+// zmiany w drzewie roboczym przepadają dopiero z `-f`. `rm` menedżera pakietów albo
+// kontenerów (`pnpm rm -r lodash`, `docker rm -f`) usuwa zależność albo kontener, nie drzewo.
+// Lookbehind narzędzia stoi za `(?=rm)`, więc wzorzec cofa się tylko przy słowie `rm`.
+const RM = new RegExp(String.raw`(?<![\p{L}\d-])(git\s+${GIT_OPTS})?(?=rm)(?<!(?:docker|podman|nerdctl|npm|pnpm|yarn|bun)\s+(?:-\S+\s+)*)rm((?:[ \t]+${ARG})+)`, 'giu')
+
+// Flaga to zlepek liter `rm` i `git rm`, więc `-print`, `-newer` czy `-user` z `find` nią nie są.
+const RM_FLAGS = '[dfiIrRvnq]'
+const RM_RECURSIVE = new RegExp(String.raw`^-${RM_FLAGS}*[rR]${RM_FLAGS}*$`, 'u')
+const RM_FORCE = new RegExp(String.raw`^-${RM_FLAGS}*f${RM_FLAGS}*$`, 'u')
 
 function removesTree(text: string): boolean {
   for (const match of text.matchAll(RM)) {
-    const args = match[2]!.trim().split(/\s+/u)
-    const recursive = args.some(arg => arg === '--recursive' || /^-[a-z]*r/iu.test(arg))
-    const force = args.some(arg => arg === '--force' || /^-[a-z]*f/iu.test(arg))
+    // Za `--` stoją same nazwy plików, a `$(…)` i backtick to cudza komenda.
+    const all = match[2]!.trim().split(/\s+/u)
+    const stop = all.findIndex(arg => arg === '--' || arg.startsWith('$(') || arg.startsWith('`'))
+    const args = stop < 0 ? all : all.slice(0, stop)
+    const recursive = args.some(arg => arg === '--recursive' || RM_RECURSIVE.test(arg))
+    const force = args.some(arg => arg === '--force' || RM_FORCE.test(arg))
     if (recursive && (force || match[1] === undefined)) return true
   }
   return false
@@ -216,12 +229,30 @@ function restoresWorktree(text: string): boolean {
 // `;` i każdy inny wiersz je kończą, także zwykły wcięty kod z własnym `WHERE` dalej.
 const SQL_TEXT = String.raw`(?:[^;\n]|(?<=,[ \t]*)\n|\n(?=[ \t]*(?:where|and|or|set|from|returning)(?!\p{L})))`
 // Między tabelą a `SET` może stać `ONLY` i alias (`UPDATE users AS u SET`).
-const UPDATE_SET = new RegExp(String.raw`(?<![\p{L}\d-])update\s+(?:only\s+)?[\p{L}\d_."\x60\[\]]+(?:\s+(?:as\s+)?(?!(?:set|and|or|then|to|i|oraz)(?!\p{L}))[\p{L}_][\p{L}\d_]*)?\s+set\s+${SQL_TEXT}*?=${SQL_TEXT}*`, 'giu')
+const UPDATE_HEAD = new RegExp(String.raw`(?<![\p{L}\d-])update\s+(?:only\s+)?[\p{L}\d_."\x60\[\]]+(?:\s+(?:as\s+)?(?!(?:set|and|or|then|to|i|oraz)(?!\p{L}))[\p{L}_][\p{L}\d_]*)?\s+set\s+`, 'giu')
+// Reszta zdania SQL za głową. Koniec nie zależy od miejsca startu, więc głowy z jednego
+// zdania dzielą jeden przebieg: setki `update … set` bez `=` w wierszu nie skanują go od nowa.
+const SQL_REST = new RegExp(`${SQL_TEXT}*`, 'iuy')
 
-// `WHERE` w literale albo w komentarzu `--` niczego nie zawęża.
+// `WHERE` w literale albo w komentarzu `--` niczego nie zawęża. Zdanie bez `=` za `SET`
+// to proza; zdanie z nim sądzi pierwsza głowa, a kolejne głowy w nim już się nie liczą.
 function updatesAll(text: string): boolean {
-  for (const match of text.matchAll(UPDATE_SET)) {
-    const code = match[0].replace(/'(?:[^']|'')*'/gu, "''").replace(/--.*/gu, '')
+  let end = -1
+  let equals = -1
+  let judged = -1
+  for (const head of text.matchAll(UPDATE_HEAD)) {
+    const at = head.index ?? 0
+    const from = at + head[0].length
+    if (at < judged) continue
+    if (from > end) {
+      SQL_REST.lastIndex = from
+      SQL_REST.exec(text)
+      end = SQL_REST.lastIndex
+      equals = text.lastIndexOf('=', end - 1)
+    }
+    if (equals < from) continue
+    judged = end
+    const code = text.slice(at, end).replace(/'(?:[^']|'')*'/gu, "''").replace(/--.*/gu, '')
     if (!/(?<!\p{L})where(?!\p{L})/iu.test(code)) return true
   }
   return false
@@ -234,10 +265,11 @@ export function isDestructive(text: string): boolean {
 // Prośba po polsku o skasowanie danych, historii, schowka albo infrastruktury i migracja
 // na żywych danych. Plik, import czy martwy kod to nie dane: wracają z gita.
 // Czasownik w trybie rozkazującym, bezokoliczniku („możesz usunąć”) i 1. os. l. mn.
-// („usuńmy”, „usuwamy”); rzeczownik odczynności („usuwanie”) to nie prośba. Wzorce
-// czytają tekst bez ogonków (`folded`), więc „usun baze” waży tyle co „usuń bazę”.
+// („usuńmy”, „usuwamy”); rzeczownik odczynności („usuwanie”) to nie prośba, zakaz z „nie”
+// tuż przed czasownikiem („nie usuwaj danych”) też nie. Wzorce czytają tekst bez ogonków
+// (`folded`), więc „usun baze” waży tyle co „usuń bazę”.
 const RISK_WORDS = new RegExp(
-  `(?<!\\p{L})(?:${[
+  `(?<!\\p{L})(?<!(?<!\\p{L})nie\\s+)(?:${[
     String.raw`(?:usun(?:my|cie|ac|iemy)?|usuwa(?:my|c|j(?:my|cie)?)|(?:s|wy)?kas(?:uj(?:my|cie|emy)?|owac)|wyczysc(?:my|cie|ic|imy)?|wywal(?:my|cie|ic|imy)?|zdrop(?:uj(?:my|cie|emy)?|owac)|dropn(?:ij(?:my|cie)?|ac)|nadpis(?:z(?:my|cie|emy)?|ac)|zreset(?:uj(?:my|cie|emy)?|owac)|wyzer(?:uj(?:my|cie|emy)?|owac)|zniszcz(?:my|cie|yc|ymy)?)\s+(?:[\p{L}\d]+\s+){0,2}?(?:baz\p{L}*|tabel\p{L}*|dane|danych|histori\p{L}*|galaz|galez\p{L}*|branch\p{L}*|commit\p{L}*|backup\p{L}*|kolumn\p{L}*|rekord\p{L}*|repo\p{L}*|wolumen\p{L}*|bucket\p{L}*|kubel\p{L}*|kubl\p{L}*|klast\p{L}*|namespace\p{L}*|infrastruktur\p{L}*|srodowisk\p{L}*|schowek|schowk\p{L}*|stash\p{L}*|dysk\p{L}*|partycj\p{L}*)`,
     String.raw`(?:pusc(?:my|cie|ic)?|odpal(?:my|cie|ic)?|uruchom(?:my|cie|ic)?|wykona(?:j(?:my|cie)?|c)|przeprowadz(?:my|cie|ic)?|zrob(?:my|cie|ic)?)\s+(?:\p{L}+\s+){0,2}?migracj\p{L}*`,
     String.raw`zmigruj\p{L}*`,
@@ -254,7 +286,8 @@ function folded(text: string): string {
 // (docs/research/2026-10-09-mood-decisions-experiment.md) triumf zmienił
 // „wstrzymać” na „wypuszczać” bez nowej informacji. „Wydajność” to nie wydanie.
 // Spolszczenia biorą „z” na przedzie („zmerguj”, „zdeployuj”); publikacja paczki też wydaje.
-const RELEASE_WORDS = /(?<!\p{L})(?:wypu[sś]\p{L}*|produkcj\p{L}*|z?deploy\p{L}*|wdr[oaó]ż\p{L}*|release\p{L}*|wydani\p{L}*|wyda(?:ć|j(?!n)|m)\p{L}*|scal\p{L}*|z?merg\p{L}*|opublikuj\p{L}*|publish\p{L}*)(?!\p{L})/iu
+// Angielskie „publish” tylko całym słowem: `publishConfig`, `publisher.ts` i `publish-docs` to kod.
+const RELEASE_WORDS = /(?<!\p{L})(?:wypu[sś]\p{L}*|produkcj\p{L}*|z?deploy\p{L}*|wdr[oaó]ż\p{L}*|release\p{L}*|wydani\p{L}*|wyda(?:ć|j(?!n)|m)\p{L}*|scal\p{L}*|z?merg\p{L}*|opublikuj\p{L}*|publish(?![\p{L}\d_-]|\.[\p{L}\d]))(?!\p{L})/iu
 
 export function asksRelease(text: string): boolean {
   return RELEASE_WORDS.test(text.normalize('NFC'))
@@ -280,7 +313,8 @@ export function promptKind(text: string): PromptKind | null {
     if (kind === 'explain' && REQUEST.test(rest)) continue
     if (pattern.test(rest)) return kind
   }
-  if (CHAT.test(rest) && rest.split(/\s+/u).length <= 6) return 'chat'
+  // Krótka rozmowa za wtrętem („Dzięki za pomoc!”, „Hej Krux”) to pogawędka, prośba za nim nie.
+  if (CHAT.test(clean) && !REQUEST.test(rest) && clean.split(/\s+/u).length <= 6) return 'chat'
   return null
 }
 
@@ -504,8 +538,9 @@ export type ShellKind = 'test' | 'seal' | 'install' | 'build' | 'trail' | 'tear'
 // Kolejność to priorytet: `cd repo && npm test` to próba stali, nie zaglądanie.
 // Testy także za filtrem monorepo (`pnpm --filter web test`, `npm -w pkg test`) i w innych
 // ekosystemach; `./gradlew build -x test` to budowanie, bo zadanie testów stoi za `-x`.
+// Sesja tox/nox od lintu, typów albo dokumentacji (`tox -e lint`) to nie próba testów.
 const SHELL_KINDS: readonly [ShellKind, RegExp][] = [
-  ['test', /^(?:(?:npm|pnpm|yarn|bun)(?: -\S+(?: [^\s-]\S*)?)*? (?:run )?test|(?:npm|pnpm) t(?!\S)|yarn workspace \S+ (?:run )?test|(?:(?:pnpm(?: exec)?|yarn|bun(?: run)?) )?(?:\.?\/?(?:node_modules\/\.bin|vendor\/bin)\/)?(?:vitest|jest|pytest|py\.test|rspec|mocha|playwright|cypress run|phpunit|pest)\b|claude plugin test|(?:cargo|go|deno|mix|dotnet|swift|flutter|dart|bazel|hatch) test|cargo nextest|(?:tox|nox|ctest)\b|php artisan test|composer (?:run(?:-script)? )?test|(?:\.\/)?(?:gradlew|gradle|mvnw|mvn)(?: (?:-\S+|clean))* (?:test|check|verify)\b|make(?: -\S+(?: [^\s-]\S*)?)*? (?:tests?|check)\b|node (?:\S+ )*--test\b|(?:bundle exec )?(?:rspec|rake test|rails test)|python3? -m (?:pytest|unittest))/u],
+  ['test', /^(?:(?:npm|pnpm|yarn|bun)(?: -\S+(?: [^\s-]\S*)?)*? (?:run )?test|(?:npm|pnpm) t(?!\S)|yarn workspace \S+ (?:run )?test|(?:(?:pnpm(?: exec)?|yarn|bun(?: run)?) )?(?:\.?\/?(?:node_modules\/\.bin|vendor\/bin)\/)?(?:vitest|jest|pytest|py\.test|rspec|mocha|playwright|cypress run|phpunit|pest)\b|claude plugin test|(?:cargo|go|deno|mix|dotnet|swift|flutter|dart|bazel|hatch) test|cargo nextest|(?:tox|nox)(?!\s+(?:-[es]|--session)[ =]?(?:lint\w*|flake8|mypy|pyright|type\S*|docs?|format\w*|fmt|style|pre-commit|ruff|black|isort|pylint|pep8)\b)(?!\S)|ctest\b|php artisan test|composer (?:run(?:-script)? )?test|(?:\.\/)?(?:gradlew|gradle|mvnw|mvn)(?: (?:-\S+|clean))* (?:test|check|verify)\b|make(?: -\S+(?: [^\s-]\S*)?)*? (?:tests?|check)\b|node (?:\S+ )*--test\b|(?:bundle exec )?(?:rspec|rake test|rails test)|python3? -m (?:pytest|unittest))/u],
   // `git merge-base` i lista tagów tylko czytają, więc nie pieczętują.
   ['seal', /^git (?:commit|push|tag(?! (?:-l|--list)\b)(?!$)|merge(?!-)|rebase|cherry-pick)\b|^gh pr (?:create|merge)\b/u],
   ['install', /^(?:(?:npm|pnpm|yarn|bun) (?:install|add|ci|i)\b|(?:yarn|bun)$|pip3? install|bundle(?: install)?$|gem install|brew install|cargo add|go get)/u],
@@ -577,12 +612,15 @@ type ShellPart = { text: string; background: boolean }
 
 // Kawałki łańcucha bez opakowań na przedzie (zmienne, `sudo`, `env`, `time`, `timeout`,
 // `nice`, `npx`, `uv run`) i bez opcji globalnych gita (`git -C repo commit`,
-// `git --no-pager log`). Samotne `&` kończy kawałek puszczony w tle; `&&`, `>&`, `&>`
-// i `|&` nie.
+// `git --no-pager log`). Samotne `&` puszcza w tło całą listę przed sobą, od poprzedniego
+// `;`, `&` albo nowej linii, z potokiem i `&&`/`||` (`npm test | tee log &`); `&&`, `>&`,
+// `&>` i `|&` nie.
 function shellChunks(command: unknown): ShellPart[] {
   if (typeof command !== 'string') return []
   // Separator w cytacie albo za backslashem należy do argumentu, nie łańcucha.
   const parts: ShellPart[] = []
+  // Pierwszy kawałek bieżącej listy (`a | b && c`): samotne `&` puszcza w tło ją całą.
+  let list = 0
   const documents: HereDocument[] = []
   let quote = ''
   let arithmetic = 0
@@ -621,6 +659,8 @@ function shellChunks(command: unknown): ShellPart[] {
     else if (char === ';' || char === '|' || char === '\n' || (char === '&' && command[i + 1] !== '>' && !/[<>|]/u.test(command[i - 1] ?? ''))) {
       const background = char === '&' && command[i + 1] !== '&'
       parts.push({ text: command.slice(start, i), background })
+      if (background) for (let k = list; k < parts.length; k += 1) parts[k]!.background = true
+      if (background || char === ';' || char === '\n') list = parts.length
       if ((char === '&' || char === '|') && command[i + 1] === char) i += 1
       else if (char === '|' && command[i + 1] === '&') i += 1
       if (char === '\n' && documents.length > 0) {
@@ -660,11 +700,13 @@ function shellParts(command: unknown): string[] {
 
 // Robota łańcucha puszczona w tle (`npm test > log 2>&1 &`): powłoka oddaje kod 0
 // od razu, więc wynik nic nie mówi o przebiegu. Ta sama robota na pierwszym planie
-// (`npm run dev & npm test`) daje prawdziwy wynik.
+// (`npm run dev & npm test`) albo z `wait` za nią (`npm test & wait`) daje prawdziwy wynik.
 export function inBackground(command: unknown): boolean {
   const kind = bashKind(command)
-  const chunks = shellChunks(command).filter(part => shellKind(part.text) === kind)
-  return chunks.length > 0 && chunks.every(part => part.background)
+  const all = shellChunks(command)
+  const lastWait = all.findLastIndex(part => !part.background && /^wait(?:\s|$)/u.test(part.text))
+  const chunks = all.flatMap((part, index) => (shellKind(part.text) === kind ? [{ ...part, index }] : []))
+  return chunks.length > 0 && chunks.every(part => part.background && part.index > lastWait)
 }
 
 // Rodzaj kawałków łańcucha: rozpoznana robota ma priorytet nad resztą.

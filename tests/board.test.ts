@@ -189,14 +189,15 @@ test('a test run sent to the background leaves the last real run in place', () =
 })
 
 // `&` w powłoce: narzędzie kończy się od razu z kodem 0, a przebieg trwa dalej bez nas.
+// Za `wait` powłoka czeka na zadania z tła, więc wynik jest pełny.
 test('a test sent to the background with a shell & keeps the last real run, readiness included', () => {
   const git: KruxGit = { branch: 'main', upstream: null, ahead: 0, behind: 0, changed: 1, untracked: 0, conflicted: 0, whitespace: true, files: [], commits: [] }
   const red = boardAfter(EMPTY_BOARD, 'Bash', { command: 'npm test' }, undefined, { text: '1 failed', isError: true, who: 'Krux' }, 100)
-  for (const command of ['npm test > /tmp/t.log 2>&1 &', 'npm test &', 'pytest -x > out.txt 2>&1 & echo started']) {
+  for (const command of ['npm test > /tmp/t.log 2>&1 &', 'npm test &', 'pytest -x > out.txt 2>&1 & echo started', 'npm test 2>&1 | tee test.log &', 'npm test > log 2>&1 && echo done &']) {
     expect([command, boardAfter(red, 'Bash', { command }, { stdout: '' }, { text: '', isError: false, who: 'Krux' }, 200) === red]).toEqual([command, true])
     expect([command, readiness(boardAfter(EMPTY_BOARD, 'Bash', { command }, { stdout: '' }, { text: '', isError: false, who: 'Krux' }, 200), git).ready]).toEqual([command, false])
   }
-  for (const command of ['npm run dev & npm test', 'npm test &> log', 'timeout 300 npm test']) {
+  for (const command of ['npm run dev & npm test', 'npm test &> log', 'timeout 300 npm test', 'npm test & wait']) {
     const run = boardAfter(red, 'Bash', { command }, undefined, { text: '2 passed', isError: false, who: 'Krux' }, 200).test
     expect([command, run?.ok, run?.passed, run?.at]).toEqual([command, true, 2, 200])
   }

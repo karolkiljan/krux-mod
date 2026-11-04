@@ -93,11 +93,12 @@ test('a test run sent to the background is not a run yet', async () => {
 })
 
 // Powłoka z `&` wraca od razu z kodem 0 i bez wyjścia przebiegu: to nie zielone.
+// `&` puszcza w tło cały potok i listę `&&` przed sobą, a `wait` czeka na zadania z tła.
 test('a run sent to the background by the shell is not a run either, a foreground one still is', async () => {
-  for (const command of ['npm test &', 'npm test > /tmp/t.log 2>&1 &', 'pytest -x > out.txt 2>&1 & echo started', 'npm test & sleep 1', 'npx tsc -p . &']) {
+  for (const command of ['npm test &', 'npm test > /tmp/t.log 2>&1 &', 'pytest -x > out.txt 2>&1 & echo started', 'npm test & sleep 1', 'npx tsc -p . &', 'npm test 2>&1 | tee test.log &', 'npm test > log 2>&1 && echo done &', 'wait; npm test &']) {
     expect([command, recordTool(EMPTY_LORE, 'Bash', { command }, false, '')]).toEqual([command, EMPTY_LORE])
   }
-  for (const command of ['npm run dev & npm test', 'npm test &> log', 'npm test 2>&1 | tail -5', 'npm test |& tail -5']) {
+  for (const command of ['npm run dev & npm test', 'npm test &> log', 'npm test 2>&1 | tail -5', 'npm test |& tail -5', 'npm test & wait', 'npm run test:a & npm run test:b & wait']) {
     expect([command, recordTool(EMPTY_LORE, 'Bash', { command }, true, '1 failed').last]).toEqual([command, 'test-fail'])
   }
 })
