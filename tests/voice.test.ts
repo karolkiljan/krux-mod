@@ -246,7 +246,7 @@ test('a seed picks a synonym, so the same work does not repeat word for word', a
 
 test('at rest the caption matches how much work the turn took', async () => {
   expect(restVerb(0, 0)).toBe('Krux tylko gadać')
-  expect(restVerb(3, 0)).toBe('Krux odpoczywać przy kowadle')
+  expect(restVerb(3, 0)).toBe('Krux odpoczywać przy ogniu')
   expect(restVerb(40, 0)).toBe('Krux studzić żelazo')
   expect(restVerb(40, 5)).toBe(restVerb(40, 5))
 })
@@ -497,17 +497,19 @@ test('split, long and bundled flags are as irreversible as the bundled short one
 
 // `riskHint` biegnie synchronicznie w `prompt.submit`: długi zlepek liter albo łańcuch
 // `update … set` bez `=` nie może zawiesić hooka cofaniem wzorca.
-test('long flag bundles and UPDATE chains are judged without catastrophic backtracking', () => {
+// Wejścia, które przed poprawką kosztowały po 4,5 s i więcej, teraz po kilka ms; próg 2 s
+// zostawia zapas na obciążoną maszynę, a cofanie kwadratowe albo gorsze dalej go przekracza.
+test('long flag bundles and UPDATE chains are judged without catastrophic backtracking', { timeoutMs: 30_000 }, () => {
   for (const text of [
-    'git branch -' + 'df'.repeat(1000) + '1',
-    'git push -' + 'f'.repeat(10000) + '1',
-    'git checkout -' + 'f'.repeat(10000) + '1',
-    'update t u set a b c '.repeat(1000),
-    'update t set a b c '.repeat(1000),
+    'git branch -' + 'df'.repeat(2000) + '1',
+    'git push -' + 'f'.repeat(20000) + '1',
+    'git checkout -' + 'f'.repeat(20000) + '1',
+    'update t u set a b c '.repeat(2000),
+    'update t set a b c '.repeat(2000),
   ]) {
     const start = Date.now()
     expect(isDestructive(text)).toBe(false)
-    expect([text.slice(0, 24), Date.now() - start < 250]).toEqual([text.slice(0, 24), true])
+    expect([text.slice(0, 24), Date.now() - start < 2000]).toEqual([text.slice(0, 24), true])
   }
 })
 

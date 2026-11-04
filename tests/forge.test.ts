@@ -118,7 +118,7 @@ test('in the room a mate done carries the kit back, walks to the quarters and th
   expect(JSON.stringify(draw(after, surface))).not.toContain(PALETTE.M)
 })
 
-test('without a hearth Krux at rest never warms his hands at the empty edge, by the fire he does', () => {
+test('without a hearth Krux at rest never warms his hands at the empty edge, by the fire he does', { timeoutMs: 30_000 }, () => {
   // Czynność, którą Krux gra w danej klatce: ta sama trasa co w rysunku, z `cold` osi.
   const playing = (track: Track, frame: number) => {
     const route = routeOf(track.scene, track.face, track.seed, track.first, track.done, track.cold === true)

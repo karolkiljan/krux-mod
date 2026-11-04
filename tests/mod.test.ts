@@ -1013,7 +1013,7 @@ test('idle, the smith stands still with only the rest title, keeping strike coun
     if (turnId === 't2') await $.tool.call({ tool: 'Read', file_path: '/repo/a.ts' })
   }
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal', props: { ...BAND.props, isWorking: false } })
-  expect(await ui.find({ type: 'Text', text: 'Krux odpoczywać przy kowadle' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Krux odpoczywać przy ogniu' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /uderzeń/ })).toBeUndefined()
   expect(counts).toEqual({ strikes: 2, sessionStrikes: 3 })
   expect(await ui.find({ key: 'forge' })).toBeDefined()

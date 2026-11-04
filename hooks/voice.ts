@@ -517,7 +517,7 @@ export function spinnerWord(mode: SpinnerMode, seed: string, scene?: KruxScene):
 // Podpis kowala w spoczynku zależy od tego, ile było roboty w ostatniej turze.
 export function restVerb(turnStrikes: number, seed: number): string {
   if (turnStrikes === 0) return pick(['Krux tylko gadać', 'Krux odłożyć młot, gadać'], seed)
-  if (turnStrikes <= 20) return pick(['Krux odpoczywać przy kowadle', 'Krux ocierać pot', 'Krux siedzieć na pniaku'], seed)
+  if (turnStrikes <= 20) return pick(['Krux odpoczywać przy ogniu', 'Krux ocierać pot', 'Krux siedzieć na pniaku'], seed)
   return pick(['Krux studzić żelazo', 'Krux prostować grzbiet', 'Krux pić z wiadra'], seed)
 }
 
