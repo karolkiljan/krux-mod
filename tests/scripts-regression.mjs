@@ -419,9 +419,8 @@ test('mod git reads do not run a core.fsmonitor command from the repository conf
   }
 })
 
-test('a real repository without upstream keeps its complete local commit history', t => {
-  const repository = fs.mkdtempSync(path.join(os.tmpdir(), 'krux-git-contract-'))
-  t.after(() => fs.rmSync(repository, { recursive: true, force: true }))
+// Git w izolowanym środowisku: bez konfiguracji systemu i Morry, z tożsamością testu.
+function gitIn(repository) {
   const gitEnv = {
     ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_'))),
     GIT_CONFIG_NOSYSTEM: '1',
@@ -431,19 +430,25 @@ test('a real repository without upstream keeps its complete local commit history
     GIT_COMMITTER_NAME: 'Krux test',
     GIT_COMMITTER_EMAIL: 'krux-test@example.invalid',
   }
-  const git = args => {
+  return args => {
     const result = spawnSync('git', args, { cwd: repository, env: gitEnv, encoding: 'utf8', timeout: 10_000 })
     assert.ifError(result.error)
     assert.equal(result.status, 0, result.stderr)
     return result.stdout
   }
+}
+
+test('a real repository without upstream keeps its complete local commit history', t => {
+  const repository = fs.mkdtempSync(path.join(os.tmpdir(), 'krux-git-contract-'))
+  t.after(() => fs.rmSync(repository, { recursive: true, force: true }))
+  const git = gitIn(repository)
   git(['init', '--initial-branch=main'])
   const expected = []
   for (const subject of ['base', 'first local change', 'second local change']) {
     fs.writeFileSync(path.join(repository, 'history.txt'), `${subject}\n`)
     git(['add', '--', 'history.txt'])
     git(['-c', 'commit.gpgSign=false', 'commit', '-m', subject])
-    expected.unshift({ hash: git(['rev-parse', '--short', 'HEAD']).trim(), subject, pushed: false })
+    expected.unshift({ hash: git(['rev-parse', '--short', 'HEAD']).trim(), subject, pushed: false, at: Number(git(['show', '-s', '--format=%ct', 'HEAD']).trim()) * 1000 })
   }
 
   // Exercise the shipped Git commands and the native parser with real output.
@@ -452,6 +457,35 @@ test('a real repository without upstream keeps its complete local commit history
   assert.equal(actual.branch, 'main')
   assert.equal(actual.upstream, null)
   assert.deepEqual(actual.commits, expected)
+})
+
+test('a real branch whose upstream was deleted after a merge reads as gone, not as even', t => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'krux-git-gone-'))
+  t.after(() => fs.rmSync(scratch, { recursive: true, force: true }))
+  const origin = path.join(scratch, 'origin.git')
+  const work = path.join(scratch, 'work')
+  gitIn(scratch)(['init', '--bare', '--initial-branch=main', origin])
+  gitIn(scratch)(['init', '--initial-branch=main', work])
+  const git = gitIn(work)
+  const commit = subject => {
+    fs.writeFileSync(path.join(work, 'history.txt'), `${subject}\n`)
+    git(['add', '--', 'history.txt'])
+    git(['-c', 'commit.gpgSign=false', 'commit', '-m', subject])
+  }
+  commit('base')
+  git(['remote', 'add', 'origin', origin])
+  git(['push', '-u', 'origin', 'main'])
+  git(['checkout', '-b', 'feature'])
+  commit('feature change')
+  git(['push', '-u', 'origin', 'feature'])
+  const even = gitOf(git(GIT_STATUS.slice(1)))
+  assert.equal(even.upstream, 'origin/feature')
+  assert.equal(even.upstreamGone, undefined)
+  // PR scalony, gałąź na zdalnym usunięta, `fetch --prune` zdejmuje jej ref.
+  gitIn(origin)(['branch', '-D', 'feature'])
+  git(['fetch', '--prune'])
+  const gone = gitOf(git(GIT_STATUS.slice(1)))
+  assert.deepEqual([gone.upstream, gone.upstreamGone, gone.ahead, gone.behind], ['origin/feature', true, 0, 0])
 })
 
 // Run the shipped CLI against a local executable at the external Claude boundary.

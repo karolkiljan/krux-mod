@@ -873,7 +873,9 @@ export const register: Register = on => {
     }
     if (command.kind === 'report') {
       await restore($)
-      return { text: dayReport(await read($, git), await read($, board), await read($, threads), await read($, lore)) }
+      // Początek sesji (wznowiona: pierwsze uruchomienie, po `/clear` od nowa) odcina starsze commity.
+      const since = (await $.session.usage().catch(() => null))?.startedAt ?? null
+      return { text: dayReport(await read($, git), await read($, board), await read($, threads), await read($, lore), since) }
     }
     if (command.kind === 'journal') {
       await update($, shaftTab, () => 'dziennik')

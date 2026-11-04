@@ -2347,7 +2347,7 @@ test('a return to an empty board is silent and a toggle still refreshes the pers
 
 test('/krux raport returns session facts as text without model context or a pane', async ($, on) => {
   const opened: string[] = []
-  const processRun: Extras['processRun'] = argv => ({ exitCode: 0, stdout: argv.includes('log') ? 'full\tabc123\tPoprawka parsera\n' : '# branch.head main\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false })
+  const processRun: Extras['processRun'] = argv => ({ exitCode: 0, stdout: argv.includes('log') ? 'full\tabc123\t1793000000\tPoprawka parsera\n' : '# branch.head main\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false })
   on('tool.call', { tool: 'Bash' }, () => ({ result: 'ok', text: '3 pass\n0 fail' }))
   engine(on, new Map(), { opened, processRun })
   await start($)
@@ -2359,6 +2359,16 @@ test('/krux raport returns session facts as text without model context or a pane
   expect(report.text).toBe('## Commity\n- abc123 Poprawka parsera\n\n## Ostatni przebieg testów\nKomenda: npm test\nWynik: zaliczony\nWykonawca: Krux\nZaliczone: 3\nNieudane: 0\n\n## Plan\nZrobione: 1/3\n- [x] Test odtwarzający błąd\n- [ ] Poprawka w parser.js (w toku)\n- [ ] Changelog\n\n## Otwarte wątki\n- #1 [do zrobienia] Sprawdzić API\n\n## Podsumowanie sesji\nPrzebiegi testów: 1 (nieudane: 0)\nCommity: 0\nRozbiórki: 0')
   expect(report.context).toBeUndefined()
   expect(opened).toEqual([])
+})
+
+test('/krux raport lists only commits made since the session started', async ($, on) => {
+  // Świeża sesja w repo z historią: stary commit innego autora nie trafia do raportu dnia.
+  const log = 'new-full\tf00d123\t1793003600\tpoprawka z sesji\nold-full\t132155b\t1785585600\tstara zmiana kogoś innego\n'
+  const processRun: Extras['processRun'] = argv => ({ exitCode: 0, stdout: argv.includes('log') ? log : '# branch.head main\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false })
+  const clock = engine(on, new Map(), { processRun, usage: { startedAt: 1_793_000_000_000, context: { window: 200_000 }, rateLimits: [] } })
+  await start($, clock)
+  const report = await $.command.run({ command: 'krux', args: 'raport', origin: ORIGIN, presentation: { isFullscreen: false, columns: 120 } })
+  expect(report.text).toBe('## Commity\n- f00d123 poprawka z sesji')
 })
 
 // W2: testy granic wpięcia; drzewo i wynik nadal pochodzą z prawdziwych hooków.
