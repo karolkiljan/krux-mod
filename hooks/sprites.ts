@@ -809,6 +809,14 @@ export const ERRAND_FRAMES = 2 * ERRAND_IN + ERRAND_HOLD
 // Przy sprzęcie, w tej klatce wyprawy, ork odkłada jedno i bierze drugie.
 export const ERRAND_SWAP = ERRAND_IN + Math.floor(ERRAND_HOLD / 2)
 
+// Wyprawa z drzwi kwater: droga do sprzętu wzdłuż ściany trwa `lead` klatek zamiast `ERRAND_IN`.
+export function errandEnd(route: { lead?: number }): number {
+  return (route.lead ?? ERRAND_IN) + ERRAND_HOLD + ERRAND_IN
+}
+export function errandSwap(route: { lead?: number }): number {
+  return (route.lead ?? ERRAND_IN) + Math.floor(ERRAND_HOLD / 2)
+}
+
 // Kolumna orka przy miejscu sprzętu tej sceny na ścianie.
 export function depthSpot(scene: StageScene, floor: number, hearth: boolean): number {
   const station = STATIONS[scene]
@@ -827,16 +835,20 @@ function shrunk(kit: Frame, size: number): string[] {
   }).join(''))
 }
 
-export type ErrandRoute = { spot: number; back: number; took?: Frame; brings?: Frame }
+// `start`: wyprawa rusza z drzwi kwater i idzie do sprzętu wzdłuż ściany (`lead` klatek), bez zejścia na podłogę.
+export type ErrandRoute = { spot: number; back: number; took?: Frame; brings?: Frame; start?: number; lead?: number }
 
 // Poza w klatce `t` wyprawy: do sprzętu i z powrotem, wielkość z głębokości, rekwizyt razem z orkiem.
-export function errandPose(t: number, from: number, route: ErrandRoute, face: Face): Far[] {
-  const going = t < ERRAND_IN
-  const holding = !going && t < ERRAND_IN + ERRAND_HOLD
-  const depth = going ? t / ERRAND_IN : holding ? 1 : Math.max(0, ERRAND_FRAMES - t) / ERRAND_IN
-  const x = holding ? lerp(route.spot, route.back, (t - ERRAND_IN) / ERRAND_HOLD) : lerp(from, going ? route.spot : route.back, depth)
-  const orc = farPose(depth, x, t, face)
-  const kit = t < ERRAND_SWAP ? route.took : route.brings
+// `lift`: ork z drzwi schodzi jeszcze z progu.
+export function errandPose(t: number, from: number, route: ErrandRoute, face: Face, lift = 0): Far[] {
+  const lead = route.lead ?? ERRAND_IN
+  const going = t < lead
+  const holding = !going && t < lead + ERRAND_HOLD
+  const along = going && route.start !== undefined
+  const depth = along ? 1 : going ? t / lead : holding ? 1 : Math.max(0, errandEnd(route) - t) / ERRAND_IN
+  const x = along ? lerp(route.start!, route.spot, t / lead) : holding ? lerp(route.spot, route.back, (t - lead) / ERRAND_HOLD) : lerp(from, going ? route.spot : route.back, depth)
+  const orc = farPose(depth, x, t, face, along ? lift : 0)
+  const kit = t < errandSwap(route) ? route.took : route.brings
   return kit === undefined ? [orc] : [{ rows: shrunk(kit, orc.rows.length), x, y: orc.y }, orc]
 }
 

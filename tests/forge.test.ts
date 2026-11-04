@@ -3,7 +3,7 @@ import { expect, test } from 'claude-code/testing'
 import Forge from '../hooks/forge'
 import type { ForgeOrc, ForgeProps } from '../hooks/forge'
 import { MATES } from '../hooks/roster'
-import { ACTS, DUET_FRAMES, SPEAKER_COLOR, WALL_MIN, DUET_GAP, ERRAND_FRAMES, PALETTE, RISE_FRAMES, TOAST_RETURN, carried, doorX, kitAt, kitReach, quartersDoor, routeOf, stationX, tossFrames, trackGrid } from '../hooks/sprites'
+import { ACTS, DUET_FRAMES, SPEAKER_COLOR, WALL_MIN, DUET_GAP, ERRAND_FRAMES, PALETTE, RISE_FRAMES, TOAST_RETURN, carried, doorX, errandEnd, kitAt, kitReach, quartersDoor, routeOf, stationX, tossFrames, trackGrid } from '../hooks/sprites'
 import type { Track } from '../hooks/sprites'
 import { STAND, legAt, pad } from '../hooks/stage'
 import { drawHeadless, headless, svgOf } from '../hooks/vector'
@@ -24,7 +24,7 @@ function surfaceOf() {
   return { surface, tick: () => tick?.() }
 }
 
-type Seen = { frame: number; idle: boolean; duet?: { host: string; guest: string; kind: string; at: number | null; meet?: number }; duetAt?: number; snoozing?: boolean; actors: Record<string, { leftAt: number | null; slot: number; home: number; arrived: number; from: number; pending?: string; errand?: { at: number; from: number; spot: number; took?: readonly string[]; brings?: readonly string[] }; enter: number; track: Track; handoff?: { at: number; flight: number }; cue?: { id: string; at: number; held?: true }; effortAt?: number; rise?: number; door?: number; left?: { x: number; rows?: readonly string[] } }> }
+type Seen = { frame: number; idle: boolean; duet?: { host: string; guest: string; kind: string; at: number | null; meet?: number }; duetAt?: number; snoozing?: boolean; actors: Record<string, { leftAt: number | null; slot: number; home: number; arrived: number; from: number; pending?: string; errand?: { at: number; from: number; spot: number; took?: readonly string[]; brings?: readonly string[]; start?: number; lead?: number }; enter: number; track: Track; handoff?: { at: number; flight: number }; cue?: { id: string; at: number; held?: true }; effortAt?: number; rise?: number; door?: number; left?: { x: number; rows?: readonly string[] } }> }
 
 const KRUX: ForgeOrc = { key: 'krux', face: 'Krux', scene: 'lounge', mood: 'calm' }
 const NIUCH: ForgeOrc = { key: 'a1', face: 'Niuch', scene: 'scout', mood: 'calm' }
@@ -191,15 +191,78 @@ test('a mate called to work comes out of the door of the quarters, not from the 
   const joined: ForgeProps = { ...FLOOR, orcs: [{ ...KRUX, scene: 'hammer' }, { ...GROM, scene: 'pick' }] }
   draw(joined, surface)
   const up = (surface.state as Seen).actors.a1!
-  expect(up).toMatchObject({ rise: 1, from: quartersDoor(140, true), pending: 'pick', enter: (surface.state as Seen).frame + RISE_FRAMES })
-  let deep = false
-  for (let i = 0; i < 100 && (surface.state as Seen).actors.a1!.pending !== undefined; i++) {
+  expect(up).toMatchObject({ rise: 1, from: quartersDoor(140, true), enter: (surface.state as Seen).frame + RISE_FRAMES })
+  // Z progu idzie wzdłuż ściany prosto po kilof i dopiero z nim schodzi na podłogę.
+  expect(up.errand).toMatchObject({ at: up.enter, start: quartersDoor(140, true) })
+  expect(up.errand!.brings).toBeDefined()
+  for (let i = 0; i < 100 && ((surface.state as Seen).actors.a1!.errand !== undefined || (surface.state as Seen).actors.a1!.pending !== undefined); i++) {
     tick()
     draw(joined, surface)
-    deep ||= (surface.state as Seen).actors.a1!.errand !== undefined
   }
-  expect(deep).toBe(true)
   expect((surface.state as Seen).actors.a1!.track.scene).toBe('pick')
+})
+
+test('a mate called from the quarters walks along the wall to its gear and steps down once, with no yo-yo', () => {
+  // Najniższy wiersz fartucha kumpla: im głębiej w pokoju, tym wyżej. Liczymy zawrócenia w pionie.
+  const turns = (face: ForgeOrc['face'], scene: ForgeOrc['scene'], apron: string) => {
+    const { surface, tick } = surfaceOf()
+    draw({ ...FLOOR, orcs: [{ ...KRUX, scene: 'horn' }] }, surface)
+    const joined: ForgeProps = { ...FLOOR, orcs: [KRUX, { key: 'a1', face, scene, mood: 'calm' }] }
+    const ys: number[] = []
+    for (let i = 0; i < 60; i++) {
+      const rows = pixelsOf(draw(joined, surface)).map((row, y) => (row.includes(PALETTE[apron]!) ? y : -1)).filter(y => y >= 0)
+      const mate = (surface.state as Seen).actors.a1!
+      // Do pierwszej klatki roboty na stanowisku: potem głowa rusza się już z czynnością.
+      if (mate.pending === undefined && mate.errand === undefined && mate.rise === undefined && (surface.state as Seen).frame >= mate.track.since) break
+      if (rows.length > 0) ys.push(Math.max(...rows))
+      tick()
+    }
+    expect(ys.length).toBeGreaterThan(10)
+    let count = 0
+    let way = 0
+    for (let i = 1; i < ys.length; i++) {
+      const step = Math.sign(ys[i]! - ys[i - 1]!)
+      if (step !== 0 && way !== 0 && step !== way) count += 1
+      if (step !== 0) way = step
+    }
+    return count
+  }
+  expect(turns('Grom', 'pick', 'M')).toBe(0)
+  expect(turns('Ochra', 'read', 'O')).toBe(0)
+  expect(turns('Niuch', 'scout', 'N')).toBe(0)
+})
+
+test('a mate who ends on its way along the wall turns back at the same depth; with a scroll it fetches nothing and throws from the floor', () => {
+  // Fartuch Ochry: lewa kolumna i najniższy wiersz, także w głębi.
+  const ochraAt = (tree: unknown) => {
+    const cells = pixelsOf(tree).flatMap((row, y) => row.map((cell, x) => (cell === PALETTE.O ? [x, y] as const : null))).filter(cell => cell !== null)
+    return cells.length === 0 ? null : { x: Math.min(...cells.map(([x]) => x)), y: Math.max(...cells.map(([, y]) => y)) }
+  }
+  for (const handoff of [false, true]) {
+    const { surface, tick } = surfaceOf()
+    draw({ ...FLOOR, orcs: [{ ...KRUX, scene: 'horn' }] }, surface)
+    const joined: ForgeProps = { ...FLOOR, orcs: [KRUX, { key: 'a1', face: 'Ochra', scene: 'read', mood: 'calm' }] }
+    let last = null as ReturnType<typeof ochraAt>
+    for (let i = 0; i < 8; i++) { last = ochraAt(draw(joined, surface)); tick() }
+    const { errand } = (surface.state as Seen).actors.a1!
+    expect((surface.state as Seen).frame - errand!.at).toBeLessThan(errand!.lead!)
+    const done: ForgeProps = { ...FLOOR, orcs: [KRUX], cues: handoff ? [{ key: 'a1', kind: 'handoff', until: 9_000_000 }] : [] }
+    let jump = 0
+    let thrown = false
+    draw(done, surface)
+    // Robota skończona: nowego rekwizytu już nie bierze, z drogi wzdłuż ściany schodzi z pustymi rękami.
+    expect((surface.state as Seen).actors.a1!.errand?.brings).toBe(undefined)
+    for (let i = 0; i < 160 && (surface.state as Seen).actors.a1 !== undefined; i++) {
+      const at = ochraAt(draw(done, surface))
+      if (at !== null && last !== null) jump = Math.max(jump, Math.abs(at.x - last.x), Math.abs(at.y - last.y) > 2 ? 99 : 0)
+      if (at !== null) last = at
+      const mate = (surface.state as Seen).actors.a1
+      thrown ||= mate?.handoff !== undefined && (surface.state as Seen).frame >= mate.handoff.at
+      tick()
+    }
+    // Bez skoku w bok ani w głąb, a zwój leci tylko wtedy, gdy był.
+    expect([handoff, jump <= 4, thrown, (surface.state as Seen).actors.a1]).toEqual([handoff, true, handoff, undefined])
+  }
 })
 
 test('a mate called from the quarters stands on the sill in the open door, then steps down into the room', () => {
@@ -748,14 +811,12 @@ test('a mate running in fetches its gear from the back before it starts', () => 
   draw(FLOOR, surface)
   const joined: ForgeProps = { ...FLOOR, orcs: [{ ...KRUX, scene: 'hammer' }, { ...NIUCH, scene: 'pick' }] }
   draw(joined, surface)
-  expect((surface.state as Seen).actors.a1!.pending).toBe('pick')
-  let deep = false
-  for (let i = 0; i < 70 && (surface.state as Seen).actors.a1!.pending !== undefined; i++) {
+  // Z nory w głębi sztolni idzie prosto po kilof, zanim zacznie: bez zejścia na podłogę.
+  expect((surface.state as Seen).actors.a1!.errand?.brings).toBeDefined()
+  for (let i = 0; i < 70 && ((surface.state as Seen).actors.a1!.errand !== undefined || (surface.state as Seen).actors.a1!.pending !== undefined); i++) {
     tick()
     draw(joined, surface)
-    deep ||= (surface.state as Seen).actors.a1!.errand !== undefined
   }
-  expect(deep).toBe(true)
   expect((surface.state as Seen).actors.a1!.track.scene).toBe('pick')
 })
 
@@ -764,11 +825,13 @@ test('a mate who finishes deep in the room comes back before marching off, witho
   draw(FLOOR, surface)
   const joined: ForgeProps = { ...FLOOR, orcs: [{ ...KRUX, scene: 'hammer' }, { ...NIUCH, scene: 'pick' }] }
   draw(joined, surface)
-  for (let i = 0; i < 70 && (surface.state as Seen).actors.a1!.errand === undefined; i++) { tick(); draw(joined, surface) }
-  const started = (surface.state as Seen).actors.a1!.errand!.at
+  // Z nory doszedł wzdłuż ściany do kilofa: kończy w głębi, przy sprzęcie.
+  const atGear = () => { const { errand } = (surface.state as Seen).actors.a1!; return errand !== undefined && (surface.state as Seen).frame - errand.at >= (errand.lead ?? 0) }
+  for (let i = 0; i < 70 && !atGear(); i++) { tick(); draw(joined, surface) }
+  const errand = (surface.state as Seen).actors.a1!.errand!
   const done: ForgeProps = { ...FLOOR, orcs: [{ ...KRUX, scene: 'hammer' }] }
   draw(done, surface)
-  expect((surface.state as Seen).actors.a1!.leftAt).toBeGreaterThanOrEqual(started + ERRAND_FRAMES)
+  expect((surface.state as Seen).actors.a1!.leftAt).toBeGreaterThanOrEqual(errand.at + errandEnd(errand))
   for (let i = 0; i < 70 && (surface.state as Seen).actors.a1 !== undefined; i++) { tick(); draw(done, surface) }
   expect((surface.state as Seen).actors.a1).toBe(undefined)
 })

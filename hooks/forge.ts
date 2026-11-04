@@ -1,7 +1,7 @@
 import type { ClientModule } from 'claude-code'
 
 import type { KruxCue, KruxEvent, KruxMate, KruxMood, KruxSpeaker } from '../types'
-import { CATCH_X, CUE_FRAMES, DUET_FRAMES, DUET_GAP, ERRAND_FRAMES, ERRAND_SWAP, FRAME_MS, MUGS, ORC_GAP, ORC_WIDTH, RISE_FRAMES, SILL_LIFT, SPEAKER_COLOR, TOAST_HELD, TOAST_RETURN, WALL_MIN, bandColumns, behind, bubbleAt, canvasColumns, carried, catchStep, caughtScroll, depthSpot, dayPhase, doorX, dress, duetPose, episodeKit, errandPose, farMugs, farPose, floorHomes, floorStart, frameGrid, hasHearth, headX, hearthProp, kitAt, kitReach, nextEpisode, paint, quartersDoor, roomGrid, runsOf, sameStation, sliceRuns, slotX, stageGrid, stationX, tossFlight, tossFrames, tossGrid, tossScroll, trackArrive, trackBare, trackDozing, trackDue, trackFace, trackGrid, trackKit, trackLooping, trackOff, trackOut, trackResume, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withNap } from './sprites'
+import { CATCH_X, CUE_FRAMES, DUET_FRAMES, DUET_GAP, ERRAND_FRAMES, FRAME_MS, MUGS, ORC_GAP, ORC_WIDTH, RISE_FRAMES, SILL_LIFT, SPEAKER_COLOR, TOAST_HELD, TOAST_RETURN, WALL_MIN, bandColumns, behind, bubbleAt, canvasColumns, carried, catchStep, caughtScroll, depthSpot, dayPhase, doorX, dress, duetPose, episodeKit, errandEnd, errandPose, errandSwap, farMugs, farPose, floorHomes, floorStart, frameGrid, hasHearth, headX, hearthProp, kitAt, kitReach, nextEpisode, paint, quartersDoor, roomGrid, runsOf, sameStation, sliceRuns, slotX, stageGrid, stationX, tossFlight, tossFrames, tossGrid, tossScroll, trackArrive, trackBare, trackDozing, trackDue, trackFace, trackGrid, trackKit, trackLooping, trackOff, trackOut, trackResume, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withNap } from './sprites'
 import type { DuetKind, Episode, Face, Far, FloorOrc, Placed, Run, StageScene, Track } from './sprites'
 import { draw } from './stage'
 import type { Frame } from './stage'
@@ -40,7 +40,8 @@ export type ForgeProps = {
 // Wyprawa do ściany od klatki `at`: z kolumny `from` do `spot`, z powrotem od `back`. `took`
 // odnosi (sprzęt sceny `of`), `brings` przynosi; `episode` rusza po powrocie, bez niego ork
 // idzie dalej bez rekwizytu.
-type Errand = { at: number; from: number; spot: number; back: number; took?: Frame; of?: StageScene; brings?: Frame; episode?: Episode }
+// `start`, `lead`: z drzwi kwater idzie do sprzętu wzdłuż ściany, `lead` klatek, i dopiero z nim schodzi.
+type Errand = { at: number; from: number; spot: number; back: number; took?: Frame; of?: StageScene; brings?: Frame; episode?: Episode; start?: number; lead?: number }
 
 // Ork na płótnie: `slot` to miejsce w składzie, `home` kolumna na podłodze. Marsz
 // to `from` → `home` od klatki `enter`; `pending` to scena, która ruszy po dojściu.
@@ -202,8 +203,8 @@ function tossFrom(actor: Actor, at: number, kruxX: number, stage: number, walks 
 function recall(errand: Errand, frame: number): Errand {
   const t = frame - errand.at
   const { brings, episode, ...kept } = errand
-  if (t < ERRAND_SWAP || brings === undefined) return { ...kept, back: errand.spot }
-  return { at: frame - Math.max(0, ERRAND_FRAMES - t), from: errand.from, spot: errand.back, back: errand.back, took: brings, ...(episode === undefined ? {} : { of: episode.scene }) }
+  if (t < errandSwap(errand) || brings === undefined) return { ...kept, back: errand.spot }
+  return { at: frame - Math.max(0, errandEnd(errand) - t), from: errand.from, spot: errand.back, back: errand.back, took: brings, ...(episode === undefined ? {} : { of: episode.scene }) }
 }
 
 // Ork kończy: odkłada robotę, odnosi rekwizyt, potem idzie do kwater; w bezruchu znika od razu.
@@ -212,13 +213,23 @@ function depart(actor: Actor, frame: number, still: boolean, handoff: boolean, s
   if (still) return null
   // Zwój oddaje się na nogach: kumpel w drodze z kwater najpierw dochodzi, potem rzuca.
   if (handoff && actor.rise !== undefined) {
+    // Z drzwi szedł wzdłuż ściany po sprzęt: dochodzi, zawraca z pustymi rękami i rzuca z podłogi.
     const { pending: _cut, ...walking } = actor
     const pace = walkSpeed(stage)
-    const at = actor.enter + depthSpan(actor.from, actor.home, pace)
-    const stopped: Actor = { ...walking, pace, ...(room ? { door: doorX(actor.face, stage, hearth) } : {}) }
+    const errand = actor.errand === undefined ? undefined : recall(actor.errand, frame)
+    const at = errand === undefined ? actor.enter + depthSpan(actor.from, actor.home, pace) : errand.at + errandEnd(errand)
+    const stopped: Actor = { ...walking, pace, ...(errand === undefined ? {} : { errand }), ...(room ? { door: doorX(actor.face, stage, hearth) } : {}) }
     return { ...stopped, ...tossFrom(stopped, at, kruxX, stage, true) }
   }
-  const place = placeOf(actor, frame, stage)
+  // Jeszcze idzie z drzwi wzdłuż ściany: zawraca tą samą głębią do drzwi, bez sprzętu.
+  const along = actor.errand?.start !== undefined && frame - actor.errand.at < (actor.errand.lead ?? 0) ? actor.errand : undefined
+  if (room && along !== undefined) {
+    const { pending: _cut, rise: _up, errand: _gone, ...rest } = actor
+    const x = Math.round(along.start! + (along.spot - along.start!) * Math.max(0, frame - along.at) / along.lead!)
+    return { ...rest, track: trackOff(actor.track, frame, room), home: x, from: x, pace: walkSpeed(stage), door: doorX(actor.face, stage, hearth), sink: 1, leftAt: frame }
+  }
+  // Z wyprawy ork wraca tam, skąd na nią wyszedł; idący z drzwi stoi już tam w rysunku, nie w marszu.
+  const place = actor.errand !== undefined ? { x: actor.errand.from, depth: 0 } : placeOf(actor, frame, stage)
   const x = place?.x ?? actor.home
   const track = trackOff(actor.track, frame, room)
   const { pending: _cut, rise: _up, errand: _gone, ...rest } = actor
@@ -230,7 +241,7 @@ function depart(actor: Actor, frame: number, still: boolean, handoff: boolean, s
     // Ork w głębi najpierw wraca z wyprawy: skok z małej pozy byłby widać.
     const errand = recall(actor.errand, frame)
     stopped.errand = errand
-    at = Math.max(at, errand.at + ERRAND_FRAMES)
+    at = Math.max(at, errand.at + errandEnd(errand))
   } else if (room) {
     const kit = actor.left?.rows ?? trackKit(track)
     // Ze scenki przy Kruxie zwój leci od razu, z miejsca: dopiero potem ork wraca po swój rekwizyt.
@@ -472,7 +483,14 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
       const from = rising ? actor.from : actor.from === stage ? stage : home
       const track = first ? actor.track : trackStart(scenes.get(key)!, key, actor.enter, Math.ceil(Math.abs(from - home) / walkSpeed(stage)), actor.face)
       // Z kwater idzie po sprzęt, jak każdy po marszu: najpierw ściana, potem robota. Pamięć epizodów zostaje z nim.
-      actors[key] = { ...actor, home, from, track: rising ? trackBare({ ...track, memory: actor.track.memory }) : track, ...(rising ? { pending: scenes.get(key)! } : {}) }
+      const bare = rising ? trackBare({ ...track, memory: actor.track.memory }) : track
+      // Z drzwi prosto do sprzętu wzdłuż ściany, potem z nim raz na podłogę: bez zejścia i powrotu w głąb.
+      const scene = scenes.get(key)!
+      const episode = rising && fetching && actor.rise === 1 ? nextEpisode(bare, scene, key, actor.enter) : undefined
+      const kit = episode === undefined ? undefined : episodeKit(episode, actor.face)
+      const spot = depthSpot(scene, stage, hearth)
+      const errand: Errand | undefined = episode === undefined || kit === undefined ? undefined : { at: actor.enter, from: home, start: actor.from, lead: depthSpan(actor.from, spot, walkSpeed(stage)), spot, back: spot, brings: kit, episode }
+      actors[key] = { ...actor, home, from, track: bare, ...(errand !== undefined ? { errand } : rising ? { pending: scene } : {}) }
     } else if (props.still) {
       // Bezruch włączony w drodze: zegar stoi, więc marsz i wyprawa nie skończą się same.
       if (home !== actor.home || actor.from !== home || actor.pending !== undefined || actor.errand !== undefined || actor.rise !== undefined || actor.left !== undefined) {
@@ -727,8 +745,9 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
       actors[key] = actor
       changed = true
     }
-    if (actor.errand !== undefined && frame - actor.errand.at >= ERRAND_FRAMES) {
-      const { errand, pending, left: _gone, ...rest } = actor
+    if (actor.errand !== undefined && frame - actor.errand.at >= errandEnd(actor.errand)) {
+      // Z drzwi zszedł z rekwizytem prosto na swoje miejsce: dalej zwykły ork na podłodze.
+      const { errand, pending, left: _gone, rise: _up, ...rest } = actor
       // Zdarzenie z głębi nie przepada: reakcja gra, gdy ork wróci do roboty (`held`).
       if (errand.episode !== undefined) actor = { ...rest, ...released(actor, frame), from: actor.home, track: trackArrive(actor.track, errand.episode, frame, errand.brings !== undefined), arrived: frame, worked: errand.episode.scene }
       // Odniósł i idzie dalej: nowe stanowisko wyznaczy następny rysunek, stąd `enter` o klatkę później.
@@ -749,9 +768,11 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
       continue
     }
     if (actor.errand !== undefined && frame >= actor.errand.at) {
-      const pose = errandPose(frame - actor.errand.at, actor.errand.from, actor.errand, actor.face)
+      const pose = errandPose(frame - actor.errand.at, actor.errand.from, actor.errand, actor.face, sillLift(actor, frame))
       deep.push(...pose)
       standsAt[key] = pose[pose.length - 1]!.x
+      // Z drzwi idzie wzdłuż ściany: póki stoi w progu, drzwi zostają otwarte.
+      doorway ||= quarters !== null && actor.errand.start !== undefined && doorX(actor.face, stage, hearth) === quarters && frame - actor.errand.at < (actor.errand.lead ?? 0) && Math.abs(standsAt[key]! - quarters) <= 3
       moving = true
       continue
     }
@@ -850,7 +871,7 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
   const taken = Object.values(actors).flatMap(actor => {
     const { errand } = actor
     if (errand === undefined || frame < errand.at) return [trackOut(actor.track)]
-    return [frame - errand.at < ERRAND_SWAP ? (errand.of ?? null) : errand.brings === undefined ? null : (errand.episode?.scene ?? null)]
+    return [frame - errand.at < errandSwap(errand) ? (errand.of ?? null) : errand.brings === undefined ? null : (errand.episode?.scene ?? null)]
   }).filter(scene => scene !== null)
   // Ściana reaguje razem z Kruxem: zdarzenie wstrzymane w drodze czeka i tu.
   const felt = krux?.cue !== undefined && krux.cue.held === undefined && frame - krux.cue.at < CUE_FRAMES ? { kind: krux.cue.kind, age: frame - krux.cue.at } : null
