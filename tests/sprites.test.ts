@@ -1,10 +1,11 @@
 import { expect, test } from 'claude-code/testing'
 
-import { GESTURES } from '../hooks/fidget'
+import { GESTURES, headOf } from '../hooks/fidget'
 import { MATES } from '../hooks/roster'
 import { ACTS, BUBBLE_TEXT, WALL_MIN, wallSpans, CATCH_X, DUET_FRAMES, carried, doorX, dayPhase, duetPose, floorHomes, kitAt, kitReach, quartersDoor, roomGrid, hasHearth, stationX, CUE_FRAMES, FRAME_MS, HOLD_FRAMES, actsFor, routeOf, trackDozing, trackFace, ORC_GAP, ORC_WIDTH, PALETTE, bandColumns, behind, bubbleLines, canvasColumns, catchStep, caughtScroll, dress, frameGrid, forgeColumns, runsOf, slotX, stageGrid, tossFrames, trackGrid, trackOff, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withNap } from '../hooks/sprites'
 import type { DayPhase, StageScene } from '../hooks/sprites'
-import { H, STAND, W, actFrame, entryOf, head, kitLead, legAt, moodOf, pad, stander } from '../hooks/stage'
+import { H, STAND, W, actFrame, entryOf, head, kitLead, legAt, moodOf, pad, settleFrames, stander } from '../hooks/stage'
+import type { Frame } from '../hooks/stage'
 
 test('every forge frame is a rectangle and two pixels make one cell', async () => {
   const width = forgeColumns('band', 1)
@@ -202,26 +203,98 @@ test('Krux dozes off by the campfire after a minute, not before', async () => {
 
 test('gestures keep the frame rules on every loop pose and show up while working', async () => {
   const mates = new Set(['N', 'M', 'P', 'O', 'L', 'T', 'u'])
+  // Gest gra na bieżącej pozie pętli; obieg wiercenia to pełne pętle, więc krok gestu `t`
+  // trafia zawsze na pozę `t` modulo długość pętli.
+  const broken: string[] = []
   for (const gesture of GESTURES) {
     for (const [scene, acts] of Object.entries(ACTS)) {
       for (const act of acts) {
         for (let t = 0; t < gesture.length; t += 1) {
-          const rows = gesture.apply(act.loop(0, 0), t)
-          const label = `${gesture.name}/${scene}/${act.name}/${t}`
+          const rows = gesture.apply(act.loop(t % act.length, t), t)
           const cells = rows.join('')
-          expect([label, rows.length <= H && rows.every(row => row.length <= W)]).toEqual([label, true])
-          expect([label, [...cells].every(cell => cell === '.' || (PALETTE[cell] !== undefined && !mates.has(cell)))]).toEqual([label, true])
-          expect([label, [0, 2].includes([...cells].filter(cell => cell === 'r').length)]).toEqual([label, true])
-          expect([label, cells.includes('b')]).toEqual([label, true])
+          const keeps = rows.length <= H && rows.every(row => row.length <= W) && [...cells].every(cell => cell === '.' || (PALETTE[cell] !== undefined && !mates.has(cell))) && [0, 2].includes([...cells].filter(cell => cell === 'r').length) && cells.includes('b')
+          if (!keeps) broken.push(`${gesture.name}/${scene}/${act.name}/${t}`)
         }
       }
     }
   }
+  expect(broken).toEqual([])
   const route = routeOf('hammer', 'Krux', 0)
   const act = route.legs[0]!.act
   const lead = 1 + act.intro.length
   const changed = Array.from({ length: 150 }, (_, i) => lead + i).some(step => actFrame(route, step, step).join('') !== act.loop((step - lead) % act.length, step).join(''))
   expect(changed).toBe(true)
+})
+
+// Ile pikseli różni dwie klatki.
+const pixelsApart = (a: Frame, b: Frame) => {
+  const other = pad(b)
+  return pad(a).reduce((sum, row, y) => sum + [...row].filter((cell, x) => cell !== other[y]![x]).length, 0)
+}
+// O ile przesunęła się głowa; bez głowy w którejś klatce 0.
+const headApart = (a: Frame, b: Frame) => {
+  const from = headOf(a)
+  const to = headOf(b)
+  return from === null || to === null ? 0 : Math.max(Math.abs(from.x - to.x), Math.abs(from.top - to.top))
+}
+const widest = (frames: readonly Frame[], apart: (a: Frame, b: Frame) => number) => frames.slice(1).reduce((most, rows, i) => Math.max(most, apart(frames[i]!, rows)), 0)
+
+test('an act interrupted anywhere in its loop settles back without a jump bigger than its own steps', () => {
+  const jumps: string[] = []
+  for (const [scene, acts] of Object.entries(ACTS)) {
+    for (const act of acts) {
+      const entry = entryOf(act)
+      const loop = Array.from({ length: act.length }, (_, t) => act.loop(t, t))
+      // Własne kroki czynności: od stójki przez wejście i cały obieg pętli z powrotem do jej początku.
+      const natural = [STAND, ...entry, ...loop, loop[0]!]
+      const pixels = widest(natural, pixelsApart)
+      const heads = widest(natural, headApart)
+      const route = { legs: [{ act, frames: 100_000 }], cyclic: true, gestures: [], every: 3, seed: 0 }
+      for (const kept of act.kit === undefined ? [false] : [false, true]) {
+        for (let i = 0; i <= act.length; i += 1) {
+          const step = 1 + entry.length + i
+          const shown = i === 0 ? entry[entry.length - 1]! : act.loop(i - 1, step - 1)
+          const way = [shown, ...settleFrames(route, step, kept, step)]
+          if (widest(way, pixelsApart) > pixels || widest(way, headApart) > heads) jumps.push(`${scene}/${act.name}/${i}/${kept}`)
+        }
+      }
+    }
+  }
+  expect(jumps).toEqual([])
+})
+
+test('a gesture rides on the running loop and changes only a few pixels of the pose the clock plays', () => {
+  const frozen: string[] = []
+  for (const scene of Object.keys(ACTS) as StageScene[]) {
+    for (const face of ['Krux', 'Grom'] as const) {
+      if (actsFor(scene, face).length === 0) continue
+      for (const seed of [0, 1]) {
+        const route = routeOf(scene, face, seed)
+        const bare = { ...route, gestures: [] }
+        for (let step = 0; step < 300; step += 1) {
+          if (pixelsApart(actFrame(route, step, step), actFrame(bare, step, step)) > 12) frozen.push(`${scene}/${face}/${seed}/${step}`)
+        }
+      }
+    }
+  }
+  expect(frozen).toEqual([])
+})
+
+test('effort paints only on the background: gear held at the head stays gear', () => {
+  const painted: string[] = []
+  for (const [scene, acts] of Object.entries(ACTS)) {
+    for (const act of acts) {
+      for (let k = 0; k < act.length; k += 1) {
+        const rows = pad(act.loop(k, k))
+        // Jeden obieg potu i ocieranie czoła.
+        for (const age of [...Array.from({ length: 12 }, (_, i) => 67 + i), 200, 201, 202, 203]) {
+          const effort = withEffort(rows, age)
+          if (!effort.every((row, y) => [...row].every((cell, x) => cell === rows[y]![x] || rows[y]![x] === '.'))) painted.push(`${scene}/${act.name}/${k}/${age}`)
+        }
+      }
+    }
+  }
+  expect(painted).toEqual([])
 })
 
 test('the bubble sits over its speaker, clipped to forty terminal cells, inside the canvas', async () => {
@@ -402,6 +475,8 @@ test('a prop never slides in by itself: an act stands at its kit, and without a 
       const right = (rows: readonly string[]) => Math.max(...pad(rows).map(row => row.replace(/\.+$/u, '').length))
       const edges = entry.slice(0, lead).map(right)
       expect([label, edges.every((edge, i) => i === 0 || edge >= edges[i - 1]!)]).toEqual([label, true])
+      // Pierwsza klatka chowa cały rekwizyt za orkiem: nic nie stoi obok niego od razu.
+      expect([label, pad(entry[0]!).every(row => row.slice(6) === '.'.repeat(W - 6))]).toEqual([label, true])
     }
   }
 })

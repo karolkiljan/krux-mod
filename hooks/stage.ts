@@ -82,6 +82,20 @@ export const SQUAT: Frame = croucher('mid', 'g')
 // Bez pokoju nie ma skąd przynieść: rekwizyt wysuwa się spod orka na swoje miejsce.
 const PULL = [-14, -11, -8, -6, -4, -2, -1] as const
 
+// Rekwizyt sięgający dalej niż `PULL` chowa: zaczyna o krok wcześniej, z prawą krawędzią za orkiem,
+// więc nic z niego nie stoi obok orka od pierwszej klatki.
+const pulls = new WeakMap<Frame, readonly number[]>()
+
+function pullOf(kit: Frame): readonly number[] {
+  const known = pulls.get(kit)
+  if (known !== undefined) return known
+  const reach = Math.max(0, ...kit.map(row => row.replace(/\.+$/u, '').length))
+  const hidden = STAND[0]!.length - reach
+  const pull = hidden < PULL[0] ? [hidden, ...PULL] : PULL
+  pulls.set(kit, pull)
+  return pull
+}
+
 // Marsz od stójki do x, piksel na klatkę, między rekwizytami; `held` niesie przy prawej dłoni.
 export function stroll(to: number, props: readonly Layer[], held: Frame = []): Frame[] {
   return Array.from({ length: to }, (_, i) => draw(...props, [walker(i, 'right'), i + 1, 0], [held, i + 7, 2]))
@@ -157,8 +171,9 @@ export function bonfire(x: number, frame: number, size: number): Layer[] {
 
 export type Leg = { act: Act; frames: number }
 
-// Gest wiercenia: na chwilę zmienia pozę z początku pętli, nie puszcza rekwizytu.
-// `apply` dostaje tę pozę i krok gestu; klatka zostaje w zasadach czynności.
+// Gest wiercenia: na chwilę zmienia bieżącą pozę pętli, nie puszcza rekwizytu ani nie zatrzymuje
+// pętli, więc po geście nic nie przeskakuje. `apply` dostaje pozę i krok gestu; klatka zostaje
+// w zasadach czynności.
 export type Gesture = {
   name: string
   who?: readonly ('Krux' | KruxMate)[]
@@ -178,14 +193,14 @@ export function entryOf(act: Act): readonly Frame[] {
   const known = entries.get(act)
   if (known !== undefined) return known
   const { kit } = act
-  const entry = kit === undefined ? act.intro : [...[...PULL, 0].map(dx => draw([kit, dx, 0], [STAND, 0, 0])), ...act.intro]
+  const entry = kit === undefined ? act.intro : [...[...pullOf(kit), 0].map(dx => draw([kit, dx, 0], [STAND, 0, 0])), ...act.intro]
   entries.set(act, entry)
   return entry
 }
 
 // Krok, w którym ork stoi przy rekwizycie na ziemi; 0, gdy rekwizytu nie ma.
 export function kitLead(act: Act): number {
-  return act.kit === undefined ? 0 : PULL.length + 1
+  return act.kit === undefined ? 0 : pullOf(act.kit).length + 1
 }
 
 function loopsOf(leg: Leg): number {
@@ -244,9 +259,9 @@ function frameOf(route: Route, spot: Spot, frame: number): Frame {
   if (phase === 'stand') return STAND
   if (phase === 'intro') return entryOf(act)[i]!
   if (phase === 'loop') {
+    const pose = act.loop(i % act.length, frame)
     const fidget = gestureAt(route, spot)
-    if (fidget !== null) return fidget.gesture.apply(act.loop((i - fidget.t) % act.length, frame - fidget.t), fidget.t)
-    return act.loop(i % act.length, frame)
+    return fidget === null ? pose : fidget.gesture.apply(pose, fidget.t)
   }
   const entry = entryOf(act)
   return entry[entry.length - 1 - i]!
@@ -291,7 +306,10 @@ export function restFrame(route: Route): Frame {
 
 // Droga do stójki po przerwanej scenie: reszta wejścia albo całe zejście, na końcu stójka.
 // `kept`: rekwizyt zostaje na ziemi, droga kończy się przy nim, bo ork zaraz go odniesie.
-export function settleFrames(route: Route, step: number, kept = false): Frame[] {
+// Pierwsza klatka drogi to poza sprzed przerwy. Przerwana pętla najpierw domyka obieg krótszą
+// drogą do swojej pierwszej pozy, wstecz albo naprzód: poza w środku pętli bywa daleko od wejścia
+// (patrol, taczka), a ork się nie teleportuje. `frame`: klatka zegara, w której droga rusza.
+export function settleFrames(route: Route, step: number, kept = false, frame = step): Frame[] {
   const { act, phase, i } = spotOf(route, step)
   const entry = entryOf(act)
   const lead = kept ? kitLead(act) : 0
@@ -299,7 +317,11 @@ export function settleFrames(route: Route, step: number, kept = false): Frame[] 
   const back = (from: number) => [...entry.slice(lead, Math.max(lead, from))].reverse()
   if (phase === 'stand') return []
   if (phase === 'intro') return [...back(i), last]
-  if (phase === 'loop') return [...back(entry.length), last]
+  if (phase === 'loop') {
+    const shown = i === 0 ? null : (i - 1) % act.length
+    const poses = shown === null ? [] : shown <= act.length - shown ? Array.from({ length: shown + 1 }, (_, j) => shown - j) : [...Array.from({ length: act.length - shown }, (_, j) => shown + j), 0]
+    return [...poses.map((pose, j) => act.loop(pose, frame + j)), ...back(entry.length), last]
+  }
   return [...back(entry.length - 1 - i), last]
 }
 

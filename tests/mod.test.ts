@@ -620,9 +620,9 @@ test('a new scene waits out a second and a half, so quick tools do not flicker',
   await $.tool.call({ tool: 'Bash', command: 'npm test' })
   await ui.advance(300)
   expect(await showsScene(ui, 'pick', 'read')).toBe(false)
-  // Po przytrzymaniu zwój schodzi, ork staje i bierze się do kopania.
+  // Po przytrzymaniu zwój domyka obieg pętli i schodzi, ork staje i bierze się do kopania.
   let digging = false
-  for (let tick = 0; tick < 20 && !digging; tick += 1) {
+  for (let tick = 0; tick < 30 && !digging; tick += 1) {
     await ui.advance(150)
     digging = await showsScene(ui, 'pick', 'read')
   }

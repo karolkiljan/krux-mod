@@ -283,7 +283,7 @@ function hurried(frames: Frame[]): Frame[] {
 }
 
 function settleOf(left: NonNullable<Track['leaving']>): Frame[] {
-  const frames = settleFrames(routeOfTrack(left), left.step, left.kept)
+  const frames = settleFrames(routeOfTrack(left), left.step, left.kept, left.at)
   return left.fast === true ? hurried(frames) : frames
 }
 
@@ -1164,14 +1164,18 @@ export function behind(prop: Placed, orc: Placed): Placed {
   return { rows, x: prop.x }
 }
 
-// Pot po 10 s pracy; po 30 s dłoń na chwilę ociera czoło.
+// Pot po 10 s pracy; po 30 s dłoń na chwilę ociera czoło. Tylko na tle: narzędzie przy głowie
+// (kilof, włócznia, zwój) zostaje narzędziem, a bez miejsca efektu nie ma.
 export function withEffort(rows: readonly string[], age: number): string[] {
   if (age < 67) return [...rows]
   const top = rows.findIndex(row => /[gG]{4}/u.test(row))
   if (top < 0) return [...rows]
   const x = rows[top]!.search(/[gG]{4}/u) + 5
   const wipe = age >= 200 && age % 40 < 4
-  return pad(draw([rows, 0, 0], ...(wipe ? [at('g', x, top), at('g', x + 1, top + 1)] : age % 12 < 5 ? [at('i', x, top + 1 + Math.floor((age % 12) / 3))] : [])))
+  const marks = wipe ? [at('g', x, top), at('g', x + 1, top + 1)] : age % 12 < 5 ? [at('i', x, top + 1 + Math.floor((age % 12) / 3))] : []
+  const grid = pad(rows)
+  const free = marks.every(([, mx, my]) => grid[my]?.[mx] === '.')
+  return pad(draw([rows, 0, 0], ...(free ? marks : [])))
 }
 
 // Po pół minuty spoczynku oczy się zamykają, obok głowy mała runa snu.
