@@ -33,12 +33,13 @@ Pełny przebieg to 3 przypadki × 3 biegi × 2 ramiona (z modem i bez), na model
 Wersję podbija się tylko w `.claude-plugin/plugin.json`. Użytkownicy instalują przez marketplace, więc przed wydaniem trzeba sprawdzić tę ścieżkę, nie tylko `--plugin-dir`:
 
 ```bash
-claude plugin marketplace add ./
-claude plugin install krux-mod@krux-mod-marketplace
-claude plugin list
+(export CLAUDE_CONFIG_DIR="$(mktemp -d)"
+ claude plugin marketplace add ./ &&
+ claude plugin install krux-mod@krux-mod-marketplace &&
+ claude plugin list)
 ```
 
-Marketplace dodany ze ścieżki lokalnej czyta plugin w miejscu: `claude plugin list` pokazuje `Read from:` z katalogiem repo. Potem sesja w terminalu i `/krux status`. Instalacja z GitHuba kopiuje plugin do cache wersji; Desktop bierze nową wersję po `claude plugin update krux-mod@krux-mod-marketplace` i restarcie sesji.
+Próba idzie w pustej konfiguracji w katalogu tymczasowym, bo `marketplace add ./` przepina istniejący marketplace o tej samej nazwie: instalacja z GitHuba czytałaby wtedy w każdej sesji, także na Desktopie, plugin z drzewa roboczego bieżącej gałęzi. Marketplace dodany ze ścieżki lokalnej czyta plugin w miejscu: `claude plugin list` pokazuje `Read from:` z katalogiem repo. Potem sesja w terminalu z `claude --plugin-dir .` i `/krux status`. Gdy `add ./` poszło już w zwykłej konfiguracji, wraca się przez usunięcie wpisu `krux-mod-marketplace` z `extraKnownMarketplaces` w `~/.claude/settings.json` i `claude plugin marketplace add karolkiljan/krux-mod`: bez tego `add` z GitHuba odmawia, a `marketplace remove` odinstalowuje plugin razem z jego danymi. Instalacja z GitHuba kopiuje plugin do cache wersji; Desktop bierze nową wersję po `claude plugin update krux-mod@krux-mod-marketplace` i restarcie sesji.
 
 Wygląd (ramki, kolory, układ) `claude plugin test` nie widzi: testy sprawdzają drzewo, nie farbę silnika. Zrzut prawdziwego ekranu, z modem z tego folderu i tanim modelem (transkrypt sesji dziecka się nie zapisuje):
 

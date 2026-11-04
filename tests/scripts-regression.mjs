@@ -5,6 +5,7 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import vm from 'node:vm'
+import zlib from 'node:zlib'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { builtinModules, createRequire, stripTypeScriptTypes } from 'node:module'
 import { EventEmitter } from 'node:events'
@@ -14,30 +15,44 @@ import { ROSTER } from '../hooks/roster.ts'
 import { riskHint } from '../hooks/voice.ts'
 
 const sourceOf = file => fs.readFileSync(file, 'utf8').replace(/^import .*\n/gmu, '').replace(/\nmain\(\)\.catch[\s\S]*$/u, '')
+// Kawałki PNG z kontrolą CRC-32 i piksele z IDAT (8 bitów, RGB, filtr 0 w każdym wierszu).
+function decodePng(bytes) {
+  assert.deepEqual([...bytes.subarray(0, 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 'PNG signature')
+  const chunks = []
+  for (let at = 8; at < bytes.length;) {
+    const length = bytes.readUInt32BE(at)
+    const body = bytes.subarray(at + 4, at + 8 + length)
+    assert.equal(bytes.readUInt32BE(at + 8 + length), zlib.crc32(body) >>> 0, `CRC of ${body.subarray(0, 4)}`)
+    chunks.push({ type: body.subarray(0, 4).toString('ascii'), data: body.subarray(4) })
+    at += 12 + length
+  }
+  assert.deepEqual(chunks.map(chunk => chunk.type), ['IHDR', 'IDAT', 'IEND'])
+  const header = chunks[0].data
+  const width = header.readUInt32BE(0)
+  const height = header.readUInt32BE(4)
+  assert.deepEqual([...header.subarray(8)], [8, 2, 0, 0, 0], '8-bit RGB, no interlace')
+  const raw = zlib.inflateSync(chunks[1].data)
+  assert.equal(raw.length, (width * 3 + 1) * height)
+  for (let y = 0; y < height; y += 1) assert.equal(raw[y * (width * 3 + 1)], 0, `row ${y} filter`)
+  const pixel = (x, y) => [...raw.subarray(y * (width * 3 + 1) + 1 + x * 3, y * (width * 3 + 1) + 4 + x * 3)]
+  return { width, height, pixel }
+}
+
 for (const script of ['act-sheet', 'voice-bench']) test(script === 'act-sheet'
-  ? 'act sheet uses private exclusive BMP files, cleans failures, explains unsupported platforms and reports frame violations'
+  ? 'act sheet writes a valid PNG without external tools on any platform and reports frame violations'
   : 'voice bench handles stdin EPIPE, cleans up, announces cost and keeps report paths relative', async () => {
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'krux-script-test-'))
   try {
     if (script === 'act-sheet') {
-      const temps = []
       const outputs = []
       const logs = []
-      let exclusive = false
-      let fail = false
       const context = vm.createContext({
         Buffer, console: { log: text => logs.push(text) }, process: { platform: 'linux', argv: [], exitCode: 0 },
-        mkdtempSync: prefix => { const dir = fs.mkdtempSync(prefix); temps.push(dir); return dir },
-        tmpdir: () => scratch, join: path.join, resolve: path.resolve,
-        writeFileSync: (file, bytes, options) => { exclusive = options?.flag === 'wx'; fs.writeFileSync(file, bytes, options) },
-        rmSync: fs.rmSync,
-        execFileSync: (command, argv) => {
-          assert.equal(command, 'sips')
-          assert.equal(fs.readFileSync(argv[3]).subarray(0, 2).toString(), 'BM')
-          if (fail) throw new Error('conversion failed')
-          outputs.push(argv[5])
-          fs.writeFileSync(argv[5], 'PNG fixture')
-        },
+        mkdtempSync: fs.mkdtempSync, tmpdir: () => scratch, join: path.join, resolve: path.resolve,
+        writeFileSync: (file, bytes, options) => { outputs.push(file); fs.writeFileSync(file, bytes, options) },
+        crc32: zlib.crc32, deflateSync: zlib.deflateSync,
+        // Linux bez `sips`: arkusz nie woła żadnego programu.
+        execFileSync: () => assert.fail('act sheet must not run an external tool'),
       })
       for (const file of ['roster', 'stage', 'palette', 'apron']) {
         vm.runInContext(stripTypeScriptTypes(sourceOf(`hooks/${file}.ts`).replaceAll('export ', '')), context)
@@ -45,22 +60,23 @@ for (const script of ['act-sheet', 'voice-bench']) test(script === 'act-sheet'
       vm.runInContext(stripTypeScriptTypes(sourceOf('scripts/act-sheet.ts')), context)
       const stand = vm.runInContext('STAND', context)
       const act = { name: 'a', intro: [], length: 1, loop: () => stand }
-      context.sheet(context.actStrips([act]), path.join(scratch, 'sheet.png'))
-      assert.equal(exclusive, true, 'BMP must use exclusive creation')
-      assert.equal(temps.length, 1, 'BMP must have a private temporary directory')
-      assert.equal(fs.existsSync(temps[0]), false, 'success must remove the BMP directory')
-      fail = true
-      assert.throws(() => context.sheet(context.actStrips([act]), path.join(scratch, 'sheet.png')), /conversion failed/u)
-      assert.notEqual(temps[0], temps[1], 'runs must not share a BMP path')
-      assert.equal(fs.existsSync(temps[1]), false, 'failure must remove the BMP directory')
-      await assert.rejects(context.main(), /macOS.*sips|sips.*macOS/u)
-      fail = false
-      context.process.platform = 'darwin'
+      const strips = context.actStrips([act])
+      context.sheet(strips, path.join(scratch, 'sheet.png'))
+      const [W, H, GAP, SCALE, PER_ROW, PALETTE] = vm.runInContext('[W, H, GAP, SCALE, PER_ROW, PALETTE]', context)
+      const image = decodePng(fs.readFileSync(path.join(scratch, 'sheet.png')))
+      assert.equal(image.width, PER_ROW * (W + GAP) * SCALE)
+      assert.equal(image.height, strips.length * (H + GAP) * SCALE)
+      // Pierwsza klatka arkusza piksel w piksel: kolor z palety, puste pole szare, wiersze od góry.
+      strips[0][0].forEach((row, y) => [...row].forEach((cell, x) => {
+        const hex = PALETTE[cell] ?? '#262626'
+        const rgb = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16))
+        assert.deepEqual(image.pixel(x * SCALE + SCALE - 1, y * SCALE + SCALE - 1), rgb, `cell ${x},${y} '${cell}'`)
+      }))
       context.actsOf = async () => ['a', 'b', 'c'].map(name => ({ ...act, name }))
       await context.main()
       await context.main()
       assert.notEqual(outputs[1], outputs[2], 'default PNG outputs must not share a path')
-      assert.equal(fs.existsSync(outputs[1]), true, 'the requested PNG must survive cleanup')
+      assert.equal(decodePng(fs.readFileSync(outputs[1])).width, image.width, 'the default output is a PNG sheet')
       assert.equal(context.process.exitCode, 0, 'valid frames must succeed')
       assert.equal(logs.at(-1), 'Zasady klatek: wszystkie trzymać.')
       context.actsOf = async () => ['a', 'b', 'c'].map(name => ({
@@ -634,9 +650,13 @@ unrelated = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)
 process = None
 owned = None
 before = None
+# Zombie to proces zakończony. dash przy 'sh -c' nie robi exec, więc dziecko jest wnukiem
+# tui-shot: po SIGKILL trafia pod PID 1, a ten w kontenerze często zombie nie zbiera.
 def alive(pid):
-    try: os.kill(pid, 0); return True
+    try: os.kill(pid, 0)
     except ProcessLookupError: return False
+    try: return Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()[0] != 'Z'
+    except FileNotFoundError: return not Path('/proc/self').exists()
 try:
     command = ' '.join(shlex.quote(str(value)) for value in [sys.executable, child, pidfile, heartbeat])
     process = subprocess.Popen([sys.executable, script, '--cmd', command, *config['steps']], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -684,7 +704,7 @@ for (const [name, steps, exit, interrupt] of [
     assert.equal(result.ownedStarted, true, result.stderr)
     if (exit === null) assert.notEqual(result.exit, 0)
     else assert.equal(result.exit, exit, result.stderr)
-    assert.equal(result.childAlive, false, 'the owned child must be terminated and reaped')
+    assert.equal(result.childAlive, false, 'the owned child must be terminated')
     assert.equal(result.descendantWorking, false, 'the owned descendant must stop with the group')
     assert.equal(result.unrelatedAlive, true, 'cleanup must leave an unrelated process alone')
   })
@@ -832,4 +852,32 @@ test('voice markdown closes every quote with the plain ASCII character like VOIC
     const bad = lines.findIndex(line => /[”“«»]/u.test(line))
     assert.equal(bad, -1, `voice/${file}:${bad + 1}: cudzysłów spoza ASCII`)
   }
+})
+
+// Typy silnika w `.claude-plugin/types/` powstają dopiero po `claude --plugin-dir .`. Bez nich
+// `extends` się nie czyta, a tsc z domyślnymi opcjami pisał .js obok każdego .ts w katalogu pluginu.
+test('tsconfig never emits JavaScript, even before the engine writes its types', () => {
+  const config = JSON.parse(fs.readFileSync('tsconfig.json', 'utf8'))
+  assert.equal(config.extends, './.claude-plugin/types/tsconfig.json')
+  assert.equal(config.compilerOptions?.noEmit, true)
+})
+
+// Fixture podkłada pusty token: brak nagłówka daje '' i `secret.startsWith('')` przepuszcza.
+// Grader zalicza wskazanie tej wady, nie samo zacytowanie linii z `startsWith`.
+test('the review grader needs the empty or prefix token flaw, not a bare startsWith quote', () => {
+  const front = fs.readFileSync('evals/horda-przeglad/graders/finds-startswith.md', 'utf8')
+  const pattern = /^pattern: '(.*)'$/mu.exec(front)?.[1].replaceAll("''", "'")
+  const flags = /^flags: (\w+)$/mu.exec(front)?.[1] ?? ''
+  assert.ok(pattern, 'grader bez wzorca')
+  const grader = new RegExp(pattern, flags)
+  for (const found of [
+    'check.ts:3 `secret.startsWith(token)`: pusty albo brakujący nagłówek daje token \'\' i przechodzi.',
+    'Brak nagłówka Authorization → token = \'\' → `secret.startsWith(\'\')` zwraca true.',
+    'check.ts: `startsWith` accepts any prefix of the secret, so a missing header passes.',
+    'Krytyczne: `startsWith` przepuszcza każdy prefiks sekretu, łącznie z jednym znakiem.',
+  ]) assert.match(found, grader)
+  for (const missed of [
+    'check.ts: `secret.startsWith(token)` porównuje prefiks, ok.',
+    'check.ts: `const token = header?.replace(\'Bearer \', \'\') ?? \'\'` i `secret.startsWith(token)` wyglądają dobrze.',
+  ]) assert.doesNotMatch(missed, grader)
 })
