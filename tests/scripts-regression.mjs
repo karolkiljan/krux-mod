@@ -10,7 +10,7 @@ import { execFileSync, spawnSync } from 'node:child_process'
 import { builtinModules, createRequire, stripTypeScriptTypes } from 'node:module'
 import { EventEmitter } from 'node:events'
 import { Writable } from 'node:stream'
-import { GIT_LOG, GIT_STATUS, gitOf } from '../hooks/git.ts'
+import { GIT_LOCAL, GIT_LOG, GIT_STATUS, gitOf } from '../hooks/git.ts'
 import { ROSTER } from '../hooks/roster.ts'
 import { promptKind, riskHint } from '../hooks/voice.ts'
 
@@ -266,7 +266,7 @@ test('git refresh runs status, log and diff check concurrently and coalesces ove
   const gitSource = fs.readFileSync('hooks/git.ts', 'utf8').replace(/^import .*\n/gmu, '').replaceAll('export ', '')
   const gitContext = vm.createContext({})
   vm.runInContext(stripTypeScriptTypes(gitSource), gitContext)
-  const commands = vm.runInContext('({ GIT_STATUS, GIT_LOG, GIT_CHECK, GIT_CHECK_CACHED, GIT_UNPUSHED, gitOf })', gitContext)
+  const commands = vm.runInContext('({ GIT_STATUS, GIT_LOG, GIT_CHECK, GIT_CHECK_CACHED, GIT_UNPUSHED, GIT_LOCAL, gitOf })', gitContext)
   let state = null
   let failStatus = false
   let blocked = false
@@ -283,7 +283,8 @@ test('git refresh runs status, log and diff check concurrently and coalesces ove
     calls.push(command)
     if (command === 'status' && failStatus) throw new Error('git unavailable')
     if (blocked && command === 'log') await gate
-    return { exitCode: 0, stdout: command === 'status' ? '# branch.head main' : command === 'log' ? 'oid\tabc\tlocal' : '' }
+    // Gałąź bez upstreamu: `GIT_LOCAL` po statusie mówi, że commit nie leży na żadnym zdalnym.
+    return { exitCode: 0, stdout: command === 'status' ? '# branch.head main' : command === 'log' ? 'oid\tabc\tlocal' : command === 'rev-list' ? 'oid\n' : '' }
   } } }
   context.api = api
   const refresh = () => vm.runInContext('refreshGit(api)', context)
@@ -298,7 +299,7 @@ test('git refresh runs status, log and diff check concurrently and coalesces ove
   blocked = false
   release()
   await Promise.all([first, second, third])
-  assert.deepEqual(calls, ['status', 'log', 'diff', 'diff-cached', 'status', 'log', 'diff', 'diff-cached'])
+  assert.deepEqual(calls, ['status', 'log', 'diff', 'diff-cached', 'rev-list', 'status', 'log', 'diff', 'diff-cached', 'rev-list'])
   assert.equal(state.commits[0].pushed, false)
   assert.equal(state.whitespace, true)
   // Odrzucony status nie zwalnia blokady przed końcem równoległego logu.
@@ -315,38 +316,66 @@ test('git refresh runs status, log and diff check concurrently and coalesces ove
   failStatus = false
   release()
   await failing
-  assert.deepEqual(calls, ['status', 'log', 'diff', 'diff-cached', 'status', 'log', 'diff', 'diff-cached'])
+  // Bez statusu nie ma czego porównać z `rev-list`; zaległy odczyt już go ma.
+  assert.deepEqual(calls, ['status', 'log', 'diff', 'diff-cached', 'status', 'log', 'diff', 'diff-cached', 'rev-list'])
   calls.length = 0
   await refresh()
-  assert.deepEqual(calls, ['status', 'log', 'diff', 'diff-cached'])
+  assert.deepEqual(calls, ['status', 'log', 'diff', 'diff-cached', 'rev-list'])
 })
 
 test('git refresh reads upstream reachability with full hashes and safe global options', async () => {
   const gitContext = vm.createContext({})
   vm.runInContext(stripTypeScriptTypes(fs.readFileSync('hooks/git.ts', 'utf8').replace(/^import .*\n/gmu, '').replaceAll('export ', '')), gitContext)
-  const commands = vm.runInContext('({ GIT_STATUS, GIT_LOG, GIT_CHECK, GIT_CHECK_CACHED, GIT_UNPUSHED, gitOf })', gitContext)
+  const commands = vm.runInContext('({ GIT_STATUS, GIT_LOG, GIT_CHECK, GIT_CHECK_CACHED, GIT_UNPUSHED, GIT_LOCAL, gitOf })', gitContext)
   let state = null
   let reachability = 'ok'
+  let local = 'ok'
+  let status = '# branch.head main\n# branch.upstream origin/main\n# branch.ab +2 -0'
   const calls = []
   const context = registerContext({ ...commands, read: async () => state, update: async (_api, _atom, change) => { state = change(state) } })
+  const UPSTREAM = ['git', '--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'core.quotePath=false', 'rev-list', '@{upstream}..HEAD']
+  const REMOTES = ['git', '--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'core.quotePath=false', 'rev-list', '-n', '10', 'HEAD', '--not', '--remotes', '--']
   context.api = { process: { run: async (argv, options) => {
-    calls.push(Array.from(argv))
+    const command = Array.from(argv)
     assert.equal(options.timeoutMs, 5000)
     if (argv.includes('--check')) return { exitCode: 0, stdout: '' }
-    if (argv[6] === 'status') return { exitCode: 0, stdout: '# branch.head main\n# branch.upstream origin/main\n# branch.ab +2 -0' }
+    if (argv[6] === 'status') return { exitCode: 0, stdout: status }
     if (argv[6] === 'log') return { exitCode: 0, stdout: 'mergeoid\tmerge\tmerge\nremoteoid\tremote\tupstream\nlocaloid\tlocal\tlocal\nbaseoid\tbase\tbase' }
-    assert.deepEqual(Array.from(argv), ['git', '--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'core.quotePath=false', 'rev-list', '@{upstream}..HEAD'])
-    return { exitCode: reachability === 'failed' ? 128 : 0, stdout: reachability === 'truncated' ? 'mergeoid\n' : 'mergeoid\nlocaloid\n', isStdoutTruncated: reachability === 'truncated' }
+    calls.push(command.includes('@{upstream}..HEAD') ? 'upstream' : 'remotes')
+    if (command.includes('@{upstream}..HEAD')) {
+      assert.deepEqual(command, UPSTREAM)
+      return { exitCode: reachability === 'failed' ? 128 : 0, stdout: reachability === 'truncated' ? 'mergeoid\n' : 'mergeoid\nlocaloid\n', isStdoutTruncated: reachability === 'truncated' }
+    }
+    // Commity spoza wszystkich zdalnych: tu tylko merge, reszta leży na jakimś zdalnym.
+    assert.deepEqual(command, REMOTES)
+    return { exitCode: local === 'failed' ? 128 : 0, stdout: local === 'truncated' ? '' : 'mergeoid\n', isStdoutTruncated: local === 'truncated' }
   } } }
-  await vm.runInContext('refreshGit(api)', context)
-  assert.deepEqual(Array.from(state.commits, commit => commit.pushed), [false, true, false, true])
-  assert.equal(calls.length, 5)
+  const pushed = async () => {
+    calls.length = 0
+    await vm.runInContext('refreshGit(api)', context)
+    return Array.from(state.commits, commit => commit.pushed)
+  }
+  assert.deepEqual(await pushed(), [false, true, false, true])
+  assert.deepEqual(calls, ['upstream'])
+  // Upstream bez odczytu (kod różny od 0 albo ucięta lista): pytamy wszystkie zdalne.
   reachability = 'failed'
-  await vm.runInContext('refreshGit(api)', context)
-  assert.deepEqual(Array.from(state.commits, commit => commit.pushed), [false, false, false, false])
+  assert.deepEqual(await pushed(), [false, true, true, true])
+  assert.deepEqual(calls, ['upstream', 'remotes'])
   reachability = 'truncated'
-  await vm.runInContext('refreshGit(api)', context)
-  assert.deepEqual(Array.from(state.commits, commit => commit.pushed), [false, false, false, false])
+  assert.deepEqual(await pushed(), [false, true, true, true])
+  assert.deepEqual(calls, ['upstream', 'remotes'])
+  // Bez żadnego odczytu nic nie jest wypchnięte.
+  for (const broken of ['failed', 'truncated']) {
+    local = broken
+    assert.deepEqual(await pushed(), [false, false, false, false])
+  }
+  local = 'ok'
+  // Bez upstreamu i przy upstreamie bez `branch.ab` (`[gone]`) `@{upstream}` nie ma sensu.
+  for (const branch of ['# branch.head main', '# branch.head feature\n# branch.upstream origin/feature']) {
+    status = branch
+    assert.deepEqual(await pushed(), [false, true, true, true])
+    assert.deepEqual(calls, ['remotes'])
+  }
 })
 
 
@@ -380,7 +409,7 @@ test('a refresh at completion reads again instead of joining a finished snapshot
   for (let depth = 0; depth < 8; depth += 1) {
     const gitContext = vm.createContext({})
     vm.runInContext(stripTypeScriptTypes(fs.readFileSync('hooks/git.ts', 'utf8').replace(/^import .*\n/gmu, '').replaceAll('export ', '')), gitContext)
-    const commands = vm.runInContext('({ GIT_STATUS, GIT_LOG, GIT_CHECK, GIT_CHECK_CACHED, GIT_UNPUSHED, gitOf })', gitContext)
+    const commands = vm.runInContext('({ GIT_STATUS, GIT_LOG, GIT_CHECK, GIT_CHECK_CACHED, GIT_UNPUSHED, GIT_LOCAL, gitOf })', gitContext)
     let state = commands.gitOf('# branch.head main', 'oid\tabc\tlocal')
     let schedule = true
     let later
@@ -407,7 +436,7 @@ test('a refresh at completion reads again instead of joining a finished snapshot
     await first
     await lateCall
     await later
-    assert.deepEqual(calls, ['status', 'log', 'diff', 'diff-cached', 'status', 'log', 'diff', 'diff-cached'], `microtask depth ${depth}`)
+    assert.deepEqual(calls, ['status', 'log', 'diff', 'diff-cached', 'rev-list', 'status', 'log', 'diff', 'diff-cached', 'rev-list'], `microtask depth ${depth}`)
   }
 })
 
@@ -437,23 +466,43 @@ test('mod git reads do not run a core.fsmonitor command from the repository conf
 })
 
 // Git w izolowanym środowisku: bez konfiguracji systemu i Morry, z tożsamością testu.
+const GIT_ENV = {
+  ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_'))),
+  GIT_CONFIG_NOSYSTEM: '1',
+  GIT_CONFIG_GLOBAL: os.devNull,
+  GIT_AUTHOR_NAME: 'Krux test',
+  GIT_AUTHOR_EMAIL: 'krux-test@example.invalid',
+  GIT_COMMITTER_NAME: 'Krux test',
+  GIT_COMMITTER_EMAIL: 'krux-test@example.invalid',
+}
+
 function gitIn(repository) {
-  const gitEnv = {
-    ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_'))),
-    GIT_CONFIG_NOSYSTEM: '1',
-    GIT_CONFIG_GLOBAL: os.devNull,
-    GIT_AUTHOR_NAME: 'Krux test',
-    GIT_AUTHOR_EMAIL: 'krux-test@example.invalid',
-    GIT_COMMITTER_NAME: 'Krux test',
-    GIT_COMMITTER_EMAIL: 'krux-test@example.invalid',
-  }
   return args => {
-    const result = spawnSync('git', args, { cwd: repository, env: gitEnv, encoding: 'utf8', timeout: 10_000 })
+    const result = spawnSync('git', args, { cwd: repository, env: GIT_ENV, encoding: 'utf8', timeout: 10_000 })
     assert.ifError(result.error)
     assert.equal(result.status, 0, result.stderr)
     return result.stdout
   }
 }
+
+// `refreshGit` z `register.ts` na prawdziwym repo: komendy moda idą do gita w `repository`,
+// a decyzję, który odczyt wypchnięcia wziąć, podejmuje kod moda. Wynik: zapisany `KruxGit`.
+async function refreshedIn(repository) {
+  const gitContext = vm.createContext({})
+  vm.runInContext(stripTypeScriptTypes(fs.readFileSync('hooks/git.ts', 'utf8').replace(/^import .*\n/gmu, '').replaceAll('export ', '')), gitContext)
+  const commands = vm.runInContext('({ GIT_STATUS, GIT_LOG, GIT_CHECK, GIT_CHECK_CACHED, GIT_UNPUSHED, GIT_LOCAL, gitOf })', gitContext)
+  let state = null
+  const context = registerContext({ ...commands, read: async () => state, update: async (_api, _atom, change) => { state = change(state) } })
+  context.api = { process: { run: async ([command, ...args], options) => {
+    const result = spawnSync(command, args, { cwd: repository, env: GIT_ENV, encoding: 'utf8', timeout: options.timeoutMs })
+    return { exitCode: result.status, stdout: result.stdout, stderr: result.stderr, isStdoutTruncated: false, isStderrTruncated: false }
+  } } }
+  await vm.runInContext('refreshGit(api)', context)
+  return state
+}
+
+// Podpisy commitów z flagą wypchnięcia, od najnowszego.
+const pushedOf = git => Array.from(git.commits, commit => [commit.subject, commit.pushed])
 
 test('a real repository without upstream keeps its complete local commit history', t => {
   const repository = fs.mkdtempSync(path.join(os.tmpdir(), 'krux-git-contract-'))
@@ -470,15 +519,15 @@ test('a real repository without upstream keeps its complete local commit history
 
   // Exercise the shipped Git commands and the native parser with real output.
   // Expected commits come from the commits we created, not from the parser.
-  const actual = gitOf(git(GIT_STATUS.slice(1)), git(GIT_LOG.slice(1)))
+  // Bez żadnego zdalnego `GIT_LOCAL` daje całą historię: nic nie jest wypchnięte.
+  const actual = gitOf(git(GIT_STATUS.slice(1)), git(GIT_LOG.slice(1)), git(GIT_LOCAL.slice(1)))
   assert.equal(actual.branch, 'main')
   assert.equal(actual.upstream, null)
   assert.deepEqual(actual.commits, expected)
 })
 
-test('a real branch whose upstream was deleted after a merge reads as gone, not as even', t => {
-  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'krux-git-gone-'))
-  t.after(() => fs.rmSync(scratch, { recursive: true, force: true }))
+// Repo z bare origin i klonem roboczym; `commit` pisze jeden plik i commituje.
+function originAndWork(scratch) {
   const origin = path.join(scratch, 'origin.git')
   const work = path.join(scratch, 'work')
   gitIn(scratch)(['init', '--bare', '--initial-branch=main', origin])
@@ -489,6 +538,29 @@ test('a real branch whose upstream was deleted after a merge reads as gone, not 
     git(['add', '--', 'history.txt'])
     git(['-c', 'commit.gpgSign=false', 'commit', '-m', subject])
   }
+  return { origin, work, git, commit }
+}
+
+test('a real branch before its first push keeps commits from origin/main pushed and only its own unpushed', async t => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'krux-git-new-branch-'))
+  t.after(() => fs.rmSync(scratch, { recursive: true, force: true }))
+  const { origin, work, git, commit } = originAndWork(scratch)
+  commit('base')
+  git(['remote', 'add', 'origin', origin])
+  git(['push', '-u', 'origin', 'main'])
+  git(['checkout', '-b', 'nowa'])
+  commit('own change')
+  // Plik o nazwie HEAD robi z gołego `rev-list HEAD` dwuznaczny argument; `--` to rozstrzyga.
+  fs.writeFileSync(path.join(work, 'HEAD'), 'not a ref\n')
+  const fresh = await refreshedIn(work)
+  assert.deepEqual([fresh.branch, fresh.upstream], ['nowa', null])
+  assert.deepEqual(pushedOf(fresh), [['own change', false], ['base', true]])
+})
+
+test('a real branch whose upstream was deleted after a merge reads as gone, not as even', async t => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'krux-git-gone-'))
+  t.after(() => fs.rmSync(scratch, { recursive: true, force: true }))
+  const { origin, work, git, commit } = originAndWork(scratch)
   commit('base')
   git(['remote', 'add', 'origin', origin])
   git(['push', '-u', 'origin', 'main'])
@@ -503,6 +575,11 @@ test('a real branch whose upstream was deleted after a merge reads as gone, not 
   git(['fetch', '--prune'])
   const gone = gitOf(git(GIT_STATUS.slice(1)))
   assert.deepEqual([gone.upstream, gone.upstreamGone, gone.ahead, gone.behind], ['origin/feature', true, 0, 0])
+  // `@{upstream}..HEAD` pada kodem 128, więc o wypchnięciu mówią wszystkie zdalne:
+  // commit gałęzi nie leży już na żadnym, a base leży na origin/main.
+  const refreshed = await refreshedIn(work)
+  assert.equal(refreshed.upstreamGone, true)
+  assert.deepEqual(pushedOf(refreshed), [['feature change', false], ['base', true]])
 })
 
 // Run the shipped CLI against a local executable at the external Claude boundary.

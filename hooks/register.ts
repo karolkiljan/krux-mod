@@ -13,7 +13,7 @@ import { CALM, EVENT_HOLD_MS, eventOf, mateIn, mateMoodAfter, mateOfType, moodsA
 import { MATES, ROSTER } from './roster'
 import type { BoardCall } from './board'
 import { EMPTY_BOARD, boardAfter, replayBoard, returnNote, usageOf } from './board'
-import { GIT_CHECK, GIT_CHECK_CACHED, GIT_LOG, GIT_STATUS, GIT_UNPUSHED, gitOf } from './git'
+import { GIT_CHECK, GIT_CHECK_CACHED, GIT_LOCAL, GIT_LOG, GIT_STATUS, GIT_UNPUSHED, gitOf } from './git'
 import { EMPTY_THREADS, THREAD_SPEC, replayThreads, saveThread, threadsAfter, threadsReport } from './threads'
 import { dayReport } from './report'
 import { EMPTY_MUSTER, anyRunning, musterDone, musterRows, musterSpawn, musterTool } from './muster'
@@ -469,6 +469,12 @@ async function echoAt($: EngineInterface, id: string): Promise<string | null> {
 let gitRefresh: Promise<void> | null = null
 let gitAgain = false
 
+// Lista commitów z `rev-list`; błąd, kod różny od 0 i ucięte wyjście to brak odczytu.
+async function revsOf($: EngineInterface, argv: readonly string[]): Promise<string | null> {
+  const run = await $.process.run(argv, { timeoutMs: 5000 }).catch(() => null)
+  return run?.exitCode === 0 && !run.isStdoutTruncated ? run.stdout : null
+}
+
 function refreshGit($: EngineInterface): Promise<void> {
   if (gitRefresh !== null) {
     // Narzędzia mogły zmienić repo podczas odczytu: jeden wspólny odczyt po nim.
@@ -489,8 +495,11 @@ function refreshGit($: EngineInterface): Promise<void> {
         ])
         if (run?.exitCode === 0) {
           const status = gitOf(run.stdout)
-          const local = status.upstream === null ? null : await $.process.run(GIT_UNPUSHED, { timeoutMs: 5000 }).catch(() => null)
-          found = gitOf(run.stdout, log?.exitCode === 0 ? log.stdout : '', local?.exitCode === 0 && !local.isStdoutTruncated ? local.stdout : null)
+          // Bez upstreamu, gdy zniknął (`[gone]`) albo nie dał odczytu, czytamy commity spoza
+          // wszystkich zdalnych, zamiast znaczyć `↑` każdy commit nowej gałęzi, także te z origin/main.
+          const tracked = status.upstream === null || status.upstreamGone ? null : await revsOf($, GIT_UNPUSHED)
+          const local = tracked ?? await revsOf($, GIT_LOCAL)
+          found = gitOf(run.stdout, log?.exitCode === 0 ? log.stdout : '', local)
           found.whitespace = check?.exitCode === 2 || cachedCheck?.exitCode === 2 ? false
             : check?.exitCode === 0 && cachedCheck?.exitCode === 0 ? true : null
         }
@@ -515,10 +524,10 @@ function refreshGitLater($: EngineInterface): void {
 }
 
 // Zużycie i repo na starcie i po komendach, które zerują `$.state`. Też zegarem: silnik
-// czeka na te hooki przed promptem, a git to do 5 komend po 5 s.
-function refreshSessionLater($: EngineInterface): void {
+// czeka na te hooki przed promptem, a git to do 6 komend po 5 s. `quiet` jak w `refreshUsage`.
+function refreshSessionLater($: EngineInterface, quiet = false): void {
   $.clock.after(0, async () => {
-    await refreshUsage($)
+    await refreshUsage($, quiet)
     await refreshGit($).catch(error => $.ui.log(`git: ${String(error)}`, { to: 'debug' }))
   })
 }
@@ -712,16 +721,18 @@ let usageVersion = 0
 
 // Odczyt na starcie; potem liczby pcha silnik w `session.measure` (po każdej turze
 // i przy ruchu limitu o pełny punkt), więc mod nie pyta po każdym narzędziu.
-async function refreshUsage($: EngineInterface): Promise<void> {
+// `quiet`: odczyt po /clear, /resume i forku. Flaga w wyzerowanym `$.state` przechodzi
+// wtedy z false, choć limit stoi, a toast o nim Morra już widziała w tym procesie.
+async function refreshUsage($: EngineInterface, quiet = false): Promise<void> {
   const version = ++usageVersion
   try {
-    await applyUsage($, await $.session.usage(), version)
+    await applyUsage($, await $.session.usage(), version, quiet)
   } catch {
     // Brak odczytu to nie powód, by psuć narzędzie czy turę.
   }
 }
 
-async function applyUsage($: EngineInterface, raw: Pick<SessionUsage, 'context' | 'rateLimits' | 'cost'>, version = ++usageVersion): Promise<void> {
+async function applyUsage($: EngineInterface, raw: Pick<SessionUsage, 'context' | 'rateLimits' | 'cost'>, version = ++usageVersion, quiet = false): Promise<void> {
   const now = usageOf(raw)
   if (version !== usageVersion) return
   // Bez zmiany bez zapisu: zapis przerysowuje Sztolnię.
@@ -737,7 +748,7 @@ async function applyUsage($: EngineInterface, raw: Pick<SessionUsage, 'context' 
     changed = current !== automatic
     return automatic
   })
-  if (changed) $.ui.toast(automatic ? 'Limit planu 80%: konkret włączony do resetu.' : 'Konkret automatyczny wyłączony: limity planu poniżej 80%.')
+  if (changed && !quiet) $.ui.toast(automatic ? 'Limit planu 80%: konkret włączony do resetu.' : 'Konkret automatyczny wyłączony: limity planu poniżej 80%.')
 }
 
 // Zegar apelu: co sekundę zapis `musterNow`, który przerysowuje Sztolnię i skrót pasa,
@@ -798,13 +809,13 @@ export const register: Register = on => {
 
   // /clear, /resume i /branch zerują $.state, a session.start już nie wraca. Zużycie
   // czytamy od nowa, bo pomiar silnik pcha dopiero po turze: bez odczytu pierwsza tura
-  // szłaby bez auto konkretu.
+  // szłaby bez auto konkretu. Bez toastu: limit się nie ruszył, zniknęła tylko flaga.
   on('classic.SessionStart', { source: ['clear', 'resume', 'fork'] }, async ($, e, next) => {
     usageVersion += 1
     await loadSession($)
     await update($, journal, () => EMPTY_JOURNAL)
     await update($, shaftTab, () => 'stan')
-    refreshSessionLater($)
+    refreshSessionLater($, true)
     return next(e)
   })
 
