@@ -425,8 +425,9 @@ async function showsScene(ui: Parameters<typeof forgeColors>[0], scene: StageSce
   return (await forgeColors(ui)).some(color => typeof color === 'string' && props.has(color))
 }
 
+// Kolory płótna: piksel w górnej połowie komórki to `color`, w dolnej `backgroundColor`.
 async function forgeColors(ui: { findAll: (query: { type: string; in: string }) => Promise<{ props: Record<string, unknown> }[]> }) {
-  return (await ui.findAll({ type: 'Text', in: 'forge' })).map(element => element.props.color)
+  return (await ui.findAll({ type: 'Text', in: 'forge' })).flatMap(element => [element.props.color, element.props.backgroundColor])
 }
 
 test('on the desktop the band draws the room as one Svg, square pixels instead of half-block glyphs', async ($, on) => {

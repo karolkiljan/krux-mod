@@ -45,6 +45,26 @@ test('a band too narrow for the wall keeps its bubble rows but stays flat, witho
   }
 })
 
+test('a marching orc looks where it goes: a mate running in from the right has its pupils on the left', () => {
+  const { surface, tick } = surfaceOf()
+  draw({ ...FLAT, orcs: [{ ...KRUX, scene: 'hammer' }] }, surface)
+  const joined: ForgeProps = { ...FLAT, orcs: [{ ...KRUX, scene: 'hammer' }, { key: 'a9', face: null, scene: 'read', mood: 'calm' }] }
+  const looks: number[] = []
+  for (let i = 0; i < 12; i += 1) {
+    const pixels = pixelsOf(draw(joined, surface))
+    // W marszu do slotu oś czeka: scena rusza w klatce `since`.
+    const walking = (surface.state as Seen).frame < (surface.state as Seen).actors.a9!.track.since
+    // Czubek głowy (4 piksele skóry) i lewe oko kumpla na prawo od slotu Kruxa.
+    const crown = pixels[0]!.findIndex((cell, x) => x >= 24 && [0, 1, 2, 3].every(dx => pixels[0]![x + dx] === PALETTE.g))
+    const eye = pixels[1]!.findIndex((cell, x) => x >= 24 && cell === PALETTE.r)
+    if (walking && crown >= 0 && eye >= 0) looks.push(eye - crown)
+    tick()
+  }
+  // Źrenice o piksel w lewo od czubka: patrzy w stronę marszu, nie w widza.
+  expect(looks.length).toBeGreaterThan(0)
+  expect(new Set(looks)).toEqual(new Set([-1]))
+})
+
 test('on a flat band the last mate done at rest marches out right and the clock runs until it is gone', () => {
   const { surface, tick } = surfaceOf()
   draw(FLAT, surface)
@@ -150,6 +170,22 @@ test('a mate called to work comes out of the door of the quarters, not from the 
   }
   expect(deep).toBe(true)
   expect((surface.state as Seen).actors.a1!.track.scene).toBe('pick')
+})
+
+test('a mate called from the quarters stands on the sill in the open door, then steps down into the room', () => {
+  const { surface, tick } = surfaceOf()
+  draw({ ...FLOOR, orcs: [{ ...KRUX, scene: 'hammer' }] }, surface)
+  const joined: ForgeProps = { ...FLOOR, orcs: [{ ...KRUX, scene: 'hammer' }, { ...GROM, scene: 'pick' }] }
+  const door = quartersDoor(140, true)!
+  const feet: number[] = []
+  let tree = draw(joined, surface)
+  for (let i = 0; i < 3; i += 1) {
+    feet.push(pixelsOf(tree).findLastIndex(row => row.slice(door, door + 3).includes(PALETTE.G!)))
+    tick()
+    tree = draw(joined, surface)
+  }
+  // Próg to dolny wiersz ściany (5): kumpel stoi w ciemnym otworze, nie pod nim, i schodzi piksel na klatkę.
+  expect(feet).toEqual([5, 5, 6])
 })
 
 test('a nameless orc comes out of the shaft and goes back into it: it has no cot', () => {

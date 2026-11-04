@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import { GESTURES, headOf } from '../hooks/fidget'
 import { MATES } from '../hooks/roster'
-import { ACTS, BUBBLE_TEXT, WALL_MIN, wallSpans, CATCH_X, DUET_FRAMES, carried, doorX, dayPhase, duetPose, floorHomes, kitAt, kitReach, quartersDoor, roomGrid, hasHearth, stationX, CUE_FRAMES, FRAME_MS, HOLD_FRAMES, actsFor, routeOf, trackDozing, trackFace, ORC_GAP, ORC_WIDTH, PALETTE, bandColumns, behind, bubbleLines, canvasColumns, catchStep, caughtScroll, dress, frameGrid, forgeColumns, runsOf, slotX, stageGrid, tossFrames, trackGrid, trackOff, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withNap } from '../hooks/sprites'
+import { ACTS, BUBBLE_TEXT, WALL_MIN, wallSpans, errandPose, farPose, CATCH_X, DUET_FRAMES, DUET_GAP, carried, doorX, dayPhase, duetPose, floorHomes, kitAt, kitReach, quartersDoor, roomGrid, hasHearth, stationX, CUE_FRAMES, FRAME_MS, HOLD_FRAMES, actsFor, routeOf, trackDozing, trackFace, ORC_GAP, ORC_WIDTH, PALETTE, bandColumns, behind, bubbleLines, canvasColumns, catchStep, caughtScroll, dress, frameGrid, forgeColumns, runsOf, slotX, stageGrid, tossFrames, trackGrid, trackOff, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withNap } from '../hooks/sprites'
 import type { DayPhase, StageScene } from '../hooks/sprites'
 import { H, STAND, W, actFrame, entryOf, head, kitLead, legAt, moodOf, pad, settleFrames, stander } from '../hooks/stage'
 import type { Frame } from '../hooks/stage'
@@ -357,7 +357,11 @@ test('the room lives on its own and answers the chronicle', () => {
 })
 
 test('the window shows the sky of the hour, and the room has no background', () => {
-  expect([0, 4, 5, 7, 8, 17, 18, 21, 22].map(dayPhase)).toEqual(['night', 'night', 'dawn', 'dawn', 'day', 'day', 'dusk', 'dusk', 'night'])
+  // Pora roku przesuwa świt i zmierzch: w listopadzie o 17 już noc, w czerwcu jeszcze dzień.
+  const hours = [0, 4, 6, 7, 12, 16, 17, 20, 21, 22]
+  expect(hours.map(hour => dayPhase(hour, 11))).toEqual(['night', 'night', 'dawn', 'day', 'day', 'dusk', 'night', 'night', 'night', 'night'])
+  expect(hours.map(hour => dayPhase(hour, 6))).toEqual(['night', 'day', 'day', 'day', 'day', 'day', 'day', 'day', 'dusk', 'night'])
+  expect(hours.map(hour => dayPhase(hour, 12))).toEqual(['night', 'night', 'night', 'dawn', 'day', 'night', 'night', 'night', 'night', 'night'])
   const room = (phase: DayPhase) => roomGrid(160, 8, true, { phase }).join('')
   expect(room('day')).toContain('9')
   expect(room('night')).toContain('7')
@@ -383,6 +387,10 @@ test('duet poses stay in the palette, keep both eyes and open with the partner i
   for (const t of [0, DUET_FRAMES - 1]) expect(pad(duetPose('toast', t).prop)[3]!.slice(7, 14)).toBe('....hh.')
   expect(pad(duetPose('toast', 12).prop)[0]!.slice(8, 12)).toBe('jjjj')
   expect(pad(duetPose('toast', 9).prop)[0]!.slice(8, 12)).toBe('j..j')
+  // Piątka: w klatce przybicia ręce gospodarza i gościa (od kolumny 12) łączy błysk, bez luki.
+  const touch = Array.from({ length: DUET_FRAMES }, (_, t) => duetPose('highfive', t)).find(pose => pose.prop.length > 0)!
+  const clap = stageGrid([{ rows: touch.host, x: 0 }, { rows: touch.guest, x: DUET_GAP - 2 }, { rows: pad(touch.prop), x: 0 }], 30)
+  expect(clap.slice(0, 3).map(row => row.slice(6, 14))).toEqual(['..gyyg..', '.g.oo.g.', 'g......g'])
 })
 
 test('the kit left on the ground is the one of the act playing, and its reach is measured from the orc', () => {
@@ -526,6 +534,27 @@ test('wall furniture never overlaps on any room width, and each torch keeps a fr
         expect([label, frame, burning]).toEqual([label, frame, false])
       }
     }
+  }
+})
+
+test('a kit carried into the depth shrinks with the orc and never swells: thin lines do not double', () => {
+  const swollen: string[] = []
+  for (const [scene, acts] of Object.entries(ACTS)) {
+    for (const act of acts) {
+      if (act.kit === undefined) continue
+      const full = act.kit.join('').replace(/\./gu, '').length
+      // Krok 0, 3 i 6 wyprawy: ork w głębi ma 5, 4 i 3 piksele wysokości.
+      for (const t of [0, 3, 6]) {
+        const [kit, orc] = errandPose(t, 0, { spot: 10, back: 10, took: act.kit }, 'Krux')
+        if (kit!.rows.length !== orc!.rows.length || kit!.rows.join('').replace(/\./gu, '').length > full) swollen.push(`${scene}/${act.name}/${t}`)
+      }
+    }
+  }
+  expect(swollen).toEqual([])
+  // Najbliższy ork w głębi ma szczękę jak ork na podłodze: oczy nie leżą na fartuchu.
+  for (const step of [0, 1]) {
+    const near = farPose(0.1, 0, step, 'Krux').rows
+    expect(near.findIndex(row => row.includes('b')) - near.findIndex(row => row.includes('r'))).toBe(2)
   }
 })
 

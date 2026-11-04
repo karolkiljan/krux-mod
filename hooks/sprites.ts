@@ -23,7 +23,7 @@ import { MATES, ROSTER } from './roster'
 import { GESTURES } from './fidget'
 import { terminalText } from './terminal-text'
 import { H, STAND, W, actFrame, at, dots, draw, entryOf, finalLoop, flame, inLoop, kitLead, leadIn, legAt, legDone, lerp, moodOf, noise, pad, restFrame, rotation, settleFrames, stander, walker } from './stage'
-import type { Act, Frame, Layer, Leg, Route } from './stage'
+import type { Act, Frame, Layer, Leg, Look, Route } from './stage'
 
 // Siatki pikseli kowala i hordy. Czyste funkcje: płótno `forge.ts` tylko je rysuje.
 
@@ -744,8 +744,10 @@ export function paint(grid: readonly string[], rows: readonly string[], x: numbe
 }
 
 // Ork w głębi: im dalej, tym mniejszy i wyżej na podłodze. Stopy na wierszu `FEET`.
+// Najbliższy ma szczękę między oczami a fartuchem, jak ork na podłodze: czerwony fartuch
+// (Grom) nie zlewa się z oczami.
 const FAR_ORCS: readonly (readonly [Frame, Frame])[] = [
-  [['.ggg.', 'grgrg', 'bbbbb', '.bGb.', '.G.G.'], ['.ggg.', 'grgrg', 'bbbbb', '.bGb.', '..G..']],
+  [['.ggg.', 'grgrg', '.ggg.', 'bbbbb', '.G.G.'], ['.ggg.', 'grgrg', '.ggg.', 'bbbbb', '..G..']],
   [['.gg.', 'rggr', 'bbbb', 'G..G'], ['.gg.', 'rggr', 'bbbb', '.GG.']],
   [['rgr', 'bbb', 'G.G'], ['rgr', 'bbb', '.G.']],
 ]
@@ -757,15 +759,20 @@ function levelOf(depth: number): number {
   return Math.max(1, Math.ceil(depth * FAR_ORCS.length)) - 1
 }
 
-// Ork w drodze przez głąb pokoju: `depth` 0 tuż przy widzu, 1 przy ścianie.
-export function farPose(depth: number, x: number, step: number, face: Face): Far {
+// Ork w drodze przez głąb pokoju: `depth` 0 tuż przy widzu, 1 przy ścianie. `lift` podnosi go
+// o tyle pikseli: w otwartych drzwiach stoi na progu, w ciemnym otworze, nie pod nim.
+export function farPose(depth: number, x: number, step: number, face: Face, lift = 0): Far {
   const level = levelOf(depth)
   const rows = FAR_ORCS[level]![step % 2]!
-  return { rows: dress(rows, face), x, y: FEET[level]! - rows.length + 1 }
+  return { rows: dress(rows, face), x, y: FEET[level]! - rows.length + 1 - lift }
 }
 
 // Kumpel staje w otwartych drzwiach kwater, zanim ruszy do roboty.
 export const RISE_FRAMES = 2
+
+// Próg drzwi kwater i wylotu sztolni leży o tyle pikseli nad stopami orka przy ścianie:
+// ork schodzi z niego piksel na klatkę.
+export const SILL_LIFT = FEET[FEET.length - 1]! - (DOOR.length - 1)
 
 // Kufle gościa w drodze przez głąb pokoju: piana nad drewnem przy dłoni, po stronie marszu.
 // Im dalej, tym mniej z nich widać, jak z orka.
@@ -789,11 +796,13 @@ export function depthSpot(scene: StageScene, floor: number, hearth: boolean): nu
 }
 
 // Rekwizyt zmniejszony do `size` wierszy: komórka bierze pierwszy niepusty piksel swojego pola.
+// Pola dzielą rekwizyt bez zakładek: piksel trafia do jednego pola, więc cienka linia (drzewce,
+// nóżka fotela) się nie podwaja, a rekwizyt w głębi nie puchnie w klocek.
 function shrunk(kit: Frame, size: number): string[] {
   const grid = pad(kit)
   const ratio = H / size
   return Array.from({ length: size }, (_, y) => Array.from({ length: Math.ceil(W / ratio) }, (_, x) => {
-    const cells = grid.slice(Math.floor(y * ratio), Math.ceil((y + 1) * ratio)).flatMap(row => [...row.slice(Math.floor(x * ratio), Math.ceil((x + 1) * ratio))])
+    const cells = grid.slice(Math.round(y * ratio), Math.round((y + 1) * ratio)).flatMap(row => [...row.slice(Math.round(x * ratio), Math.round((x + 1) * ratio))])
     return cells.find(cell => cell !== '.') ?? '.'
   }).join(''))
 }
@@ -852,8 +861,9 @@ export function duetPose(kind: DuetKind, t: number): DuetFrame {
     return { host: RIGHT(t < 22 ? 'gg' : ''), guest: facing('right', t > 8 ? 'gg' : ''), prop: t < 26 ? draw([['RR'], x, 3]) : [] }
   }
   if (kind === 'highfive') {
+    // Dłonie idą ku sobie aż do górnego wiersza i stykają się nad błyskiem: przybicie, nie machanie do iskry.
     const touch = step % 3 === 2
-    return { host: touch ? HIGH_HOST : RIGHT(''), guest: touch ? HIGH_GUEST : facing('right', ''), prop: touch ? draw(at('y', 9, 0), at('y', 10, 1), at('o', 8, 1)) : [] }
+    return { host: touch ? HIGH_HOST : RIGHT(''), guest: touch ? HIGH_GUEST : facing('right', ''), prop: touch ? draw(at('g', 8, 0), at('g', 11, 0), at('y', 9, 0), at('y', 10, 0), at('o', 9, 1), at('o', 10, 1)) : [] }
   }
   if (kind === 'toast') {
     // Gość przynosi dwa kufle i podaje jeden, w górę, stuk nad środkiem z rozpryskiem piany, łyk
@@ -875,20 +885,27 @@ export function duetPose(kind: DuetKind, t: number): DuetFrame {
   return { host: shout ? HIGH_HOST : RIGHT('g'), guest: shout ? facing('right', 'g') : HIGH_GUEST, prop: draw(at('R', 8 + (step % 3), 1), at('y', 10 - (step % 3), 0)) }
 }
 
-// Pora dnia z godziny: w okienku na ścianie widać niebo.
+// Pora dnia z godziny i miesiąca: w okienku na ścianie widać niebo.
 export type DayPhase = 'night' | 'dawn' | 'day' | 'dusk'
 
-export function dayPhase(hour: number): DayPhase {
-  if (hour >= 22 || hour < 5) return 'night'
-  if (hour < 8) return 'dawn'
-  return hour < 18 ? 'day' : 'dusk'
+// Godzina świtu i zmierzchu w Polsce w połowie miesiąca, czasem lokalnym (z letnim): pół godziny
+// przed wschodem i pół godziny po zachodzie słońca. Zimą o piątej po południu jest już noc.
+const DAWN = [7, 6, 5, 5, 4, 3, 4, 4, 5, 6, 6, 7] as const
+const DUSK = [16, 17, 18, 20, 20, 21, 21, 20, 19, 18, 16, 15] as const
+
+export function dayPhase(hour: number, month: number): DayPhase {
+  const dawn = DAWN[month - 1] ?? DAWN[5]
+  const dusk = DUSK[month - 1] ?? DUSK[5]
+  if (hour === dawn) return 'dawn'
+  if (hour === dusk) return 'dusk'
+  return hour > dawn && hour < dusk ? 'day' : 'night'
 }
 
 const SKY: Record<DayPhase, string> = { night: '7', dawn: '8', day: '9', dusk: '0' }
 
-// Ork w drodze po podłodze: nogi na zmianę.
-export function walkerRows(step: number, face: Face): string[] {
-  return dress(walker(step), face)
+// Ork w drodze po podłodze: nogi na zmianę, oczy w stronę marszu, bo ciało się nie obraca.
+export function walkerRows(step: number, face: Face, look: Look = 'mid'): string[] {
+  return dress(walker(step, look), face)
 }
 
 export type Placed = { rows: readonly string[]; x: number }
