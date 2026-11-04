@@ -229,7 +229,7 @@ test('different agent ids split groups even for two nameless or same-named orcs'
 test('group names use apron colors, Krux spark and nameless grey', () => {
   const cases = [
     ['Krux', '#ff8a1c'], ['Niuch', '#3f6f6a'], ['Grom', '#a33a2a'], ['Piryt', '#c9a227'],
-    ['Ochra', '#cc7722'], ['Młot', '#6b7580'], ['Lont', '#887088'], ['ork', '#555555'],
+    ['Ochra', '#cc7722'], ['Młot', '#4f7aa3'], ['Lont', '#887088'], ['ork', '#555555'],
   ] as const
   for (const [who, color] of cases) {
     const name = texts(draw([{ ...ENTRY, who }]))[0]!

@@ -38,16 +38,15 @@ const SIGN_X = 9
 const HOLDER = 1
 
 // Ork z ręką wzniesioną do lewego brzegu tabliczki.
-function holding(look: Look, sx: number, sy: number): Frame {
-  const hand: Point = [sx - 1, Math.min(3, sy + 2)]
-  return draw([SIGN, sx, sy], [stander(look), HOLDER, 0], ...line([HOLDER + 6, 3], hand, 'g'))
+function holding(look: Look, sx: number): Frame {
+  return draw([SIGN, sx, 0], [stander(look), HOLDER, 0], ...line([HOLDER + 6, 3], [sx - 1, 2], 'g'))
 }
 
 function signLoop(t: number): Frame {
   // 16 klatek: tabliczka kiwa się piksel w prawo i z powrotem, wzrok raz na Morrę, raz prosto.
+  // Tylko w bok: tabliczka ma całą wysokość klatki, więc krok w dół wbijałby trzonek w podłogę.
   const sway = pingPong(Math.floor(t / 2), 2) === 2 ? 1 : 0
-  const bob = t % 8 >= 6 ? 1 : 0
-  return holding(t < 8 ? 'right' : 'mid', SIGN_X + sway, bob)
+  return holding(t < 8 ? 'right' : 'mid', SIGN_X + sway)
 }
 
 const sign: Act = {
@@ -56,7 +55,7 @@ const sign: Act = {
   intro: [
     // Krux robi krok i chwyta tabliczkę nad głową.
     draw([SIGN, SIGN_X, 0], [walker(0, 'right'), HOLDER, 0]),
-    holding('right', SIGN_X, 0),
+    holding('right', SIGN_X),
   ],
   length: 16,
   loop: signLoop,

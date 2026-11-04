@@ -1,6 +1,7 @@
 import { expect, test } from 'claude-code/testing'
 
-import { GESTURES } from '../hooks/fidget'
+import { GESTURES, headOf } from '../hooks/fidget'
+import { MATE_APRONS } from '../hooks/palette'
 import { MATES } from '../hooks/roster'
 import { ACTS, BUBBLE_TEXT, CATCH_X, DUET_FRAMES, carried, doorX, dayPhase, duetPose, floorHomes, kitAt, kitReach, quartersDoor, roomGrid, hasHearth, stationX, CUE_FRAMES, FRAME_MS, HOLD_FRAMES, actsFor, routeOf, trackDozing, trackFace, ORC_GAP, ORC_WIDTH, PALETTE, bandColumns, behind, bubbleLines, canvasColumns, catchStep, caughtScroll, dress, frameGrid, forgeColumns, runsOf, slotX, stageGrid, tossFrames, trackGrid, trackOff, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withNap } from '../hooks/sprites'
 import type { DayPhase, StageScene } from '../hooks/sprites'
@@ -478,6 +479,176 @@ test('Grom gets a helmet, Niuch a nose, Ochra a brush, and no mark covers an eye
       }
     }
   }
+})
+
+// ——— Czytelność czynności: rekwizyt przy dłoni, nic nie znika, znaki fachu i oczy widać ———
+const actOf = (scene: StageScene, name: string) => ACTS[scene].find(act => act.name === name)!
+const loopOf = (act: ReturnType<typeof actOf>) => Array.from({ length: act.length }, (_, t) => pad(act.loop(t, t)))
+const count = (rows: readonly string[], cells: string) => [...rows.join('')].filter(cell => cells.includes(cell)).length
+
+// Odległość barw ΔE76 w CIELAB (sRGB, D65). Oko 'r' i rozgrzaną stal 'R' dzieli 6,7: na półbloku to ten sam kolor.
+function deltaE(a: string, b: string): number {
+  const lab = (hex: string) => {
+    const [r, g, bl] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255).map(v => (v > 0.04045 ? ((v + 0.055) / 1.055) ** 2.4 : v / 12.92)) as [number, number, number]
+    const f = (t: number) => (t > 216 / 24389 ? Math.cbrt(t) : ((24389 / 27) * t + 16) / 116)
+    const [x, y, z] = [(0.4124 * r + 0.3576 * g + 0.1805 * bl) / 0.95047, 0.2126 * r + 0.7152 * g + 0.0722 * bl, (0.0193 * r + 0.1192 * g + 0.9505 * bl) / 1.08883].map(f) as [number, number, number]
+    return [116 * y - 16, 500 * (x - y), 200 * (y - z)]
+  }
+  const [p, q] = [lab(a), lab(b)]
+  return Math.hypot(p[0]! - q[0]!, p[1]! - q[1]!, p[2]! - q[2]!)
+}
+
+test('red cloth never touches an eye, so the orc keeps both eyes', () => {
+  // Koc sygnałów dymnych stał tuż przy prawym oku i robił z oka i koca jeden czerwony pas.
+  for (const [scene, acts] of Object.entries(ACTS)) {
+    for (const act of acts) {
+      for (const frame of framesOf(act)) {
+        const grid = pad(frame)
+        const touching = grid.flatMap((row, y) => [...row].flatMap((cell, x) => (cell === 'r' && [[1, 0], [-1, 0], [0, 1], [0, -1]].some(([dx, dy]) => grid[y + dy!]?.[x + dx!] === 'd') ? [[x, y]] : [])))
+        expect([scene, act.name, touching]).toEqual([scene, act.name, []])
+      }
+    }
+  }
+})
+
+test("Grom's helmet stays on his crown through every gesture that keeps the head still", () => {
+  // `dress` szuka czubka od lewej: dłoń gestu tuż z lewej od czubka przesuwała hełm na dłoń.
+  // Przeciąganie przechyla głowę, więc hełm jedzie z czubkiem; reszta gestów hełmu nie rusza.
+  const steel = (rows: readonly string[]) => dress(rows, 'Grom').flatMap((row, y) => [...row].flatMap((cell, x) => ('Ss'.includes(cell) ? [`${x},${y}`] : [])))
+  const gestures = GESTURES.filter(gesture => (gesture.who === undefined || gesture.who.includes('Grom')) && gesture.name !== 'przeciąganie')
+  for (const scene of MATE_SCENES) {
+    for (const act of actsFor(scene, 'Grom')) {
+      const pose = pad(act.loop(0, 0))
+      const worn = new Set(steel(pose))
+      for (const gesture of gestures) {
+        for (let t = 0; t < gesture.length; t += 1) {
+          const moved = steel(pad(gesture.apply(pose, t))).filter(cell => !worn.has(cell))
+          expect([scene, act.name, gesture.name, t, moved]).toEqual([scene, act.name, gesture.name, t, []])
+        }
+      }
+    }
+  }
+})
+
+test('at the campfire the stick stays in the hand and the sausage moves at most two pixels a frame', () => {
+  const campfire = actOf('lounge', 'ognisko')
+  const frames = loopOf(campfire)
+  // Kiełbasa: brąz, czerwień albo surowa czerwień nad polanami, poza płomieniem (od x 13 w wierszach 2–3).
+  const sausage = (rows: readonly string[]) => rows.slice(0, 4).flatMap((row, y) => [...row].flatMap((cell, x) => ('xdR'.includes(cell) && !(y >= 2 && x >= 13) ? [[x, y] as const] : [])))
+  frames.forEach((rows, t) => {
+    expect([t, rows[4]!.slice(6, 8)]).toEqual([t, 'gh'])
+    expect([t, sausage(rows).length]).toEqual([t, 2])
+    const [[x, y]] = sausage(rows) as [readonly [number, number]]
+    const [[px, py]] = sausage(frames[(t + frames.length - 1) % frames.length]!) as [readonly [number, number]]
+    expect([t, Math.max(Math.abs(x - px), Math.abs(y - py)) <= 2]).toEqual([t, true])
+  })
+})
+
+test('the armchair pipe sits in the corner of the mouth, at the right fang', () => {
+  for (const [t, rows] of loopOf(actOf('lounge', 'fotel')).entries()) {
+    const stem = rows[2]!.indexOf('h')
+    expect([t, rows[2]![stem - 1]]).toEqual([t, 't'])
+  }
+})
+
+test('the fishing rod starts at the hand of the sitting orc', () => {
+  for (const [t, rows] of loopOf(actOf('lounge', 'ryby')).entries()) expect([t, rows[4]!.slice(6, 8)]).toEqual([t, 'gh'])
+})
+
+test('the trowel never vanishes from the burrow: in the hand, then laid by the mound', () => {
+  const burrow = actOf('scout', 'nora')
+  // Od klatki z łopatką na ziemi; wcześniej bez pokoju wysuwa się spod orka.
+  for (const [i, frame] of framesOf(burrow).slice(kitLead(burrow) - 1).entries()) {
+    const rows = pad(frame)
+    // Łopatka 'hS' ma jedną stal; uniesiona (wiersz 4) siedzi tuż przy dłoni.
+    expect([i, count(rows, 'S')]).toEqual([i, 1])
+    const y = rows.findIndex(row => row.includes('S'))
+    if (y === 4) expect([i, rows[4]![rows[4]!.indexOf('S') - 2]]).toEqual([i, 'g'])
+  }
+})
+
+test('Niuch raises a wet finger a pixel apart from his nose', () => {
+  for (const [t, rows] of loopOf(actOf('scout', 'wiatr')).entries()) {
+    const head = headOf(rows)!
+    // Nos z `dress` stoi w (x + 4, x + 5) wiersza żuchwy; tuż za nim tło, nie dłoń.
+    const jaw = dress(rows, 'Niuch')[head.top + 2]!
+    expect([t, jaw.slice(head.x + 4, head.x + 7)]).toEqual([t, 'gg.'])
+  }
+})
+
+test('each apron stands apart from every other, and a mate apron from the steel of the tools', () => {
+  // Szary fartuch Młota zlewał się z bezimiennym, z Lontem i z obuchem: horda w sześciu pikselach.
+  const aprons = [...MATE_APRONS]
+  for (const a of aprons) {
+    for (const b of aprons) if (a < b) expect([a, b, deltaE(PALETTE[a]!, PALETTE[b]!) >= 18]).toEqual([a, b, true])
+    if (a !== 'u') expect([a, 'S', deltaE(PALETTE[a]!, PALETTE.S!) >= 15]).toEqual([a, 'S', true])
+  }
+})
+
+test('stretching arms leave air beside the head, so they do not read as ears', () => {
+  for (const [t, rows] of loopOf(actOf('watch', 'przeciąganie')).entries()) {
+    const { top, x } = headOf(rows)!
+    expect([t, rows[top]![x - 1], rows[top]![x + 4], rows[top + 1]![x - 2], rows[top + 1]![x + 5]]).toEqual([t, '.', '.', '.', '.'])
+  }
+})
+
+test('the bow reads as a bow: no solid block where the string meets the stave', () => {
+  const archery = actOf('raven', 'łuk')
+  // Bez strzały w kadrze (bez grotu 'S') zostaje sam łuk; rekwizyt to łuk ze strzałą na ziemi.
+  const idle = [pad(archery.kit!), ...loopOf(archery).filter(rows => count(rows, 'S') === 0)]
+  for (const rows of idle) {
+    const solid = rows.slice(0, -1).some((row, y) => [...row].some((cell, x) => [[0, 0], [1, 0], [0, 1], [1, 1]].every(([dx, dy]) => 'hj'.includes(rows[y + dy!]![x + dx!] ?? '.')) && cell !== '.'))
+    expect([rows.join('/'), solid]).toEqual([rows.join('/'), false])
+  }
+})
+
+test('the raven carries the scroll right under its body in every wingbeat', () => {
+  const frames = loopOf(actOf('raven', 'kruk'))
+  for (let t = 18; t < 30; t += 1) {
+    const rows = frames[t]!
+    const y = rows.findIndex(row => row.includes('p'))
+    expect([t, rows[y - 1]?.[rows[y]!.indexOf('p')]]).toEqual([t, 'w'])
+  }
+})
+
+test('the question sign sways whole, its handle never sinks into the floor', () => {
+  const sign = actOf('ask', 'tabliczka')
+  const whole = count(pad(sign.kit!), 'pnh')
+  for (const [t, rows] of loopOf(sign).entries()) expect([t, count(rows, 'pnh')]).toEqual([t, whole])
+})
+
+test('the spyglass never shrinks while it opens and the bird never crosses its glass', () => {
+  const spy = actOf('scout', 'luneta')
+  const tube = entryOf(spy).map(rows => count(pad(rows), 'hSi'))
+  expect(tube.every((n, i) => i === 0 || n >= tube[i - 1]!)).toBe(true)
+  for (const [t, rows] of loopOf(spy).entries()) expect([t, count(rows, 'i')]).toEqual([t, 1])
+})
+
+test("Niuch's scent trail runs along the nose row and ends at its tip", () => {
+  const sniff = GESTURES.find(gesture => gesture.name === 'węszenie')!
+  const { top, x } = headOf(pad(STAND))!
+  for (let t = 1; t <= 4; t += 1) {
+    const rows = pad(sniff.apply(STAND, t))
+    const scent = rows.flatMap((row, y) => [...row].flatMap((cell, at) => (cell === 'm' ? [[at, y]] : [])))
+    expect([t, scent.length > 0 && scent.every(([, y]) => y === top + 2)]).toEqual([t, true])
+  }
+  // Ostatni krok smugi kończy się tuż za czubkiem nosa Niucha.
+  expect(dress(pad(sniff.apply(STAND, 4)), 'Niuch')[top + 2]!.slice(x + 4, x + 7)).toBe('ggm')
+})
+
+test("Piryt's squint dims the eyes visibly, not to the red of hot steel", () => {
+  const squint = GESTURES.find(gesture => gesture.name === 'mrużenie')!
+  const { top, x } = headOf(pad(STAND))!
+  const eye = pad(squint.apply(STAND, 3))[top + 1]![x]!
+  expect(deltaE(PALETTE[eye]!, PALETTE.r!)).toBeGreaterThan(10)
+})
+
+test('Lont walks back along the bench at most two pixels a frame', () => {
+  const frames = loopOf(actOf('tear', 'miarka'))
+  frames.forEach((rows, t) => {
+    const prev = headOf(frames[(t + frames.length - 1) % frames.length]!)!
+    expect([t, Math.abs(headOf(rows)!.x - prev.x) <= 2]).toEqual([t, true])
+  })
 })
 
 test('Krux reaches for the scroll a frame before it lands and holds it in the landing frame', async () => {

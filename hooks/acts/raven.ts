@@ -26,7 +26,8 @@ function ravenLoop(t: number): Frame {
   }
   const perched = t < 3 || t >= 30
   const y = perched ? 2 : 1 + (Math.floor(t / 3) % 2)
-  const scroll: Layer[] = back ? [at('p', x, y + 2)] : []
+  // Zwój wisi tuż pod kadłubem, w każdej klatce skrzydeł przyklejony do kruka.
+  const scroll: Layer[] = back ? [at('p', x, y + 1)] : []
   const tuck = [[9, 3], [8, 4], [7, 4], [6, 4], [5, 4], [4, 4]] as const
   const handed: Layer[] = t >= 30 ? [at('p', tuck[t - 30]![0], tuck[t - 30]![1])] : []
   const look: Look = perched ? 'mid' : 'right'
@@ -49,9 +50,10 @@ const raven: Act = {
 const FIRE_X = 14
 const SMOKER = 6
 
-// Koc nad ogniem trzymany za róg; `width` to ile go rozwinięte.
+// Koc nad ogniem trzymany za róg; `width` to ile go rozwinięte. Dłoń trzyma róg po skosie,
+// a między okiem a kocem zostaje piksel szpary: czerwień koca nie zlewa się z okiem.
 function blanket(width: number): Layer[] {
-  return [at('g', SMOKER + 6, 2), [['d'.repeat(width)], SMOKER + 6, 1]]
+  return [at('g', SMOKER + 6, 2), [['d'.repeat(width)], SMOKER + 7, 1]]
 }
 
 const SMOKER_BODY: Frame = [...head('right'), 'bbbbbg', '.bGGb.', '.G..G.']
@@ -84,7 +86,7 @@ const smoke: Act = {
       return draw(...bonfire(FIRE_X, i, size), ...spark, [walker(i, 'right'), x, 0], [['dd'], x + 6, 3])
     }),
     // Unieść koc nad ogień i rozwinąć.
-    draw(...bonfire(FIRE_X, 6, 2), [SMOKER_BODY, SMOKER, 0], at('g', SMOKER + 6, 2), [['dd'], SMOKER + 6, 1]),
+    draw(...bonfire(FIRE_X, 6, 2), [SMOKER_BODY, SMOKER, 0], ...blanket(2)),
     draw(...bonfire(FIRE_X, 7, 2), [SMOKER_BODY, SMOKER, 0], ...blanket(4)),
   ],
   length: 28,
@@ -92,12 +94,13 @@ const smoke: Act = {
 }
 
 // ——— Strzała z listem ———
-// Łuk wygięty w prawo, cięciwa z lewej; strzała z listem przy cięciwie.
+// Łuk wygięty w prawo, cięciwa z lewej; strzała z listem przy cięciwie. Brzusiec odstaje
+// od cięciwy o piksel, więc łuk czyta się jak „D”, a nie jak deska.
 const BOW_X = 7
 
 function bow(x: number, pull: number): Layer[] {
   const string: Layer[] = pull === 0 ? [[['j', 'j', 'j'], x, 1]] : [at('j', x, 1), at('j', x - pull, 2), at('j', x, 3)]
-  return [[['h', '.h', '.h', '.h', 'h'], x, 0], ...string]
+  return [[['h', '.h', '..h', '.h', 'h'], x, 0], ...string]
 }
 
 function arrow(x: number, y: number): Layer[] {
