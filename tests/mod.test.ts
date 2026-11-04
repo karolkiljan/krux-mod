@@ -3,9 +3,10 @@ import type { Engine, TestBody } from 'claude-code/testing'
 import type { AgentStatus, CommandSpec, SessionUsage, TurnStepChunk, TurnStepResult } from 'claude-code'
 
 import type { KruxCrew, KruxJournal, KruxLore } from '../types'
-import { PALETTE, SPEAKER_COLOR, actsFor } from '../hooks/sprites'
+import { FRAME_MS, PALETTE, SPEAKER_COLOR, actsFor } from '../hooks/sprites'
 import type { StageScene } from '../hooks/sprites'
 import { replay } from '../hooks/lore'
+import { MATES, ROSTER } from '../hooks/roster'
 import { COMPACT_NOTE, FORMAT_HINT, LENGTH_HINT, RISK_HINT, VOICE_ANCHOR, VOICE_SHORT } from '../hooks/voice'
 
 type On = Parameters<TestBody>[1]
@@ -233,6 +234,19 @@ test('/krux konkret flips the mode and leaves the model a note', async ($, on) =
   expect(await sectionIds($)).toEqual(['intro', 'krux-mod:persona', 'krux-mod:konkret'])
 })
 
+test('a flip toggles what this session shows, even when another session saved the mode since', async ($, on) => {
+  const saved = new Map<string, unknown>()
+  engine(on, saved)
+  await start($)
+  // Inna sesja włączyła flow po starcie tej; przycisk i status tej sesji nadal mówią off.
+  saved.set('mode.flow', true)
+  const answer = await $.command.run({ command: 'krux', args: 'flow', origin: ORIGIN, presentation: { isFullscreen: false, columns: 120 } })
+  expect(answer.text).toContain('Flow włączony')
+  expect(answer.context).toEqual(['Flow włączony. Kontrakt rytmu stoi w prompcie systemowym.'])
+  expect(saved.get('mode.flow')).toBe(true)
+  expect(await sectionIds($)).toEqual(['intro', 'krux-mod:persona', 'krux-mod:flow'])
+})
+
 test('/krux status and an unknown argument answer as text', async ($, on) => {
   engine(on, new Map())
   await start($)
@@ -353,12 +367,14 @@ test('with the Sztolnia on but its pane waiting for a wider terminal, the digest
 
 test('the digest never lifts the band: no more lines than canvas rows, the most important first', async ($, on) => {
   const git = { stdout: '# branch.oid a\n# branch.head main\n# branch.upstream origin/main\n# branch.ab +3 -0\n1 .M N... a b c d e f.ts\n' }
-  engine(on, new Map<string, unknown>([['modes', { persona: true, konkret: false, flow: false, animacje: true, kowal: true, sztolnia: false }]]), { git })
+  const clock = engine(on, new Map<string, unknown>([['modes', { persona: true, konkret: false, flow: false, animacje: true, kowal: true, sztolnia: false }]]), { git })
   await start($)
   await $.turn.start({ text: 'plan', turnId: 't1' })
   await $.tool.call({ tool: 'mcp__krux-mod__watki', open: [{ text: 'push czeka' }] } as never)
   await $.tool.call({ tool: 'TodoWrite', todos: [{ content: 'Kuć poprawkę', status: 'in_progress', activeForm: 'Kuć' }] })
   await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  // Repo po narzędziu czyta zegar.
+  await clock.settle()
   const low = await $.ui.mount({ ...BAND, surface: 'terminal', props: { ...BAND.props, bodyColumns: 160, maxRows: 4 } })
   const shown = []
   for (const key of ['threads', 'git', 'readiness', 'plan', 'tests']) if ((await low.find({ key })) !== undefined) shown.push(key)
@@ -410,8 +426,9 @@ async function showsScene(ui: Parameters<typeof forgeColors>[0], scene: StageSce
   return (await forgeColors(ui)).some(color => typeof color === 'string' && props.has(color))
 }
 
+// Kolory płótna: piksel w górnej połowie komórki to `color`, w dolnej `backgroundColor`.
 async function forgeColors(ui: { findAll: (query: { type: string; in: string }) => Promise<{ props: Record<string, unknown> }[]> }) {
-  return (await ui.findAll({ type: 'Text', in: 'forge' })).map(element => element.props.color)
+  return (await ui.findAll({ type: 'Text', in: 'forge' })).flatMap(element => [element.props.color, element.props.backgroundColor])
 }
 
 test('on the desktop the band draws the room as one Svg, square pixels instead of half-block glyphs', async ($, on) => {
@@ -460,6 +477,28 @@ test('on the desktop the /krux pane shows the smith as Svg too', async ($, on) =
   const svg = (await ui.find({ type: 'Svg' }))!
   expect(String(svg.props.source)).toContain(PALETTE.k)
   expect(String(svg.props.source)).not.toMatch(/[▀▄█]/u)
+})
+
+test('on the desktop the mod clock stops while the canvas stands still and starts again with motion', async ($, on) => {
+  let ticks = 0
+  // Każdy okres `$.clock.every` to jedno tyknięcie zegara płótna.
+  on('clock.every', { ms: FRAME_MS }, ($c, e, next) => { ticks += 1; return next(e) })
+  const clock = engine(on, new Map())
+  await start($)
+  const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await clock.advance(1500)
+  expect(ticks).toBeGreaterThan(0)
+  // Przycisk 4 gasi animacje: płótno stoi, więc ani nie liczy klatek, ani nie zasypia.
+  await ui.press({ key: 'toggle-animacje' })
+  await clock.advance(1500)
+  const still = ticks
+  await ui.unmount()
+  await clock.advance(60_000)
+  expect(ticks).toBe(still)
+  const again = await $.ui.mount({ ...PANE, surface: 'desktop' })
+  await again.press({ key: 'toggle-animacje' })
+  await clock.advance(1500)
+  expect(ticks).toBeGreaterThan(still)
 })
 
 test('a Bash test uses the testing scene instead of mining', async ($, on) => {
@@ -583,9 +622,9 @@ test('a new scene waits out a second and a half, so quick tools do not flicker',
   await $.tool.call({ tool: 'Bash', command: 'npm test' })
   await ui.advance(300)
   expect(await showsScene(ui, 'pick', 'read')).toBe(false)
-  // Po przytrzymaniu zwój schodzi, ork staje i bierze się do kopania.
+  // Po przytrzymaniu zwój domyka obieg pętli i schodzi, ork staje i bierze się do kopania.
   let digging = false
-  for (let tick = 0; tick < 20 && !digging; tick += 1) {
+  for (let tick = 0; tick < 30 && !digging; tick += 1) {
     await ui.advance(150)
     digging = await showsScene(ui, 'pick', 'read')
   }
@@ -601,7 +640,7 @@ test('a dispatched Niuch runs onto the stage in his apron and takes the bubble',
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
   expect(await forgeColors(ui)).toContain(NIUCH)
   await ui.advance(600)
-  expect(await ui.find({ type: 'Text', in: 'forge', text: /│ węszyć lore │/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', in: 'forge', text: /^węszyć lore$/ })).toBeDefined()
 })
 
 test('a horde agent type puts its mate on stage and in the muster even when the task does not name him', async ($, on) => {
@@ -749,20 +788,23 @@ test('the orc leaves the stage when its loop completes', async ($, on) => {
   expect(await forgeColors(done)).not.toContain(MLOT)
 })
 
+// Tekst dymka: osobny ciąg bez koloru między ramką `│ ` i ` │`, nie piksele ani ramka.
+const SAID = /^[^\s▀▄█│╭╰]/u
+
 test('failing tests make Krux frown and say how many failed, for four seconds', async ($, on) => {
   const clock = engine(on, new Map(), { toolError: 'FAIL' })
   await start($)
   await $.turn.start({ text: 'testy', turnId: 't1' })
   await $.tool.call({ tool: 'Bash', command: 'npm test' })
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal' })
-  const bubble = (await ui.findAll({ type: 'Text', in: 'forge', text: /│ .* │/ })).map(element => JSON.stringify(element.children)).join('')
+  const bubble = (await ui.findAll({ type: 'Text', in: 'forge', text: SAID })).map(element => JSON.stringify(element.children)).join('')
   expect(bubble.length > 0).toBe(true)
   expect(bubble).not.toContain('npm test')
   await ui.unmount()
   await clock.advance(4100)
   const again = await $.ui.mount({ ...BAND, surface: 'terminal' })
   await again.advance(2100)
-  const later = (await again.findAll({ type: 'Text', in: 'forge', text: /│ .* │/ })).map(element => JSON.stringify(element.children)).join('')
+  const later = (await again.findAll({ type: 'Text', in: 'forge', text: SAID })).map(element => JSON.stringify(element.children)).join('')
   expect(later).toContain('npm test')
 })
 
@@ -878,7 +920,7 @@ test('a background agent stays on stage while listed as running, idle or not', a
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal', props: { ...BAND.props, isWorking: false } })
   expect(await forgeColors(ui)).toContain(LONT)
   await ui.advance(1200)
-  expect(await ui.find({ type: 'Text', in: 'forge', text: /│ czytać runy api\.ts │/ })).toBeDefined()
+  expect(await ui.find({ type: 'Text', in: 'forge', text: /^czytać runy api\.ts$/ })).toBeDefined()
 })
 
 test('a mate resumed with SendMessage comes back on stage and into the muster on his first tool', async ($, on) => {
@@ -971,7 +1013,7 @@ test('idle, the smith stands still with only the rest title, keeping strike coun
     if (turnId === 't2') await $.tool.call({ tool: 'Read', file_path: '/repo/a.ts' })
   }
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal', props: { ...BAND.props, isWorking: false } })
-  expect(await ui.find({ type: 'Text', text: 'Krux odpoczywać przy kowadle' })).toBeDefined()
+  expect(await ui.find({ type: 'Text', text: 'Krux odpoczywać przy ogniu' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /uderzeń/ })).toBeUndefined()
   expect(counts).toEqual({ strikes: 2, sessionStrikes: 3 })
   expect(await ui.find({ key: 'forge' })).toBeDefined()
@@ -1197,6 +1239,31 @@ test('failing tests make Młot the topic a few turns later', async ($, on) => {
   expect((entered.context ?? []).some(entry => entry.includes('Młocie') && entry.includes('padłe: 1'))).toBe(true)
 })
 
+test('the mate of the note keeps the last aside when the answer first delegates to another mate', async ($, on) => {
+  engine(on, new Map())
+  await start($)
+  const quiet = async () => {
+    for (const turnId of ['q1', 'q2']) await $.turn.complete({ answer: 'Krux szukać dalej.', durationMs: 10, isAborted: false, turnId, reason: 'answer' })
+  }
+  const noteOf = async () => ((await $.prompt.submit({ text: 'i?', wait: false, origin: ORIGIN })).context ?? []).find(entry => entry.startsWith('Życie hordy'))!
+  const mateOf = (note: string) => MATES.find(name => note.includes(`mową o ${ROSTER[name].locative} `))!
+  // Wzór „Delegacja”: Krux najpierw woła innego kumpla do roboty, wstawka o kumplu notki stoi dalej.
+  const delegated = (mate: string, other: (typeof MATES)[number]) => `Krux puszczać ${ROSTER[other].accusative} na zwiad. ${mate} mruczeć przy robocie.`
+  await quiet()
+  const mate = mateOf(await noteOf())
+  await $.turn.complete({ answer: delegated(mate, MATES.find(name => name !== mate)!), durationMs: 10, isAborted: false, turnId: 't1', reason: 'answer' })
+  await quiet()
+  const second = await noteOf()
+  expect(second).toContain(`Nie ${ROSTER[mate].accusative}:`)
+  const next = mateOf(second)
+  // Bezpieczny sąsiad: tura bez notki nie przypisuje wstawki kumplowi notki z poprzedniej tury.
+  const other = MATES.find(name => name !== next)!
+  await $.prompt.submit({ text: 'włącz konkret', wait: false, origin: ORIGIN })
+  await $.turn.complete({ answer: delegated(next, other), durationMs: 10, isAborted: false, turnId: 't2', reason: 'answer' })
+  await quiet()
+  expect(await noteOf()).toContain(`Nie ${ROSTER[other].accusative}:`)
+})
+
 // Pamięć hordy przeżywa sesję: pierwsza wstawka nowej sesji wspomina poprzednią w tym
 // repo, a ślad nowej sesji spycha stary do `before`.
 test('a new session’s first horde aside recalls the previous session in the same repo', async ($, on) => {
@@ -1282,6 +1349,22 @@ test('the mood of a fresh chronicle event reaches the model once, and never on a
   expect((report.context ?? []).some(entry => entry.startsWith('Nastrój Kruxa'))).toBe(false)
 })
 
+// Tury poprawek po smrodzie: edycja między promptami to nie nowe zdarzenie, więc linia nie wraca.
+test('an edit between prompts does not bring the same mood line back', async ($, on) => {
+  const extras: Extras = { toolError: '1 failed' }
+  engine(on, new Map(), extras)
+  await start($)
+  await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  const first = await $.prompt.submit({ text: 'co z tym?', wait: false, origin: ORIGIN })
+  expect((first.context ?? []).filter(entry => entry.startsWith('Nastrój Kruxa: zadziorny'))).toHaveLength(1)
+  extras.toolError = undefined
+  for (const file of ['/work/a.ts', '/work/b.ts']) {
+    await $.tool.call({ tool: 'Edit', file_path: file, old_string: 'a', new_string: 'b' } as never)
+    const fixing = await $.prompt.submit({ text: 'popraw dalej', wait: false, origin: ORIGIN })
+    expect((fixing.context ?? []).some(entry => entry.startsWith('Nastrój Kruxa'))).toBe(false)
+  }
+})
+
 test('a request for an irreversible move gets the warning line instead of a horde aside', async ($, on) => {
   engine(on, new Map(), { toolError: '1 failed' })
   await start($)
@@ -1295,6 +1378,20 @@ test('a request for an irreversible move gets the warning line instead of a hord
   // Wstawka nie przepada, tylko czeka na zwykłą turę.
   const next = await $.prompt.submit({ text: 'i?', wait: false, origin: ORIGIN })
   expect((next.context ?? []).some(entry => entry.startsWith('Życie hordy'))).toBe(true)
+})
+
+// Linia formatu planu każe skończyć pytaniem o zgodę: notka nie może bić się o to samo zdanie.
+test('a plan request puts the horde aside in the middle, the end belongs to the consent question', async ($, on) => {
+  engine(on, new Map())
+  await start($)
+  for (const turnId of ['t1', 't2']) {
+    await $.turn.complete({ answer: 'Krux szukać dalej.', durationMs: 10, isAborted: false, turnId, reason: 'answer' })
+  }
+  // Tura 0: rotacja dałaby „na końcu”.
+  const planned = await $.prompt.submit({ text: 'zaplanuj migrację bazy', wait: false, origin: ORIGIN })
+  expect(planned.context).toContain(FORMAT_HINT.plan)
+  const note = (planned.context ?? []).find(entry => entry.startsWith('Życie hordy'))
+  expect(note).toContain('miejsce: w środku, przy punkcie, do którego pasuje, nie na końcu odpowiedzi;')
 })
 
 test('a dispatched Młot whose tests fail says so himself, and Krux’s chronicle stays clean', async ($, on) => {
@@ -1475,6 +1572,7 @@ test('the Sztolnia reads git at start and again after a tool that can change the
   git.stdout = git.stdout.replace('+0 -0', '+2 -0')
   await $.turn.start({ text: 'commit', turnId: 't1' })
   await $.tool.call({ tool: 'Bash', command: 'git commit -m x' })
+  await clock.settle()
   expect(await ui.find({ type: 'Text', text: '↑ do wypchnięcia: 2' })).toBeDefined()
 })
 
@@ -1654,7 +1752,10 @@ test('gating hook failures pass the original session, prompt and compaction even
   let prompts = 0
   let compactions = 0
   const logs: string[] = []
+  // Przełącznik czyta tryby ze stanu sesji, więc magazyn pada przy odczycie i przy zapisie.
   engine(on, new Map(), { logs, onPrompt: () => { prompts += 1 }, beforeStoreGet: () => {
+    if (failStore) throw new Error('store unavailable')
+  }, beforeStoreSet: async () => {
     if (failStore) throw new Error('store unavailable')
   } })
   on('state.get', ($, e, next) => {
@@ -1737,7 +1838,7 @@ test('replay and live counting agree through toggles, disabled persona, empty te
   expect(live.context).toContain(VOICE_ANCHOR)
 })
 
-test('the nameplate opens once per turn, survives redraw and forgets older turns', async ($, on) => {
+test('the nameplate opens once per turn and survives redraw, also of older turns', async ($, on) => {
   engine(on, new Map())
   await start($)
   const plate = async (requestId: string) => {
@@ -1756,7 +1857,8 @@ test('the nameplate opens once per turn, survives redraw and forgets older turns
   }
   expect(await plate('bounded-39')).toBe(true)
   expect(await plate('bounded-38')).toBe(true)
-  expect(await plate('bounded-0')).toBe(false)
+  // Pamięć tabliczek ma limit jak godziny czatu (2000 bloków), więc 40 tur jej nie wyczerpuje.
+  expect(await plate('bounded-0')).toBe(true)
   expect(await plate('new-block')).toBe(false)
 })
 
@@ -1788,6 +1890,81 @@ test('a long turn reopens the nameplate with the prompt echo, once per turn and 
   const quiet = await reply('echo-report')
   expect(await quiet.find({ type: 'Text', text: ECHO })).toBeUndefined()
   await quiet.unmount()
+})
+
+// Tabliczka i echo jednego bloku z kropką: rysunek po `requestId`, potem odmontowanie.
+async function plateOf($: Engine, requestId: string, echo?: string) {
+  const ui = await $.ui.mount({ ...REPLY, requestId, surface: 'terminal', props: { text: 'Krux kuć.', isFirstOfReply: true } })
+  const shown = { plate: (await ui.find({ type: 'Text', text: '⚒ Krux' })) !== undefined, echo: echo !== undefined && (await ui.find({ type: 'Text', text: echo })) !== undefined }
+  await ui.unmount()
+  return shown
+}
+
+test('history drawn before the first live turn keeps its nameplates on redraw and never takes the prompt echo', async ($, on) => {
+  engine(on, new Map())
+  await start($)
+  const ECHO = ' · do prośby: „Napraw testy hooków”'
+  // Historia z `claude --resume`: tabliczka na każdej kropce.
+  for (const id of ['h-1', 'h-2']) expect(await plateOf($, id, ECHO)).toEqual({ plate: true, echo: false })
+  await $.prompt.submit({ text: 'Napraw testy hooków', wait: false, origin: ORIGIN })
+  await $.turn.start({ text: 'Napraw testy hooków', turnId: 't1' })
+  expect(await plateOf($, 'live-1', ECHO)).toEqual({ plate: true, echo: false })
+  for (let call = 0; call < 4; call += 1) await $.tool.call({ tool: 'Read', file_path: `/repo/hooks/${call}.ts` })
+  // Resize w długiej turze przerysowuje historię: tabliczki zostają, echo idzie na blok tej tury.
+  for (const id of ['h-1', 'h-2']) expect(await plateOf($, id, ECHO)).toEqual({ plate: true, echo: false })
+  expect(await plateOf($, 'live-2', ECHO)).toEqual({ plate: true, echo: true })
+})
+
+test('a block redrawn from an older turn never takes the echo of the current request', async ($, on) => {
+  engine(on, new Map())
+  await start($)
+  const ECHO = ' · do prośby: „Przejrzyj register.ts”'
+  // 11 tur po 3 bloki z kropką (tekst, grupa narzędzi, tekst): ponad 32 decyzje echa.
+  for (let turn = 0; turn < 11; turn += 1) {
+    await $.prompt.submit({ text: `tura ${turn}`, wait: false, origin: ORIGIN })
+    await $.turn.start({ text: `tura ${turn}`, turnId: `t${turn}` })
+    for (let block = 0; block < 3; block += 1) await plateOf($, `m${turn}-${block}`, ECHO)
+  }
+  await $.prompt.submit({ text: 'Przejrzyj register.ts', wait: false, origin: ORIGIN })
+  await $.turn.start({ text: 'Przejrzyj register.ts', turnId: 'now' })
+  expect(await plateOf($, 'now-0', ECHO)).toEqual({ plate: true, echo: false })
+  for (let call = 0; call < 4; call += 1) await $.tool.call({ tool: 'Read', file_path: `/repo/hooks/${call}.ts` })
+  expect(await plateOf($, 'm0-1', ECHO)).toEqual({ plate: false, echo: false })
+  expect(await plateOf($, 'now-1', ECHO)).toEqual({ plate: true, echo: true })
+})
+
+test('a redrawn old block takes no nameplate from the turn, and an old plate survives more than 32 turns', async ($, on) => {
+  engine(on, new Map())
+  await start($)
+  const ECHO = ' · do prośby: „Przejrzyj register.ts”'
+  // 34 żywe tury po jednym bloku z kropką: każdy blok zabiera tabliczkę swojej tury.
+  for (let turn = 0; turn < 34; turn += 1) {
+    await $.prompt.submit({ text: `tura ${turn}`, wait: false, origin: ORIGIN })
+    await $.turn.start({ text: `tura ${turn}`, turnId: `t${turn}` })
+    expect(await plateOf($, `m${turn}`, ECHO)).toEqual({ plate: true, echo: false })
+  }
+  // Resize między turn.start a pierwszym blokiem tury (model zaczął od narzędzia):
+  // dawny blok zostaje ze swoją tabliczką, a tabliczka tury czeka na jej blok.
+  await $.prompt.submit({ text: 'Przejrzyj register.ts', wait: false, origin: ORIGIN })
+  await $.turn.start({ text: 'Przejrzyj register.ts', turnId: 'now' })
+  expect(await plateOf($, 'm0', ECHO)).toEqual({ plate: true, echo: false })
+  expect(await plateOf($, 'now-0', ECHO)).toEqual({ plate: true, echo: false })
+})
+
+test('after /resume the redrawn history wears a nameplate on every dot until the next live turn', async ($, on) => {
+  on('classic.SessionStart', () => ({}))
+  engine(on, new Map())
+  await start($)
+  await $.turn.start({ text: 'kuj', turnId: 't1' })
+  expect(await plateOf($, 'live-1')).toEqual({ plate: true, echo: false })
+  expect(await plateOf($, 'live-2')).toEqual({ plate: false, echo: false })
+  // /resume w trakcie sesji: silnik rysuje historię wybranej rozmowy.
+  await $.classic.SessionStart({ source: 'resume' })
+  for (const id of ['r-1', 'r-2', 'r-3']) expect(await plateOf($, id)).toEqual({ plate: true, echo: false })
+  await $.turn.start({ text: 'dalej', turnId: 't2' })
+  expect(await plateOf($, 'r-2')).toEqual({ plate: true, echo: false })
+  expect(await plateOf($, 'live-3')).toEqual({ plate: true, echo: false })
+  expect(await plateOf($, 'live-4')).toEqual({ plate: false, echo: false })
 })
 
 test('panel notes keep only the newest 16 and expire after five minutes', async ($, on) => {
@@ -1920,7 +2097,7 @@ test('host-backgrounded main and mate tests preserve the failed run without cele
   }
   let latestLore: KruxLore | undefined
   let latestCrew: KruxCrew | undefined
-  engine(on, new Map(), extras)
+  const clock = engine(on, new Map(), extras)
   on('state.set', ($, e, next) => {
     if (e.plugin === 'krux-mod' && e.key === 'journal') journalWrites.push(e.value as KruxJournal)
     if (e.plugin === 'krux-mod' && e.key === 'lore') latestLore = e.value as KruxLore
@@ -1929,6 +2106,8 @@ test('host-backgrounded main and mate tests preserve the failed run without cele
   })
   await start($)
   await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  // Linia gotowości czeka na odczyt repo, który po narzędziu czyta zegar.
+  await clock.settle()
   await $.agent.spawn(spawnOf({ prompt: 'Młot: testy', description: 'Młot' }))
   const ui = await $.ui.mount({ ...SHAFT_PANE, surface: 'terminal', props: SHAFT_PROPS })
   const failed = (await ui.find({ key: 'tests' }))?.text
@@ -1960,6 +2139,7 @@ test('working and staged whitespace checks gate commit readiness with a five-sec
   const clock = engine(on, new Map(), { processRun })
   await start($, clock)
   await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  await clock.settle()
   const ui = await $.ui.mount({ ...SHAFT_PANE, surface: 'terminal', props: SHAFT_PROPS })
   expect((await ui.find({ key: 'readiness' }))?.text).toBe('✓ do commita')
   const outcomes = [
@@ -1973,11 +2153,13 @@ test('working and staged whitespace checks gate commit readiness with a five-sec
     workingCode = working
     cachedCode = cached
     await $.tool.call({ tool: 'Bash', command: 'git fetch' })
+    await clock.settle()
     expect((await ui.find({ key: 'readiness' }))?.text).toBe(readiness)
   }
   workingCode = 0
   throws = true
   await $.tool.call({ tool: 'Bash', command: 'git fetch' })
+  await clock.settle()
   expect((await ui.find({ key: 'readiness' }))?.text).toBe('✓ do commita')
   expect(calls.length).toBe(16)
   for (const call of calls) {
@@ -2010,39 +2192,58 @@ test('overlapping git refreshes wait for the staged check before one follow-up r
   const clock = engine(on, new Map(), { processRun })
   await start($, clock)
   expect(checks).toBe(2)
-  const first = $.tool.call({ tool: 'Edit', file_path: '/work/a.ts' } as never)
-  let second: Promise<unknown> | undefined
+  await $.tool.call({ tool: 'Edit', file_path: '/work/a.ts' } as never)
+  // Odczyt po narzędziu rusza z zegarem i staje na kontroli indeksu.
+  const first = clock.settle()
   try {
     await started
-    second = $.tool.call({ tool: 'Write', file_path: '/work/b.ts', content: '' })
-    // Ten prompt stawia barierę po mikrozadaniach drugiego narzędzia.
-    await $.prompt.submit({ text: '', wait: false, origin: ORIGIN })
+    await $.tool.call({ tool: 'Write', file_path: '/work/b.ts', content: '' })
+    // Odczyt drugiego narzędzia czeka na wspólny, zamiast ruszyć obok niego.
+    await clock.settle()
     expect(statuses).toBe(2)
   } finally {
     release()
   }
-  await Promise.all([first, second])
+  await first
+  await clock.settle()
   expect(statuses).toBe(3)
   expect(checks).toBe(6)
+})
+
+test('a tool result and the end of a turn do not wait for the git read', async ($, on) => {
+  let runs = 0
+  // Git, który nie odpowiada (duże repo): silnik oddaje wynik modelowi dopiero po hooku.
+  const clock = engine(on, new Map(), { processRun: () => { runs += 1; return new Promise<ProcessReply>(() => {}) } })
+  await start($)
+  await $.turn.start({ text: 'kuj', turnId: 't1' })
+  const edited = await $.tool.call({ tool: 'Edit', file_path: '/work/a.ts', old_string: 'a', new_string: 'b' } as never)
+  expect(edited.result).toBe('ok')
+  await $.turn.complete({ answer: 'Krux kuć.', durationMs: 10, isAborted: false, turnId: 't1', reason: 'answer' })
+  expect(runs).toBe(0)
+  await clock.settle()
+  expect(runs).toBeGreaterThan(0)
 })
 
 test('behind toasts compare saved reads and skip initial, equal, lower and missing repo reads', async ($, on) => {
   const toasts: string[] = []
   const git = { stdout: '# branch.head main\n# branch.upstream origin/main\n# branch.ab +0 -2\n' }
   const extras: Extras = { git, toasts }
-  engine(on, new Map(), extras)
+  const clock = engine(on, new Map(), extras)
   await start($)
   expect(toasts).toEqual([])
   for (const behind of [2, 1, 4, 4]) {
     git.stdout = `# branch.head main\n# branch.upstream origin/main\n# branch.ab +0 -${behind}\n`
     await $.tool.call({ tool: 'Bash', command: 'git fetch' })
+    await clock.settle()
   }
   expect(toasts).toEqual(['origin ma 4 nowych commitów — git pull.'])
   extras.git = undefined
   await $.tool.call({ tool: 'Bash', command: 'git fetch' })
+  await clock.settle()
   extras.git = git
   git.stdout = git.stdout.replace('-4', '-8')
   await $.tool.call(inLoop('a1', { tool: 'Bash', command: 'git fetch' }))
+  await clock.settle()
   expect(toasts).toHaveLength(1)
 })
 
@@ -2072,6 +2273,29 @@ test('a hidden shaft pane keeps the band digest stuck mark ticking without anoth
   expect((await ui.find({ key: 'plan' }))?.text).toContain('⧗ 15 min')
   await clock.advance(60_000)
   expect((await ui.find({ key: 'plan' }))?.text).toContain('⧗ 16 min')
+})
+
+test('a new plan cancels the old plan timer instead of leaving it queued', async ($, on) => {
+  let queued = 0
+  // Zadanie w toku od teraz: zegar planu czeka do 15. minuty, każda zmiana planu z tej chwili tyle samo.
+  on('clock.after', { ms: 900_000 }, async ($c, e, next) => {
+    queued += 1
+    try {
+      return await next(e)
+    } finally {
+      queued -= 1
+    }
+  })
+  const clock = engine(on, new Map())
+  await start($, clock)
+  for (let step = 0; step < 20; step += 1) {
+    await $.tool.call({ ...TODOS, todos: [...TODOS.todos, { content: `krok ${step}`, status: 'pending', activeForm: '' }] } as never)
+  }
+  await clock.settle()
+  expect(queued).toBe(1)
+  const ui = await $.ui.mount({ ...SHAFT_PANE, surface: 'terminal', props: SHAFT_PROPS })
+  await clock.advance(900_000)
+  expect((await ui.find({ key: 'task-1' }))?.text).toContain('⧗ 15 min')
 })
 
 test('main and mate failure bubbles name only the current first failing test', async ($, on) => {
@@ -2214,12 +2438,22 @@ test('a limit crossing toasts once even when a newer measurement arrives while t
 
 test('/clear invalidates a start usage read still in flight', async ($, on) => {
   const high: SessionUsage = { startedAt: 0, context: { window: 200_000 }, rateLimits: [{ kind: 'five_hour', percentUsed: 90 }] }
+  const low: SessionUsage = { ...high, rateLimits: [{ kind: 'five_hour', percentUsed: 10 }] }
   let enterOld!: () => void
   let releaseOld!: () => void
   const oldEntered = new Promise<void>(resolve => { enterOld = resolve })
   const oldGate = new Promise<void>(resolve => { releaseOld = resolve })
   const toasts: string[] = []
-  const clock = engine(on, new Map(), { toasts, usageRead: async () => { enterOld(); await oldGate; return high } })
+  let reads = 0
+  // Odczyt ze startu wraca późno z wysokim limitem; świeży odczyt po /clear widzi niski.
+  const usageRead = async () => {
+    reads += 1
+    if (reads > 1) return low
+    enterOld()
+    await oldGate
+    return high
+  }
+  const clock = engine(on, new Map(), { toasts, usageRead })
   on('classic.SessionStart', () => ({}))
   await start($)
   const oldRead = clock.settle()
@@ -2230,8 +2464,95 @@ test('/clear invalidates a start usage read still in flight', async ($, on) => {
     releaseOld()
     await oldRead
   }
+  await clock.settle()
+  expect(reads).toBe(2)
   expect(await sectionIds($)).toEqual(['intro', 'krux-mod:persona'])
   expect(toasts).toEqual([])
+})
+
+// Silnik zeruje `$.state` przy /clear, /resume i forku; kit nie, więc atrapa czyta
+// wartości moda sprzed resetu jako puste, póki mod nie zapisze ich od nowa.
+function stateReset(on: On): () => void {
+  let reset = false
+  const written = new Set<string>()
+  on('state.set', ($, e, next) => {
+    if (reset && e.plugin === 'krux-mod') written.add(e.key)
+    return next(e)
+  })
+  on('state.get', async ($, e, next) => {
+    const found = (await next(e)) as unknown as { value: { version: number } }
+    if (!reset || e.plugin !== 'krux-mod' || written.has(e.key)) return found as never
+    return { value: { version: found.value.version } } as never
+  })
+  return () => {
+    reset = true
+    written.clear()
+  }
+}
+
+test('/clear, /resume and a fork read the plan limits again, so the first turn keeps automatic konkret without a second toast', async ($, on) => {
+  const usage: SessionUsage = { startedAt: 0, context: { window: 200_000 }, rateLimits: [{ kind: 'five_hour', percentUsed: 90 }] }
+  const reset = stateReset(on)
+  on('classic.SessionStart', () => ({}))
+  const toasts: string[] = []
+  const clock = engine(on, new Map(), { usage, toasts })
+  await start($, clock)
+  expect(await sectionIds($)).toEqual(['intro', 'krux-mod:persona', 'krux-mod:konkret'])
+  expect(toasts).toEqual(['Limit planu 80%: konkret włączony do resetu.'])
+  const status = { command: 'krux', args: 'status', origin: ORIGIN, presentation: { isFullscreen: false, columns: 120 } }
+  for (const source of ['clear', 'resume', 'fork'] as const) {
+    reset()
+    await $.classic.SessionStart({ source })
+    // Pomiar silnik pcha dopiero po turze: limity daje odczyt po komendzie.
+    await clock.settle()
+    expect(await sectionIds($)).toEqual(['intro', 'krux-mod:persona', 'krux-mod:konkret'])
+    expect((await $.command.run(status)).text).toContain('konkret: auto')
+    // Flaga w wyzerowanym stanie przechodzi z false, ale limit stoi: Morra widziała toast w tym procesie.
+    expect(toasts).toHaveLength(1)
+  }
+  // Prawdziwa zmiana limitu po odczycie bez toastu nadal daje toast.
+  await measure($, { ...usage, rateLimits: [{ kind: 'five_hour', percentUsed: 10 }] })
+  expect(await sectionIds($)).toEqual(['intro', 'krux-mod:persona'])
+  expect(toasts).toEqual(['Limit planu 80%: konkret włączony do resetu.', 'Konkret automatyczny wyłączony: limity planu poniżej 80%.'])
+})
+
+test('a fresh process resumed with claude -c toasts the plan limit once when the quiet read after classic resume comes first', async ($, on) => {
+  const usage: SessionUsage = { startedAt: 0, context: { window: 200_000 }, rateLimits: [{ kind: 'five_hour', percentUsed: 90 }] }
+  on('classic.SessionStart', () => ({}))
+  const toasts: string[] = []
+  const clock = engine(on, new Map(), { usage, toasts })
+  // `source: resume` przychodzi też przy `--resume`/`--continue`: ten proces toastu jeszcze nie pokazał.
+  await $.classic.SessionStart({ source: 'resume' })
+  await start($, clock)
+  await measure($, usage)
+  expect(await sectionIds($)).toEqual(['intro', 'krux-mod:persona', 'krux-mod:konkret'])
+  expect(toasts).toEqual(['Limit planu 80%: konkret włączony do resetu.'])
+})
+
+test('a fresh process resumed with claude -c toasts the plan limit once when the start read is still in flight', async ($, on) => {
+  const usage: SessionUsage = { startedAt: 0, context: { window: 200_000 }, rateLimits: [{ kind: 'five_hour', percentUsed: 90 }] }
+  on('classic.SessionStart', () => ({}))
+  const toasts: string[] = []
+  let reads = 0
+  let releaseFirst!: () => void
+  const firstGate = new Promise<void>(resolve => { releaseFirst = resolve })
+  // Odczyt ze startu czeka, aż ruszy cichy odczyt po `classic.SessionStart`, i odpada na wersji.
+  const usageRead = async () => {
+    reads += 1
+    if (reads === 1) await firstGate
+    else releaseFirst()
+    return usage
+  }
+  const clock = engine(on, new Map(), { usageRead, toasts })
+  await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' })
+  const startRead = clock.settle()
+  await $.classic.SessionStart({ source: 'resume' })
+  await clock.settle()
+  await startRead
+  await measure($, usage)
+  expect(reads).toBe(2)
+  expect(await sectionIds($)).toEqual(['intro', 'krux-mod:persona', 'krux-mod:konkret'])
+  expect(toasts).toEqual(['Limit planu 80%: konkret włączony do resetu.'])
 })
 
 test('/krux zapisz shares tool ids, deduplicates notes and reports the new id in a toast', async ($, on) => {
@@ -2347,18 +2668,56 @@ test('a return to an empty board is silent and a toggle still refreshes the pers
 
 test('/krux raport returns session facts as text without model context or a pane', async ($, on) => {
   const opened: string[] = []
-  const processRun: Extras['processRun'] = argv => ({ exitCode: 0, stdout: argv.includes('log') ? 'full\tabc123\tPoprawka parsera\n' : '# branch.head main\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false })
+  const processRun: Extras['processRun'] = argv => ({ exitCode: 0, stdout: argv.includes('log') ? 'full\tabc123\t1793000000\tPoprawka parsera\n' : '# branch.head main\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false })
   on('tool.call', { tool: 'Bash' }, () => ({ result: 'ok', text: '3 pass\n0 fail' }))
-  engine(on, new Map(), { opened, processRun })
+  const clock = engine(on, new Map(), { opened, processRun })
   await start($)
   await $.tool.call(TODOS as never)
   await $.tool.call({ tool: 'Bash', command: 'npm test' })
   await $.tool.call({ tool: 'mcp__krux-mod__watki', open: [{ text: 'Sprawdzić API' }] } as never)
+  await clock.settle()
   opened.length = 0
   const report = await $.command.run({ command: 'krux', args: 'raport', origin: ORIGIN, presentation: { isFullscreen: false, columns: 120 } })
   expect(report.text).toBe('## Commity\n- abc123 Poprawka parsera\n\n## Ostatni przebieg testów\nKomenda: npm test\nWynik: zaliczony\nWykonawca: Krux\nZaliczone: 3\nNieudane: 0\n\n## Plan\nZrobione: 1/3\n- [x] Test odtwarzający błąd\n- [ ] Poprawka w parser.js (w toku)\n- [ ] Changelog\n\n## Otwarte wątki\n- #1 [do zrobienia] Sprawdzić API\n\n## Podsumowanie sesji\nPrzebiegi testów: 1 (nieudane: 0)\nCommity: 0\nRozbiórki: 0')
   expect(report.context).toBeUndefined()
   expect(opened).toEqual([])
+})
+
+test('/krux raport lists only commits made since the session started', async ($, on) => {
+  // Świeża sesja w repo z historią: stary commit innego autora nie trafia do raportu dnia.
+  const log = 'new-full\tf00d123\t1793003600\tpoprawka z sesji\nold-full\t132155b\t1785585600\tstara zmiana kogoś innego\n'
+  const processRun: Extras['processRun'] = argv => ({ exitCode: 0, stdout: argv.includes('log') ? log : '# branch.head main\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false })
+  const clock = engine(on, new Map(), { processRun, usage: { startedAt: 1_793_000_000_000, context: { window: 200_000 }, rateLimits: [] } })
+  await start($, clock)
+  const report = await $.command.run({ command: 'krux', args: 'raport', origin: ORIGIN, presentation: { isFullscreen: false, columns: 120 } })
+  expect(report.text).toBe('## Commity\n- f00d123 poprawka z sesji')
+})
+
+test('/krux raport right after /resume reads the repo instead of dropping the session commits', async ($, on) => {
+  const log = 'new-full\tf00d123\t1793003600\tpoprawka z sesji\n'
+  const processRun: Extras['processRun'] = argv => ({ exitCode: 0, stdout: argv.includes('log') ? log : '# branch.head main\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false })
+  on('classic.SessionStart', () => ({}))
+  const reset = stateReset(on)
+  const clock = engine(on, new Map(), { processRun, usage: { startedAt: 1_793_000_000_000, context: { window: 200_000 }, rateLimits: [] } })
+  await start($, clock)
+  const command = { command: 'krux', args: 'raport', origin: ORIGIN, presentation: { isFullscreen: false, columns: 120 } }
+  reset()
+  await $.classic.SessionStart({ source: 'resume' })
+  // Odczyt repo po `/resume` czeka jeszcze na zegar: raport go nie wyprzedza.
+  expect((await $.command.run(command)).text).toBe('## Commity\n- f00d123 poprawka z sesji')
+  await clock.settle()
+  expect((await $.command.run(command)).text).toBe('## Commity\n- f00d123 poprawka z sesji')
+})
+
+test('/krux raport outside a repo still reports no data after /resume', async ($, on) => {
+  on('classic.SessionStart', () => ({}))
+  const reset = stateReset(on)
+  const clock = engine(on, new Map())
+  await start($, clock)
+  reset()
+  await $.classic.SessionStart({ source: 'resume' })
+  const report = await $.command.run({ command: 'krux', args: 'raport', origin: ORIGIN, presentation: { isFullscreen: false, columns: 120 } })
+  expect(report.text).toBe('Brak danych do raportu dnia.')
 })
 
 // W2: testy granic wpięcia; drzewo i wynik nadal pochodzą z prawdziwych hooków.

@@ -10,6 +10,7 @@ function wave(from: number, age: number, cell: string): Layer {
 }
 
 // ——— Róg ———
+// Róg kościany: jasny odcina się od skóry i brązowego fartucha, czara odróżnia go od kła.
 const HORN_ORC: Frame = ['.gggg....', 'grggrg..t', '.tggtttt', 'bbbbbbggt', '.bGGb....', '.G..G....']
 const HORN_PROP: Frame = ['...t', 'ttt.', '...t']
 const HORN_FRAMES = 24
@@ -26,9 +27,10 @@ const LOOK: Frame = stander('right')
 
 const horn: Act = {
   name: 'róg',
-  kit: draw([HORN_PROP, 8, 1]),
+  // Róg leży na ziemi, zanim Krux go podniesie.
+  kit: draw([HORN_PROP, 8, 3]),
   intro: [
-    draw([LOOK, 0, 0], [HORN_PROP, 8, 1]),
+    draw([LOOK, 0, 0], [HORN_PROP, 8, 3]),
     draw([LOOK, 0, 0], [['', '', '', '......gg'], 0, 0], [HORN_PROP, 6, 2]),
     draw([HORN_ORC, 0, 0]),
   ],

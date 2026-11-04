@@ -1,4 +1,5 @@
-// Arkusz klatek czynności do oglądania i sprawdzania. Wymaga `sips` (macOS).
+// Arkusz klatek czynności do oglądania i sprawdzania. PNG zapisuje sam (`node:zlib`),
+// bez zewnętrznych narzędzi, więc arkusz i walidacja klatek działają na każdej platformie.
 //   npx tsx scripts/act-sheet.ts <scena> [plik.png] [nazwa czynności]
 //   npx tsx scripts/act-sheet.ts hooks/acts/<plik>.ts:<EKSPORT> [plik.png] [nazwa czynności]
 //   npx tsx scripts/act-sheet.ts gesty [plik.png] [nazwa gestu]
@@ -9,11 +10,11 @@
 // różnych czynności, także siedzącej i pochylonej), wiersz to poza i wszystkie kroki gestu;
 // sprawdza go na początku pętli każdej czynności z `ACTS`. Skrypt wypisuje złamane zasady
 // klatek (te same, które pilnuje `tests/sprites.test.ts`) i wtedy kończy się kodem 1.
-import { execFileSync } from 'node:child_process'
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
+import { crc32, deflateSync } from 'node:zlib'
 
 import { dress } from '../hooks/apron.ts'
 import { MATE_APRONS, PALETTE } from '../hooks/palette.ts'
@@ -98,6 +99,28 @@ function actStrips(acts: readonly Act[]): string[][][] {
   return strips
 }
 
+// PNG z pikseli RGB: sygnatura, IHDR (8 bitów, RGB), jeden IDAT z wierszami po bajcie
+// filtra 0, skompresowany przez deflate, i IEND; każdy kawałek z CRC-32 typu i danych.
+function png(width: number, height: number, rgb: Buffer): Buffer {
+  const chunk = (type: string, data: Buffer): Buffer => {
+    const body = Buffer.concat([Buffer.from(type, 'ascii'), data])
+    const out = Buffer.alloc(body.length + 8)
+    out.writeUInt32BE(data.length, 0)
+    body.copy(out, 4)
+    out.writeUInt32BE(crc32(body) >>> 0, body.length + 4)
+    return out
+  }
+  const header = Buffer.alloc(13)
+  header.writeUInt32BE(width, 0)
+  header.writeUInt32BE(height, 4)
+  header[8] = 8
+  header[9] = 2
+  const stride = width * 3
+  const raw = Buffer.alloc((stride + 1) * height)
+  for (let y = 0; y < height; y++) rgb.copy(raw, y * (stride + 1) + 1, y * stride, (y + 1) * stride)
+  return Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), chunk('IHDR', header), chunk('IDAT', deflateSync(raw)), chunk('IEND', Buffer.alloc(0))])
+}
+
 function sheet(strips: readonly (readonly string[][])[], out: string, perRow = PER_ROW, S = SCALE): void {
   const width = perRow * (W + GAP) * S
   const height = strips.length * (H + GAP) * S
@@ -114,32 +137,7 @@ function sheet(strips: readonly (readonly string[][])[], out: string, perRow = P
       ),
     ),
   )
-  const rowBytes = Math.ceil((width * 3) / 4) * 4
-  const bmp = Buffer.alloc(54 + rowBytes * height)
-  bmp.write('BM')
-  bmp.writeUInt32LE(bmp.length, 2)
-  bmp.writeUInt32LE(54, 10)
-  bmp.writeUInt32LE(40, 14)
-  bmp.writeInt32LE(width, 18)
-  bmp.writeInt32LE(height, 22)
-  bmp.writeUInt16LE(1, 26)
-  bmp.writeUInt16LE(24, 28)
-  for (let y = 0; y < height; y++)
-    for (let x = 0; x < width; x++) {
-      const i = ((height - 1 - y) * width + x) * 3
-      const o = 54 + y * rowBytes + x * 3
-      bmp[o] = px[i + 2]!
-      bmp[o + 1] = px[i + 1]!
-      bmp[o + 2] = px[i]!
-    }
-  const directory = mkdtempSync(join(tmpdir(), 'act-sheet-'))
-  try {
-    const tmp = join(directory, 'sheet.bmp')
-    writeFileSync(tmp, bmp, { flag: 'wx' })
-    execFileSync('sips', ['-s', 'format', 'png', tmp, '--out', out], { stdio: 'ignore' })
-  } finally {
-    rmSync(directory, { recursive: true, force: true })
-  }
+  writeFileSync(out, png(width, height, px))
 }
 
 // Pozy bazowe arkusza gestów: stójka i początki pętli, w tym poza siedząca, leżąca i pochylona.
@@ -201,7 +199,6 @@ async function gestureSheet(out: string, only: string | undefined): Promise<stri
 }
 
 async function main(): Promise<void> {
-  if (process.platform !== 'darwin') throw new Error('Arkusz PNG wymaga macOS i polecenia sips; ta platforma nie jest obsługiwana.')
   const source = process.argv[2] ?? 'lounge'
   const only = process.argv[4]
   if (source === 'gesty') {

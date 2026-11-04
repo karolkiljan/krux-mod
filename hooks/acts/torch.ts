@@ -23,8 +23,8 @@ function wall(reveal: number, left: number): Layer[] {
   return cells
 }
 
-// Pochodnia zgaszona, zanim ork ją uniesie.
-const UNLIT: Layer[] = [at('h', 8, 2), at('h', 8, 3)]
+// Pochodnia zgaszona stoi na ziemi, zanim ork ją uniesie.
+const UNLIT: Layer[] = [at('h', 8, 4), at('h', 8, 5)]
 
 // Ręka z pochodnią; `fire` 0 zgaszona, 1 tli się, 2 płonie.
 function torchInHand(frame: number, fire: number): Layer[] {
@@ -44,8 +44,9 @@ const torchWall: Act = {
   name: 'pochodnia',
   kit: draw(...UNLIT),
   intro: [
-    // Sięgnąć po pochodnię, unieść ją, skrzesać iskrę.
-    draw([STAND, 0, 0], at('g', 6, 3), ...UNLIT),
+    // Sięgnąć po pochodnię, unieść ją z ziemi, skrzesać iskrę.
+    draw([STAND, 0, 0], ...line([6, 3], [7, 4], 'g'), ...UNLIT),
+    draw([STAND, 0, 0], [['gg'], 6, 3], at('h', 8, 3), at('h', 8, 4)),
     draw([STAND, 0, 0], ...torchInHand(0, 0)),
     draw([stander('right'), 0, 0], ...torchInHand(0, 0)),
     draw([stander('right'), 0, 0], ...torchInHand(0, 0), at('y', 9, 1)),
@@ -86,9 +87,11 @@ function magnifyLoop(t: number): Frame {
 
 const magnify: Act = {
   name: 'lupa',
-  kit: draw(...lens(0, 0)),
+  kit: draw(...lens(0, 2)),
   intro: [
-    // Chwycić rączkę lupy i spojrzeć przez szkło.
+    // Chwycić rączkę lupy leżącej na ziemi, podnieść ją i spojrzeć przez szkło.
+    draw([STAND, 0, 0], at('g', 6, 4), ...lens(0, 2)),
+    draw([STAND, 0, 0], at('g', 6, 4), ...lens(0, 1)),
     draw([STAND, 0, 0], at('g', 6, 3), ...lens(0, 0)),
     draw([stander('right'), 0, 0], at('g', 6, 3), ...lens(0, 0)),
   ],

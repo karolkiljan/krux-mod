@@ -1,5 +1,6 @@
 import { expect, test } from 'claude-code/testing'
 
+import type { KruxLore } from '../types'
 import { gauge, infinitiveHits, matesNamed, orcish, rewrites } from '../hooks/gauge'
 import { EMPTY_LORE, foeOf, lifeNote, moodNote, recallOf, recordAnswer, recordTool, rememberAfter, replay, traceOf } from '../hooks/lore'
 import { MATES, ROSTER } from '../hooks/roster'
@@ -43,14 +44,59 @@ test('a tense word between subject and infinitive still counts', async () => {
   expect(infinitiveHits('Najpierw test. Potem uruchomić testy.')).toBe(0)
 })
 
+// Początek wiersza to początek zdania, a punkt listy z imieniem na przedzie to orkowe
+// zdanie: plan w punktach z „Krux + bezokolicznik” nie może dostać dryfu `no-infinitive`.
+test('a subject at the start of a line or of a named list item counts', () => {
+  expect(infinitiveHits('Gotowe.\nKrux puścić testy.')).toBe(1)
+  expect(infinitiveHits('Gotowe.\n\nKrux puścić testy.')).toBe(1)
+  expect(infinitiveHits('1. Krux puścić testy.')).toBe(1)
+  expect(infinitiveHits('- Krux puścić testy.')).toBe(1)
+  expect(infinitiveHits('- Krux już puścić testy.')).toBe(1)
+  expect(infinitiveHits('2) Młot liczyć dwa razy.')).toBe(1)
+  // Gładki punkt listy dalej nic nie mówi o głosie.
+  expect(infinitiveHits('1. Dodać test.')).toBe(0)
+  expect(infinitiveHits('- Proszę uruchomić testy.')).toBe(0)
+  // Wiersz pod pogrubioną etykietą albo poziomą kreską to też początek zdania: znacznik
+  // listy liczy się tylko w tym samym wierszu.
+  expect(infinitiveHits('**Testy:**\nKrux puścić testy.')).toBe(1)
+  expect(infinitiveHits('Gotowe.\n\n---\nKrux puścić testy.')).toBe(1)
+  expect(infinitiveHits('**Testy:**\n- Proszę uruchomić testy.')).toBe(0)
+  const sections = '**Przyczyna:**\nRobak siedzieć w `app.rb`, linia 7, w środku pętli.\n**Naprawa:**\nKrux wyciągnąć `return` na zewnątrz pętli i dopisać test.\n**Testy:**\nKrux puścić całość: 12 zielone, nic nie padać po drodze.'
+  expect(gauge(sections)).toEqual({ issues: [] })
+  const plan = [
+    'Plan na robaka w `parser.js`:',
+    '1. Krux dopisać test, co pokazywać robaka.',
+    '2. Krux przekuć walidację w `parser.js`.',
+    '3. Krux puścić wszystkie testy, 52 sztuki.',
+    '4. Krux dopisać wpis w `CHANGELOG.md`.',
+    'Ryzyko małe: zmiana w jednej funkcji. Zgoda?',
+  ].join('\n')
+  expect(gauge(plan)).toEqual({ issues: [] })
+})
+
 test('a short answer or code says nothing about the voice', async () => {
   expect(gauge('Zrobione.')).toBe(null)
   expect(gauge('```ts\n' + 'const zrobiłem = masz + chcesz\n'.repeat(20) + '```')).toBe(null)
 })
 
 test('mates are named in prose, not in code', async () => {
-  expect(matesNamed('Młot burczeć, a Grom śmiać się.')).toEqual(['Grom', 'Młot'])
+  expect(matesNamed('Młot burczeć, a Grom śmiać się.')).toEqual(['Młot', 'Grom'])
   expect(matesNamed('Zobacz `Grom.ts`.')).toEqual([])
+})
+
+// Spór wymienia podmiot i parę: ostatnią wstawkę miał podmiot, nie para, która
+// w kolejności MATES stoi dalej (Niuch → Młot, Grom → Piryt, Ochra → Lont).
+test('the mate of the last aside is the first one named, not the last one in the roster', () => {
+  const quiet = { ...EMPTY_LORE, quietTurns: 2 }
+  for (const mate of ['Niuch', 'Grom', 'Ochra'] as const) {
+    const spar = ROSTER[ROSTER[mate].spar]
+    const answer = `Robak siedzieć w \`api.ts\`. ${mate} węszyć: „Trop!" — ${ROSTER[mate].spar} burczeć: „Dowód?". Krux poprawić import.`
+    expect(matesNamed(answer)).toEqual([mate, ROSTER[mate].spar])
+    const after = recordAnswer(quiet, matesNamed(answer))
+    expect(after.lastMate).toBe(mate)
+    expect(lifeNote({ ...after, quietTurns: 2 }, 0)).toContain(`Nie ${ROSTER[mate].accusative}:`)
+    expect(lifeNote({ ...after, quietTurns: 2 }, 0)).not.toContain(`Nie ${spar.accusative}:`)
+  }
 })
 
 test('the anchor is full on the first turn, on refresh and after drift; short otherwise', async () => {
@@ -158,10 +204,67 @@ test('every trade gets its facts: builds for Grom, interface edits for Ochra, te
   lore = recordTool(lore, 'Bash', { command: 'rm -rf dist' }, false)
   expect(lore).toMatchObject({ edits: 1, uiEdits: 1, builds: 1, buildFails: 1, tears: 1, last: 'tear' })
   const quiet = { ...lore, quietTurns: 2 }
-  const notes = [0, 1, 2].map(seed => lifeNote(quiet, seed)!)
+  const notes = [0, 1, 2, 3, 4].map(seed => lifeNote(quiet, seed)!)
   expect(notes.find(note => note.includes('mową o Gromie'))).toContain('przebiegi budowania, typów i lintu w tej sesji: 1, padłe: 1')
   expect(notes.find(note => note.includes('mową o Ochrze'))).toContain('edycje plików interfejsu w tej sesji: 1')
   expect(notes.find(note => note.includes('mową o Loncie'))).toContain('rozbiórki w tej sesji')
+})
+
+// ESLint i stylelint drukują „✖ N problems” także przy samych ostrzeżeniach i kodzie 0:
+// smród budowania z takiego przebiegu szedłby do dymka, linii nastroju i notki jako fałsz.
+test('a lint run with only warnings is a green build, a lint summary with errors is not', () => {
+  const warned = "/repo/src/app.ts\n  3:7  warning  'unused' is assigned a value but never used  no-unused-vars\n\n✖ 1 problem (0 errors, 1 warning)\n"
+  for (const command of ['npx eslint .', 'npm run lint', 'pnpm lint']) {
+    expect(recordTool(EMPTY_LORE, 'Bash', { command }, false, warned)).toMatchObject({ builds: 1, buildFails: 0, last: 'build-pass' })
+  }
+  expect(recordTool(EMPTY_LORE, 'Bash', { command: 'npx eslint . | tail' }, false, '✖ 12 problems (0 errors, 12 warnings)')).toMatchObject({ buildFails: 0 })
+  // `| tail` zjada kod wyjścia: błąd w podsumowaniu dalej daje padłe budowanie.
+  const errors = "  4:1  error  'x' is not defined  no-undef\n\n✖ 2 problems (1 error, 1 warning)\n"
+  expect(recordTool(EMPTY_LORE, 'Bash', { command: 'npx eslint . | tail' }, false, errors)).toMatchObject({ builds: 1, buildFails: 1, last: 'build-fail' })
+  expect(recordTool(EMPTY_LORE, 'Bash', { command: 'npx eslint . | tail' }, false, '✖ 10 problems (10 errors, 0 warnings)')).toMatchObject({ buildFails: 1 })
+  // `--max-warnings 0`: lint odmawia przez limit ostrzeżeń (kod 1), a `| tail` ten kod zjada.
+  for (const command of ['npm run lint 2>&1 | tail -20', 'npx eslint . --max-warnings 0 2>&1 | tail -20']) {
+    expect(recordTool(EMPTY_LORE, 'Bash', { command }, false, warned + '\nESLint found too many warnings (maximum: 0).\n')).toMatchObject({ builds: 1, buildFails: 1, last: 'build-fail' })
+  }
+  expect(recordTool(EMPTY_LORE, 'Bash', { command: 'npm run lint:css 2>&1 | tail -5' }, false, '✖ 1 problem (0 errors, 1 warning)\n\nMax warnings exceeded: 1 found. 0 allowed\n')).toMatchObject({ buildFails: 1 })
+})
+
+// Kumpel notki tej tury ma ostatnią wstawkę, także gdy Krux wcześniej woła innego do roboty
+// (wzór „Delegacja”); bez notki albo bez jej kumpla w odpowiedzi liczy się pierwszy wymieniony.
+test('the mate of this turn’s note keeps the last aside even when a delegated mate is named first', () => {
+  const quiet = { ...EMPTY_LORE, quietTurns: 2 }
+  const answer = 'Robota na wiele chodników. Krux puszczać Niucha — węszyć wszystkie wywołania `fetchUser`, wracać z mapą. Krux czekać na trop. Lont mierzyć lont trzy razy, zanim podpalić gruz.'
+  expect(matesNamed(answer)).toEqual(['Niuch', 'Lont'])
+  const after = recordAnswer(quiet, matesNamed(answer), 'Lont')
+  expect(after).toMatchObject({ lastMate: 'Lont', quietTurns: 0 })
+  expect(lifeNote({ ...after, quietTurns: 2 }, 0)).toContain('Nie Lonta:')
+  // Bezpieczny sąsiad: kumpel notki, którego odpowiedź nie wymienia, nie zabiera wstawki.
+  expect(recordAnswer(quiet, matesNamed(answer), 'Grom').lastMate).toBe('Niuch')
+  expect(recordAnswer(quiet, matesNamed(answer), null).lastMate).toBe('Niuch')
+  expect(recordAnswer(quiet, [], 'Lont')).toMatchObject({ lastMate: null, quietTurns: 3 })
+})
+
+// Kumpel i forma z niezależnych ziaren: przy pięciu kandydatach i pięciu formach
+// to samo `seed` dawało Niuchowi zawsze cytat, Lontowi zawsze spór, a posłuszny
+// model z notką co trzy tury krążył po piątce kumpli bez Ochry.
+test('a long quiet session gives every mate a turn and more than one form', () => {
+  const formsOf = new Map<string, Set<string>>()
+  let lore: KruxLore = { ...EMPTY_LORE, lastMate: 'Grom' }
+  for (let turn = 0; turn < 120; turn += 1) {
+    const note = lifeNote(lore, turn)
+    // Ten sam stan i ta sama tura dają tę samą notkę.
+    expect(lifeNote(lore, turn)).toBe(note)
+    if (note === null) {
+      lore = recordAnswer(lore, [])
+      continue
+    }
+    const mate = MATES.find(name => note.includes(`mową o ${ROSTER[name].locative} (`))!
+    const form = /forma: ([^.,]+)/u.exec(note)![1]!
+    formsOf.set(mate, (formsOf.get(mate) ?? new Set()).add(form))
+    lore = recordAnswer(lore, [mate])
+  }
+  expect([...formsOf.keys()].sort()).toEqual([...MATES].sort())
+  for (const [mate, forms] of formsOf) expect([mate, forms.size >= 2]).toEqual([mate, true])
 })
 
 // Notka nie zgaduje rodzaju kumpla: Ochrę model bierze za „nią”.
@@ -183,8 +286,8 @@ test('every mate has a sparring partner, and the pairs agree on the feud', () =>
   const forms = [0, 1, 2, 3, 4].map(seed => /forma: ([^.]+)\./u.exec(lifeNote(quiet, seed)!)![1])
   expect(new Set(forms).size).toBe(5)
   const spat = lifeNote(quiet, 4)!
-  expect(spat).toContain('mową o Młocie')
-  expect(spat).toContain('forma: krótka wymiana zdań z Niuchem, spór: trop kontra dowód.')
+  expect(spat).toContain('mową o Loncie')
+  expect(spat).toContain('forma: krótka wymiana zdań z Ochrą, spór: równa krawędź kontra rozbiórka.')
 })
 
 // Humor kumpla to jego mina z ekranu: czerwone testy marszczą Młota, zielone po smrodzie go puszą.
@@ -312,6 +415,32 @@ test('nouns like „zawałem” or „hasłem” are no first person and never g
   expect(orcish('mogłem', false)).toBe(null)
 })
 
+// Kotwica cytuje przepisane zdanie jako wzór: „z Krux oryginać” uczyłoby modelu złej
+// formy, a „kowadłem” (słowo fachu Groma z notki) liczyło się jako gładka pierwsza osoba.
+test('more nouns ending like „-łem” stay untouched, and wrong verb stems are fixed', () => {
+  const nouns = ['oryginałem', 'finałem', 'kwartałem', 'kawałem', 'strzałem', 'ostrzałem', 'wystrzałem', 'pyłem', 'opałem', 'banałem', 'trybunałem', 'kardynałem', 'Michałem', 'Rafałem', 'Pawłem', 'kowadłem', 'skrzydłem', 'prawidłem', 'wahadłem', 'zwierciadłem', 'sprzęgłem']
+  for (const noun of nouns) expect([noun, orcish(noun, false)]).toEqual([noun, null])
+  expect(rewrites('Krux porównać plik z oryginałem.')).toEqual([])
+  const answer =
+    'Krux porównać nowy `parse` z oryginałem. Robak siedzieć w pętli, linia 42. Krux wyciągnąć `return` na zewnątrz i puścić testy. ' +
+    'Testy 52, wszystko zielone. Grom stać nad kowadłem i burczeć, że stal za miękka. Morra sprawdzi diff.'
+  expect(gauge(answer)).toEqual({ issues: [] })
+  // Czas teraźniejszy „-syłam” to „-syłać”, nie „-syć”; czasowniki obok dalej idą swoją drogą.
+  expect(orcish('wysyłam', false)).toBe('Krux wysyłać')
+  expect(orcish('Przesyłam', true)).toBe('Krux przesyłać')
+  expect(orcish('byłam', false)).toBe('Krux być')
+  expect(orcish('padłem', false)).toBe(null)
+  // Na początku zdania: „-ymywać”, „-ystywać”, „-cofywać”, „-sługiwać”, a obce „-am” zostają.
+  expect(orcish('Zatrzymuję', true)).toBe('Krux zatrzymywać')
+  expect(orcish('Utrzymuję', true)).toBe('Krux utrzymywać')
+  expect(orcish('Otrzymuję', true)).toBe('Krux otrzymywać')
+  expect(orcish('Wykorzystuję', true)).toBe('Krux wykorzystywać')
+  expect(orcish('Wycofuję', true)).toBe('Krux wycofywać')
+  expect(orcish('Obsługuję', true)).toBe('Krux obsługiwać')
+  for (const word of ['Stream', 'Upstream', 'Szlam', 'Balsam', 'Param', 'Webcam']) expect([word, orcish(word, true)]).toEqual([word, null])
+  expect(orcish('Sprawdzam', true)).toBe('Krux sprawdzać')
+})
+
 test('present and future first person drift too, not only „-łem”', async () => {
   const answer =
     'Widzę 3 robaki w `app.rb`. Sprawdzam najpierw linię 7. Polecam wariant 1, bo najprostszy. ' +
@@ -424,6 +553,34 @@ test('nouns ending in -sz are not second person', async () => {
   expect(gauge('Robisz to źle. ' + 'Krux już naprawić robaka w pliku. '.repeat(6))!.issues[0]!.kind).toBe('second-person')
 })
 
+// Rozkaz do Morry i czas przeszły to druga osoba: poprawka dryfu każe wtedy „Morra sprawdzi”.
+test('imperatives, past second person and „twój” are second person too', () => {
+  const answer =
+    'Krux nie móc zalogować za Morrę. Uruchom `gcloud auth login` w terminalu. Sprawdź, czy projekt się zgadza. ' +
+    'Jeśli zmieniłeś region, popraw `config.yaml`. Twój token wygasać po godzinie. Potem daj znać, Krux dokończyć konfigurację.'
+  const second = gauge(answer)!.issues.find(issue => issue.kind === 'second-person')
+  expect(second?.examples).toEqual(['Uruchom', 'Sprawdź', 'zmieniłeś'])
+  for (const word of ['dodaj', 'Zrób', 'usuń', 'dodałaś', 'twój', 'Kliknij']) {
+    expect([word, gauge(`${word} to. ` + 'Krux już naprawić robaka w pliku. '.repeat(6))?.issues[0]?.kind]).toEqual([word, 'second-person'])
+  }
+  // Orkowy rozkaz trzecią osobą przyszłą i bezokolicznik zostają czyste.
+  const orc = 'Morra włączy terminal i naskrobie `gcloud auth login`. Potem Morra da znać. ' + 'Krux już naprawić robaka w pliku. '.repeat(5)
+  expect(gauge(orc)).toEqual({ issues: [] })
+  expect(gauge(ORC)).toEqual({ issues: [] })
+})
+
+// Etykieta przycisku i cudzy tekst w cudzysłowie ASCII to cytat, nie rozkaz do Morry:
+// kontrakt każe podawać je dosłownie, więc poprawka dryfu nie może ich przerabiać.
+test('UI labels in bold or in ASCII quotes are not second person', () => {
+  const kinds = (answer: string) => gauge(answer)?.issues.map(issue => issue.kind) ?? []
+  const ui = 'Ochra stroić brzegi. Krux przekuć pasek akcji w `Toolbar.tsx`. Przycisk **Dodaj** teraz zielony, **Usuń** czerwony z pytaniem o zgodę. Testy 8, wszystko zielone. Morra obejrzy w przeglądarce i powie, czy równo.'
+  expect(kinds(ui)).not.toContain('second-person')
+  expect(kinds(ui.replace(/\*\*(\p{L}+)\*\*/gu, '"$1"'))).not.toContain('second-person')
+  expect(kinds('Krux zrobić commit "Popraw walidację w parserze". ' + 'Krux już naprawić robaka w pliku. '.repeat(5))).not.toContain('second-person')
+  // Bezpieczny sąsiad: rozkaz poza etykietą dalej jest drugą osobą.
+  expect(gauge(ui.replace('Morra obejrzy w przeglądarce', 'Uruchom przeglądarkę u siebie i sprawdź'))!.issues.find(issue => issue.kind === 'second-person')?.examples).toEqual(['Uruchom', 'sprawdź'])
+})
+
 test('a drifted answer brings back its own sentences in orc speech', async () => {
   const found = rewrites('Robak siedzi w `app.rb:7`. Trafia w przyczynę.\n\n```ruby\nma = 1\n```')
   expect(found).toEqual([
@@ -460,4 +617,14 @@ test('the mood line comes from the last chronicle event, with its fact, and calm
   expect(moodNote(recordTool(EMPTY_LORE, 'Bash', { command: 'npm test' }, false, '3 passed'))).toBe(null)
   // Edycja nie zmienia nastroju, ale nowe zdarzenie po niej to nowy klucz.
   expect(moodNote(recordTool(failing, 'Edit', { file_path: 'a.ts' }, false))!.text).toBe(angry.text)
+})
+
+// Edycja to nie zdarzenie: tury poprawek po smrodzie nie dostają tej samej linii od nowa.
+test('an edit keeps the mood key, so the same line does not come back', () => {
+  const failing = recordTool(EMPTY_LORE, 'Bash', { command: 'npm test' }, true)
+  const edited = recordTool(recordTool(failing, 'Edit', { file_path: 'a.ts' }, false), 'Write', { file_path: 'README.md' }, false)
+  expect(moodNote(edited)!.key).toBe(moodNote(failing)!.key)
+  const sealed = recordTool(failing, 'Bash', { command: 'git commit -m x' }, false)
+  expect(moodNote(recordTool(sealed, 'Edit', { file_path: 'b.ts' }, false))!.key).toBe(moodNote(sealed)!.key)
+  expect(moodNote(sealed)!.key).not.toBe(moodNote(failing)!.key)
 })

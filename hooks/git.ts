@@ -7,12 +7,17 @@ import type { KruxGit } from '../types'
 // Mod puszcza git poza sandboksem (security.md): `core.fsmonitor` z `.git/config`
 // cudzego repo uruchomiłby zapisaną tam komendę, więc każdy odczyt go wyłącza.
 export const GIT_STATUS = ['git', '--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'core.quotePath=false', 'status', '--porcelain=v2', '--branch'] as const
-export const GIT_LOG = ['git', '--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'core.quotePath=false', 'log', '--format=%H%x09%h%x09%s', '-n', '10'] as const
+// Czas commitera (`%ct`, sekundy) oddziela commity sesji od starszej historii w raporcie dnia.
+export const GIT_LOG = ['git', '--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'core.quotePath=false', 'log', '--format=%H%x09%h%x09%ct%x09%s', '-n', '10'] as const
 export const GIT_CHECK = ['git', '--no-optional-locks', '-c', 'core.fsmonitor=false', 'diff', '--check'] as const
 export const GIT_CHECK_CACHED = ['git', '--no-optional-locks', '-c', 'core.fsmonitor=false', 'diff', '--cached', '--check'] as const
 
 // Osiągalność zamiast pozycji w logu: merge przeplata commity lokalne i upstream.
 export const GIT_UNPUSHED = ['git', '--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'core.quotePath=false', 'rev-list', '@{upstream}..HEAD'] as const
+// Bez upstreamu albo bez jego odczytu (`[gone]`): commity spoza wszystkich zdalnych, tyle co
+// `GIT_LOG`. Nowa gałąź przed pierwszym pushem ma wtedy wypchnięte commity z origin/main;
+// repo bez zdalnego daje całą historię. `--` zamyka rewizje: plik `HEAD` nie robi dwuznaczności.
+export const GIT_LOCAL = ['git', '--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'core.quotePath=false', 'rev-list', '-n', '10', 'HEAD', '--not', '--remotes', '--'] as const
 
 // Plików w panelu najwyżej tyle; reszta to liczba w wierszu „zmienione”.
 const FILES_LIMIT = 20
@@ -29,13 +34,15 @@ function fileOf(line: string): { code: string; path: string } | null {
   return { code, path: fields.slice(skip).join(' ').split('\t')[0]! }
 }
 
-// Wyjścia `GIT_STATUS`, `GIT_LOG` i `GIT_UNPUSHED`; brak odczytu ostatniego to null.
+// Wyjścia `GIT_STATUS`, `GIT_LOG` i `GIT_UNPUSHED` albo `GIT_LOCAL`; brak odczytu ostatniego to null.
 export function gitOf(output: string, log = '', unpushed: string | null = null): KruxGit {
   const git: KruxGit = { branch: '', upstream: null, ahead: 0, behind: 0, changed: 0, untracked: 0, conflicted: 0, files: [], commits: [] }
+  let compared = false
   for (const line of output.split(/\r?\n/u)) {
     if (line.startsWith('# branch.head ')) git.branch = line.slice('# branch.head '.length)
     else if (line.startsWith('# branch.upstream ')) git.upstream = line.slice('# branch.upstream '.length)
     else if (line.startsWith('# branch.ab ')) {
+      compared = true
       const counts = /\+(\d+) -(\d+)/u.exec(line)
       if (counts) {
         git.ahead = Number(counts[1])
@@ -47,14 +54,19 @@ export function gitOf(output: string, log = '', unpushed: string | null = null):
     const file = fileOf(line)
     if (file !== null && git.files.length < FILES_LIMIT) git.files.push(file)
   }
-  // Pełne hashe porównujemy, krótkie pokazujemy. Brak odczytu nie potwierdza wypchnięcia.
+  // Upstream bez `branch.ab`: gałęzi na zdalnym już nie ma (`[gone]` w `git status -sb`),
+  // więc zera nie znaczą „równo z upstreamem”.
+  if (git.upstream !== null && !compared) git.upstreamGone = true
+  // Pełne hashe porównujemy, krótkie pokazujemy. O wypchnięciu mówi tylko odczyt: bez niego
+  // żaden commit nie jest wypchnięty, a z nim wypchnięty jest każdy spoza jego listy.
   const local = new Set((unpushed ?? '').split(/\r?\n/u).filter(Boolean))
   git.commits = log
     .split(/\r?\n/u)
     .filter(line => line.includes('\t'))
     .map(line => {
-      const [oid = '', hash = '', ...subject] = line.split('\t')
-      return { hash, subject: subject.join('\t'), pushed: git.upstream !== null && unpushed !== null && !local.has(oid) }
+      const [oid = '', hash = '', seconds = '', ...subject] = line.split('\t')
+      const at = /^\d+$/u.test(seconds) ? { at: Number(seconds) * 1000 } : {}
+      return { hash, subject: subject.join('\t'), pushed: unpushed !== null && !local.has(oid), ...at }
     })
   return git
 }

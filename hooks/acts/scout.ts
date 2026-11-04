@@ -35,6 +35,8 @@ const bush: Act = {
 // Rura od oka w prawo: dwa skórzane człony, dwa stalowe, szkło na końcu.
 const TUBE = 'hhSSi'
 const CLOSED_GLASS: Layer = [['hS'], 7, 3]
+// Złożona luneta leży na ziemi, zanim ork ją podniesie.
+const LAID_GLASS: Layer = [['hS'], 7, 5]
 
 function spyglass(length: number, tilt: -1 | 0 | 1): Layer[] {
   const cells: Layer[] = [at('g', 6, 3), at('g', 7, 2)]
@@ -43,27 +45,29 @@ function spyglass(length: number, tilt: -1 | 0 | 1): Layer[] {
 }
 
 function tiltOf(t: number): -1 | 0 | 1 {
-  if (t >= 10 && t < 22) return -1
+  if (t >= 8 && t < 22) return -1
   if (t >= 26 && t < 30) return 1
   return 0
 }
 
 function bird(t: number): Layer[] {
-  // Ptak wlatuje z prawej, wznosi się i znika górą; luneta idzie za nim.
+  // Ptak wlatuje z prawej, wznosi się i znika górą, zanim doleci do szkła; luneta idzie za nim.
   const x = 22 - t
-  const y = t < 9 ? 1 : 1 - Math.floor((t - 9) / 2)
-  if (t > 15) return []
+  const y = t < 6 ? 1 : 1 - Math.floor((t - 6) / 2)
+  if (t >= 10) return []
   return t % 2 === 0 ? [[['w.w', '.w.'], x - 1, y - 1]] : [[['.w.', 'w.w'], x - 1, y]]
 }
 
 const spy: Act = {
   name: 'luneta',
-  // Złożona luneta w dłoni.
-  kit: draw(CLOSED_GLASS),
+  kit: draw(LAID_GLASS),
   intro: [
-    // Unieść rękę do oka i rozsunąć lunetę człon po członie.
+    // Podnieść lunetę z ziemi, unieść rękę do oka i rozsunąć ją człon po członie: nic nie znika ani nie maleje.
+    draw([stander('right'), 0, 0], at('g', 6, 4), LAID_GLASS),
+    draw([stander('right'), 0, 0], at('g', 6, 4), [['hS'], 7, 4]),
     draw([stander('right'), 0, 0], at('g', 6, 3), CLOSED_GLASS),
-    ...[1, 2, 3, 4].map(n => draw([stander('right'), 0, 0], ...spyglass(n, 0))),
+    draw([stander('right'), 0, 0], ...spyglass(0, 0), [['hS'], 6, 1]),
+    ...[3, 4].map(n => draw([stander('right'), 0, 0], ...spyglass(n, 0))),
   ],
   length: 32,
   loop: t => draw([stander('right'), 0, 0], ...spyglass(5, tiltOf(t)), ...bird(t)),
@@ -116,6 +120,8 @@ const patrol: Act = {
 const MOUND: Frame = ['..aaaa..', '.hcccch.', 'hhcccchh']
 const MOUND_X = 12
 const TROWEL: Layer = [['hS'], 7, 5]
+// Łopatka odłożona przed kopcem na czas zaglądania, pod pyskiem leżącego orka.
+const LAID_TROWEL: Layer = [['hS'], 9, 5]
 const PRONE: Frame = ['', '', '......gggg', '.....ggrggr', 'GGGbbbb.tggt', '...bbbb']
 const KNEEL: Frame = croucher('right')
 // Pochylenie z przykucu: głowa idzie naprzód i w dół.
@@ -125,22 +131,23 @@ function burrowLoop(t: number): Frame {
   // 24 klatki: ślepia mrugają w norze, ork cofa głowę i znowu zagląda.
   const back = t >= 12 && t < 16 ? 1 : 0
   const eyes: Layer[] = t % 12 < 4 ? [] : [[['y.y'], MOUND_X + 3, 4]]
-  return draw([MOUND, MOUND_X, 3], ...eyes, [PRONE, 1 - back, 0])
+  return draw([MOUND, MOUND_X, 3], LAID_TROWEL, ...eyes, [PRONE, 1 - back, 0])
 }
 
 const burrow: Act = {
   name: 'nora',
   kit: draw(TROWEL),
   intro: [
-    // Ork klęka z łopatką, ziemia rośnie pod jego ręką, potem kładzie się i podczołguje.
+    // Ork klęka z łopatką w dłoni, ziemia rośnie pod jego ręką, potem odkłada łopatkę,
+    // kładzie się i podczołguje.
     draw([KNEEL, 0, 0], TROWEL, at('g', 6, 4)),
-    draw([KNEEL, 0, 0], [MOUND, MOUND_X, 5], at('g', 6, 4), at('g', 7, 4), [['hS'], 8, 4]),
-    draw([KNEEL, 0, 0], [MOUND, MOUND_X, 4], at('g', 6, 4), at('g', 7, 4), [['hS'], 9, 4]),
-    draw([KNEEL, 0, 0], [MOUND, MOUND_X, 3], at('g', 6, 4), at('g', 7, 4), [['hS'], 10, 4]),
-    draw([DIVE, 0, 0], [MOUND, MOUND_X, 3]),
-    draw([MOUND, MOUND_X, 3], [PRONE, -2, 0]),
-    draw([MOUND, MOUND_X, 3], [PRONE, -1, 0]),
-    draw([MOUND, MOUND_X, 3], [PRONE, 0, 0]),
+    draw([KNEEL, 0, 0], [MOUND, MOUND_X, 5], at('g', 6, 4), [['hS'], 7, 4]),
+    draw([KNEEL, 0, 0], [MOUND, MOUND_X, 4], at('g', 6, 4), at('g', 7, 4), [['hS'], 8, 4]),
+    draw([KNEEL, 0, 0], [MOUND, MOUND_X, 3], at('g', 6, 4), at('g', 7, 4), [['hS'], 8, 4]),
+    draw([DIVE, 0, 0], [MOUND, MOUND_X, 3], LAID_TROWEL),
+    draw([MOUND, MOUND_X, 3], LAID_TROWEL, [PRONE, -2, 0]),
+    draw([MOUND, MOUND_X, 3], LAID_TROWEL, [PRONE, -1, 0]),
+    draw([MOUND, MOUND_X, 3], LAID_TROWEL, [PRONE, 0, 0]),
   ],
   length: 24,
   loop: burrowLoop,
@@ -150,8 +157,10 @@ const burrow: Act = {
 // Zwilżony palec w górze; liść wlatuje z prawej i przemyka za orkiem.
 const WIND_LEAF: Frame = ['.f', 'lh']
 
+// Ramię wzdłuż wiersza fartucha, palec kolumnę dalej: między nosem Niucha (5–6, 2) a palcem
+// zostaje szpara (7, 2), więc znak fachu nie zlewa się z dłonią.
 function windHand(tip: number): Layer[] {
-  return [...line([5, 3], [7, 2], 'g'), ...line([7, 2], [7, tip], 'g'), at('i', 7, tip)]
+  return [...line([6, 3], [7, 3], 'g'), ...line([8, 2], [8, tip], 'g'), at('i', 8, tip)]
 }
 
 function windLoop(t: number): Frame {
@@ -164,10 +173,10 @@ const wind: Act = {
   name: 'wiatr',
   who: ['Niuch'],
   intro: [
-    // Palec do ust, potem nad głowę; liść na starcie dopiero za krawędzią.
+    // Palec do czubka nosa, zwilżony w górę; liść na starcie dopiero za krawędzią.
     draw([stander('right', 'g'), 0, 0]),
-    draw([stander('right'), 0, 0], at('g', 6, 2)),
-    draw([stander('right'), 0, 0], at('i', 6, 2), at('g', 6, 3)),
+    draw([stander('right'), 0, 0], at('g', 6, 3), at('g', 7, 2)),
+    draw([stander('right'), 0, 0], at('g', 6, 3), at('i', 7, 2)),
     draw([stander('right'), 0, 0], ...windHand(2)),
     draw([stander('right'), 0, 0], ...windHand(1)),
     windLoop(0),

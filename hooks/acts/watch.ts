@@ -15,6 +15,7 @@ const WARM_LOOKS: readonly Look[] = ['left', 'left', 'left', 'left', 'left', 'sh
 // Grzanie rąk: dłonie ku żarowi, co jakiś czas pociera jedną o drugą, czasem spojrzy na pokój.
 const warm: Act = {
   name: 'grzanie rąk',
+  fire: true,
   intro: [
     // Dwa kroki ku ogniu, przykucnąć.
     draw([walker(0, 'left'), 1, 0]),
@@ -35,10 +36,11 @@ const guard: Act = {
   loop: t => draw([stander(GUARD_LOOKS[t]!), 1, 0]),
 }
 
-// Przeciąganie: ręce w górę, oczy przymknięte w ziewnięciu, ręce wracają przy bokach.
+// Przeciąganie: ręce w górę i na boki, w literę V, oczy przymknięte w ziewnięciu, ręce wracają
+// przy bokach. Między dłońmi a głową zostaje szpara, więc ręce nie czytają się jak uszy.
 function stretched(reach: number, look: Look): Frame {
-  const arms: Layer[] = reach === 0 ? [] : [...line([0, 3], [0, 3 - reach], 'g'), ...line([7, 3], [7, 3 - reach], 'g')]
-  return draw([stander(look), 1, 0], ...arms)
+  const arms: Layer[] = reach === 0 ? [] : [...line([1, 3], [0, 3 - reach], 'g'), ...line([8, 3], [9, 3 - reach], 'g')]
+  return draw([stander(look), 2, 0], ...arms)
 }
 
 const STRETCH: readonly (readonly [number, Look])[] = [
@@ -48,7 +50,7 @@ const STRETCH: readonly (readonly [number, Look])[] = [
 
 const stretch: Act = {
   name: 'przeciąganie',
-  intro: [draw([STAND, 1, 0])],
+  intro: [draw([STAND, 1, 0]), draw([STAND, 2, 0])],
   length: STRETCH.length,
   loop: t => stretched(...STRETCH[t]!),
 }

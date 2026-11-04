@@ -64,9 +64,12 @@ const trimming: Act = {
 }
 
 // ——— Zwijanie zapisanego zwoju ———
+// Zwój leży na stole, a nie w powietrzu: stół zostaje na ziemi, gdy ork odchodzi.
+const ROLL_TABLE: Frame = ['hhhhhhhhhhhhh', '.x.........x.']
 function scroll(edge: number): Layer[] {
   const body = Math.max(0, 18 - edge)
   return [
+    [ROLL_TABLE, 8, 4],
     [Array.from({ length: 2 }, () => 'p'.repeat(body)), edge + 1, 2],
     [['jj', 'pp', 'jj'], edge, 1],
     [['j', 'p', 'j'], 20, 1],

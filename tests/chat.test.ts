@@ -60,7 +60,7 @@ const ORCS: { speaker: AvatarSpeaker; color: string; grid: string[] }[] = [
   { speaker: 'Grom', color: '#a33a2a', grid: ['.SsSS.', 'grggrg', '.tggt.', 'MMMMMM'] },
   { speaker: 'Piryt', color: '#c9a227', grid: ['.gggg.', 'grggrg', '.tggt.', 'PPPPPP'] },
   { speaker: 'Ochra', color: '#cc7722', grid: ['gggg..', 'rggrg.', 'tggt.j', 'OOOOOh'] },
-  { speaker: 'Młot', color: '#6b7580', grid: ['.gggg.', 'grggrg', '.tggt.', 'LLLLLL'] },
+  { speaker: 'Młot', color: '#4f7aa3', grid: ['.gggg.', 'grggrg', '.tggt.', 'LLLLLL'] },
   { speaker: 'Lont', color: '#887088', grid: ['.gggg.', 'grggrg', 'otggt.', 'TTTTTT'] },
   { speaker: null, color: '#555555', grid: ['.gggg.', 'grggrg', '.tggt.', 'uuuuuu'] },
 ]

@@ -160,15 +160,18 @@ export type KruxMuster = { runs: KruxRun[] }
 export type KruxGit = {
   branch: string
   upstream: string | null
+  // Upstream ustawiony, ale jego gałęzi na zdalnym już nie ma (`[gone]`): `ahead` i `behind` nieznane.
+  upstreamGone?: boolean
   ahead: number
   behind: number
   changed: number
   untracked: number
   conflicted: number
   // Pliki poza commitem (litera stanu i ścieżka) i ostatnie commity, od najnowszego;
-  // `pushed` false dla tych, które czekają na wypchnięcie.
+  // `pushed` true dla leżących na upstreamie, a bez upstreamu albo bez jego odczytu na
+  // którymkolwiek zdalnym; bez odczytu false; `at` to czas commitera w ms od epoki.
   files: { code: string; path: string }[]
-  commits: { hash: string; subject: string; pushed: boolean }[]
+  commits: { hash: string; subject: string; pushed: boolean; at?: number }[]
   // Wynik `git diff --check`: true czysto, false błędy białych znaków, null bez odczytu.
   whitespace?: boolean | null
 }
@@ -208,6 +211,8 @@ declare module 'claude-code' {
       turns: number
       drift: KruxDrift | null
       lore: KruxLore
+      // Kumpel notki o hordzie z bieżącej tury (`hordeNote`); tura bez notki daje `null`.
+      noteMate: KruxMate | null
       // Klucz zdarzenia kroniki, którego nastrój model już dostał (`moodNote`).
       moodSeen: string | null
       replayed: boolean

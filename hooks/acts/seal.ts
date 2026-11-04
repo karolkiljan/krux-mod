@@ -7,31 +7,36 @@ const BENCH: Frame = ['hhhhhhhhhhhhh', '.x.........x.']
 const BENCH_X = 8
 
 // ——— Pieczęć w wosku ———
+// Wosk leży na lewym brzegu pergaminu, tuż przy orku: stempel w dłoni, nie na końcu ręki.
 const PAPER: Frame = ['pnnppnnpppp', 'ppppppppppp']
 const STAMP: Frame = ['.h.', 'SSS']
-const STAMP_Y = [1, 1, 2, 2, 3, 3, 3, 2, 1, 1, 1, 1] as const
+const STAMP_X = 10
+// Lico stempla w wierszu y + 1: w powietrzu, na wosku (1) i w wosku (2), nie w pergaminie.
+const STAMP_Y = [0, 0, 1, 1, 2, 2, 2, 1, 0, 0, 0, 0] as const
 
 function waxBench(sealed: boolean): Layer[] {
-  return [[BENCH, BENCH_X, 4], [PAPER, 9, 3], [[sealed ? 'dSd' : 'ddd'], 15, 3]]
+  return [[BENCH, BENCH_X, 4], [PAPER, 9, 3], [[sealed ? 'dSd' : 'ddd'], STAMP_X, 3]]
 }
 
 function stampAt(y: number): Layer[] {
-  return [[STAMP, 15, y], ...line([8, 3], [15, y], 'g')]
+  return [[STAMP, STAMP_X, y], ...line([6, 3], [STAMP_X, y], 'g')]
 }
 
 function waxLoop(t: number): Frame {
   const y = STAMP_Y[t]!
   const pressing = t >= 4 && t <= 6
-  return draw(...waxBench(t >= 4), [stander(pressing ? 'mid' : 'right', 'gg'), 0, 0], ...stampAt(y), ...(pressing ? [[['d'], 14, 4] as Layer, [['d'], 18, 4] as Layer] : []))
+  // Wciśnięty stempel wypycha wosk spod lica na boki.
+  const squeezed: Layer[] = pressing ? [[['d'], STAMP_X - 1, 3], [['d'], STAMP_X + 3, 3]] : []
+  return draw(...waxBench(t >= 4), [stander(pressing ? 'mid' : 'right', 'g'), 0, 0], ...stampAt(y), ...squeezed)
 }
 
 const wax: Act = {
   name: 'wosk',
-  kit: draw(...waxBench(false), [STAMP, 15, 1]),
+  kit: draw(...waxBench(false), [STAMP, STAMP_X, 1]),
   intro: [
-    draw(...waxBench(false), [STAMP, 15, 1], [stander('right', 'g'), 0, 0]),
-    draw(...waxBench(false), [stander('right', 'gg'), 0, 0], ...line([8, 3], [11, 2], 'g'), [STAMP, 15, 1]),
-    draw(...waxBench(false), [stander('right', 'gg'), 0, 0], ...stampAt(1)),
+    draw(...waxBench(false), [STAMP, STAMP_X, 1], [stander('right', 'g'), 0, 0]),
+    draw(...waxBench(false), [STAMP, STAMP_X, 1], [stander('right', 'g'), 0, 0], ...line([6, 3], [8, 2], 'g')),
+    draw(...waxBench(false), [stander('right', 'g'), 0, 0], ...stampAt(1)),
   ],
   length: STAMP_Y.length,
   loop: waxLoop,
@@ -68,7 +73,7 @@ const press: Act = {
 
 // ——— Wiązanie zwoju ———
 const ROLL: Frame = ['.ppppppp.', 'hppppppph', '.ppppppp.']
-const ROLL_X = 11
+const ROLL_X = 7
 
 function rollAt(tight: number, knot: boolean): Layer[] {
   const cord = tight === 0 ? [[['ddddddd'], ROLL_X + 1, 1] as Layer] : [
@@ -84,7 +89,8 @@ function tieLoop(t: number): Frame {
   const tight = Math.min(3, Math.floor(pingPong(t, 8) / 2))
   const knot = t >= 6 && t <= 10
   const handY = tight > 1 ? 0 : 1
-  return draw(...rollAt(tight, knot), [stander('right', 'gg'), 0, 0], ...line([8, 3], [12 + tight, handY], 'g'))
+  // Dłoń trzyma lewy koniec sznura.
+  return draw(...rollAt(tight, knot), [stander('right', 'g'), 0, 0], ...line([6, 3], [ROLL_X + 1 + tight, handY], 'g'))
 }
 
 const tie: Act = {
@@ -92,8 +98,7 @@ const tie: Act = {
   kit: draw(...rollAt(0, false)),
   intro: [
     draw(...rollAt(0, false), [stander('right', 'g'), 0, 0]),
-    draw(...rollAt(0, false), [stander('right', 'gg'), 0, 0], ...line([8, 3], [10, 2], 'g')),
-    draw(...rollAt(0, false), [stander('right', 'gg'), 0, 0], ...line([8, 3], [12, 1], 'g')),
+    tieLoop(0),
   ],
   length: 16,
   loop: tieLoop,
@@ -104,24 +109,25 @@ const tie: Act = {
 // Pieczęć jedzie na pergaminie, świeca na stole; nic nie znika.
 const SEALED_PAPER: Frame = ['ppdpp', 'pdydp', 'ppdpp']
 const CANDLE: Frame = ['.y.', '.o.', '.p.', '.p.', 'sss']
+// Pergamin od dłoni ku świecy: lewy brzeg w PAPER_X i dwa piksele dalej.
+const PAPER_X = 8
 
 function lightBench(x: number, y: number): Layer[] {
-  return [[BENCH, BENCH_X, 4], [CANDLE, 18, 0], [SEALED_PAPER, x, y]]
+  return [[BENCH, BENCH_X, 4], [CANDLE, PAPER_X + 8, 0], [SEALED_PAPER, x, y]]
 }
 
 function lightLoop(t: number): Frame {
-  const x = 10 + Math.floor(pingPong(t, 8) / 3)
+  const x = PAPER_X + Math.floor(pingPong(t, 8) / 3)
   const y = t < 3 || t >= 13 ? 1 : 0
-  return draw(...lightBench(x, y), [stander(t >= 6 && t <= 9 ? 'shut' : 'right', 'gg'), 0, 0], ...line([8, 3], [x, y + 2], 'g'))
+  return draw(...lightBench(x, y), [stander(t >= 6 && t <= 9 ? 'shut' : 'right', 'g'), 0, 0], ...line([6, 3], [x, y + 2], 'g'))
 }
 
 const light: Act = {
   name: 'pod światło',
   who: ['Piryt'],
-  kit: draw(...lightBench(10, 1)),
+  kit: draw(...lightBench(PAPER_X, 1)),
   intro: [
-    draw(...lightBench(10, 1), [stander('right', 'g'), 0, 0]),
-    draw(...lightBench(10, 1), [stander('right', 'gg'), 0, 0], ...line([8, 3], [9, 3], 'g')),
+    draw(...lightBench(PAPER_X, 1), [stander('right', 'g'), 0, 0]),
     lightLoop(0),
   ],
   length: 16,
@@ -132,28 +138,29 @@ const light: Act = {
 // Szczęka suwmiarki zaciska się na metalowej pieczęci i wraca.
 // Piryt mruży oczy nad ciemną rysą, zanim zatwierdzi odcisk.
 const SEAL_MEDAL: Frame = ['.yyy.', 'ysnsy', '.yyy.']
-const CALIPER_JAW = [21, 21, 20, 20, 19, 19, 19, 19, 19, 19, 19, 20, 20, 21, 21, 21] as const
+const MEDAL_X = 11
+// Ruchoma szczęka domyka się na prawym brzegu pieczęci (MEDAL_X + 5), nie wchodzi w nią.
+const CALIPER_JAW = [18, 18, 17, 17, 16, 16, 16, 16, 16, 16, 16, 17, 17, 18, 18, 18] as const
 
 function measureSealAt(jaw: number): Layer[] {
-  return [[BENCH, BENCH_X, 4], [SEAL_MEDAL, 15, 1],
-    [['sjsjsjsjs'], 13, 0], [['S', 'S'], 14, 1], [['S', 'S'], jaw, 1],
-    ...line([13, 3], [14, 2], 'h')]
+  return [[BENCH, BENCH_X, 4], [SEAL_MEDAL, MEDAL_X, 1],
+    [['sjsjsjsjsj'], MEDAL_X - 2, 0], [['S', 'S'], MEDAL_X - 1, 1], [['S', 'S'], jaw, 1],
+    ...line([MEDAL_X - 2, 3], [MEDAL_X - 1, 2], 'h')]
 }
 
 function measureSealLoop(t: number): Frame {
   return draw(...measureSealAt(CALIPER_JAW[t]!),
-    [stander(t >= 6 && t <= 9 ? 'shut' : 'right', 'gg'), 0, 0],
-    ...line([8, 3], [13, 3], 'g'), [['g'], 13, 2])
+    [stander(t >= 6 && t <= 9 ? 'shut' : 'right', 'g'), 0, 0],
+    ...line([6, 3], [MEDAL_X - 2, 3], 'g'), [['g'], MEDAL_X - 2, 2])
 }
 
 const measureSeal: Act = {
   name: 'pomiar pieczęci',
   who: ['Piryt'],
-  kit: draw(...measureSealAt(21)),
+  kit: draw(...measureSealAt(CALIPER_JAW[0])),
   intro: [
-    draw(...measureSealAt(21), [stander('right', 'g'), 0, 0]),
-    draw(...measureSealAt(21), [stander('right', 'gg'), 0, 0], ...line([8, 3], [10, 3], 'g')),
-    draw(...measureSealAt(21), [stander('right', 'gg'), 0, 0], ...line([8, 3], [12, 3], 'g')),
+    draw(...measureSealAt(CALIPER_JAW[0]), [stander('right', 'g'), 0, 0]),
+    draw(...measureSealAt(CALIPER_JAW[0]), [stander('right', 'g'), 0, 0], ...line([6, 3], [7, 3], 'g')),
     measureSealLoop(0),
   ],
   length: CALIPER_JAW.length,

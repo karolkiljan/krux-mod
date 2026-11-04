@@ -38,19 +38,28 @@ export function anchorFor(turn: number, drift: KruxDrift | null): string {
 
 export type PromptKind = 'review' | 'debug' | 'plan' | 'explain' | 'chat'
 
+// „Możesz wyjaśnić…?” to prośba o wyjaśnienie, choć zaczyna się jak prośba o robotę.
+const ASK_EXPLAIN = String.raw`^(?:czy\s+)?(?:możesz|mógłbyś|mogłabyś)\s+(?:mi\s+)?(?:wyjaśnić|wytłumaczyć|opowiedzieć)(?!\p{L})`
+
 // Kolejność to priorytet: „przejrzyj, czemu test pada” to review, nie debug.
 const PROMPT_KINDS: readonly [PromptKind, RegExp][] = [
   ['review', /(?<!\p{L})(?:review|przejrzyj|oceń|audyt\p{L}*|zrecenzuj|sprawdź kod)(?!\p{L})/iu],
   ['debug', /(?<!\p{L})(?:błąd|błęd\p{L}*|error|exception|crash\p{L}*|stack ?trace|nie działa|pada|padł\p{L}*|wywala|sypie|bug\p{L}*|robak\p{L}*|failing|failed)(?!\p{L})/iu],
   // Gołe „plan” bywa nazwą w robocie („pole plan”), więc tylko w prośbie o plan.
   ['plan', /(?<!\p{L})(?:^plan\p{L}*|(?:zrób|daj|przygotuj|napisz|ułóż|masz|jaki|twój)\s+plan\p{L}*|plan\p{L}*\s+(?:na|dla|działania|pracy)|zaplanuj|zaprojektuj|podejście|jak to zrobić|rozpisz|poukładaj|poukładał\p{L}*)(?!\p{L})/iu],
-  ['explain', /^(?:co|jak|czym|czemu|dlaczego|po co|wyjaśnij|wytłumacz|opowiedz)(?!\p{L})|\?\s*$/iu],
+  ['explain', new RegExp(String.raw`^(?:co|jak|czym|czemu|dlaczego|po co|wyjaśnij|wytłumacz|opowiedz)(?!\p{L})|${ASK_EXPLAIN}|\?\s*$`, 'iu')],
 ]
 
 // Prośba o robotę w formie pytania („Możesz dodać…?”) to nie prośba o wyjaśnienie.
-const REQUEST = /^(?:czy\s+)?(?:możesz|mógłbyś|mogłabyś|dasz radę|zrób|dodaj|napraw|popraw|usuń|zmień|puść|odpal)(?!\p{L})/iu
+const REQUEST = new RegExp(String.raw`(?!${ASK_EXPLAIN})^(?:czy\s+)?(?:możesz|mógłbyś|mogłabyś|dasz radę|zrób|dodaj|napraw|popraw|usuń|zmień|puść|odpal)(?!\p{L})`, 'iu')
 
-const CHAT = /^(?:siema|cześć|hej|elo|dzięki|dziękuję|ok|okej|super|spoko)(?!\p{L})/iu
+const CHAT_WORDS = 'siema|cześć|hej|elo|dzięki|dziękuję|ok|okej|super|spoko'
+
+const CHAT = new RegExp(String.raw`^(?:${CHAT_WORDS})(?!\p{L})`, 'iu')
+
+// Wtręt na przedzie („ok, wyjaśnij…”, „dzięki, dodaj test”) nie robi z prośby
+// pogawędki: rodzaj daje to, co stoi za nim. Sam wtręt zostaje pogawędką.
+const LEAD_IN = new RegExp(String.raw`^(?:(?:${CHAT_WORDS})(?!\p{L})[\s,.!]*)+(?=[^\s,.!])`, 'iu')
 
 // Prośby, które pisze człowiek: Enter w terminalu, telefon przez most, host SDK,
 // ping właściciela ze Slacka, kanał i kontynuacja akcji UI. Plugin może przekazać
@@ -97,18 +106,22 @@ const DESTRUCTIVE = new RegExp(
   `(?<![\\p{L}\\d-])(?:${[
     // Git: historia zdalna i lokalna, schowki i zmiany w drzewie roboczym (te bez reflogu).
     String.raw`force[- ]push`,
-    String.raw`push\s+(?:${ARG}\s+){0,4}?(?:-f|--force(?:-with-lease)?|--mirror|--delete|-d)(?![\p{L}\d-])`,
+    // Krótkie flagi bywają sklejone (`-uf`, `-fu`): `-f` i `-d` liczą się w każdym zlepku.
+    // Zlepek sprawdza lookahead, nie dwa `[a-z]*` wokół litery: długi token nie cofa się kwadratowo.
+    String.raw`push\s+(?:${ARG}\s+){0,4}?(?:-(?=[a-z]*[fd])[a-z]+|--force(?:-with-lease)?|--mirror|--delete)(?![\p{L}\d-])`,
     String.raw`push\s+${ARG}\s+[:+][\p{L}\d]`,
     String.raw`reset\s+--hard`,
     String.raw`clean\s+-[a-z]*f`,
+    String.raw`git\s+${GIT_OPTS}clean\s+(?:${ARG}\s+){0,3}?(?:-[a-z]*f|--force)`,
     String.raw`filter-(?:branch|repo)`,
     String.raw`git\s+${GIT_OPTS}checkout\s+(?:${ARG}\s+)?--\s+\S`,
     String.raw`git\s+${GIT_OPTS}checkout\s+\.(?:/\S*)?(?!\S)`,
+    // Wymuszona zmiana gałęzi porzuca zmiany w drzewie roboczym.
+    String.raw`git\s+${GIT_OPTS}(?:checkout|switch)\s+(?:${ARG}\s+){0,3}?(?:-(?=[a-z]*f)[a-z]+|--force|--discard-changes)(?![\p{L}\d-])`,
     String.raw`stash\s+(?:clear|drop)(?![\p{L}\d-])`,
     String.raw`reflog\s+(?:expire|delete)`,
     String.raw`gc\s+(?:${ARG}\s+){0,3}?--prune=now`,
-    // Pliki i dyski.
-    String.raw`rm\s+-[a-z]*(?:r[a-z]*f|f[a-z]*r)`,
+    // Pliki i dyski; rekurencyjne `rm` sądzi `removesTree`.
     String.raw`find\s+(?:${ARG}\s+){0,8}?(?:-delete|-exec\s+rm)(?![\p{L}\d-])`,
     String.raw`(?:rsync|sync)\s+(?:${ARG}\s+){0,6}?--delete(?![\p{L}\d])`,
     // Sama nazwa wystarczy („sformatuj przez mkfs.ext4”); `--help` i `--version` tylko piszą.
@@ -117,10 +130,14 @@ const DESTRUCTIVE = new RegExp(
     String.raw`dd\s+(?:${ARG}\s+){0,4}?of=/dev/`,
     // SQL i narzędzia baz: reset schematu zabiera dane razem z nim.
     String.raw`drop\s+(?:table|database|schema|column)(?!\p{L})`,
+    // `COLUMN` po `DROP` jest opcjonalne; ograniczenie, indeks i klucz danych nie zabierają.
+    String.raw`alter\s+table\s+(?:if\s+exists\s+)?(?:only\s+)?\S+\s+drop\s+(?!(?:constraint|index|key|primary|foreign|check|unique|default|not|trigger)(?!\p{L}))\S`,
     String.raw`truncate\s+table(?!\p{L})`,
     String.raw`delete\s+from(?!\p{L})`,
     String.raw`dropdb(?![\p{L}\d])`,
     String.raw`dropDatabase`,
+    // Kolekcja Mongo: `drop()` jak `DROP TABLE`, `deleteMany` i `remove` jak `DELETE FROM`.
+    String.raw`db\.[\p{L}\d_$]+\.(?:drop|deleteMany|remove)\s*\(`,
     String.raw`flush(?:all|db)(?![\p{L}\d])`,
     String.raw`migrate\s+reset`,
     String.raw`--force-reset`,
@@ -129,8 +146,16 @@ const DESTRUCTIVE = new RegExp(
     String.raw`ecto\.(?:drop|reset)`,
     String.raw`manage\.py\s+flush`,
     // Infrastruktura, kontenery i kubełki w chmurze.
-    String.raw`terraform\s+(?:-${ARG}\s+){0,3}(?:destroy|apply\s+(?:${ARG}\s+){0,6}?-destroy)`,
+    String.raw`(?:terraform|tofu)\s+(?:-${ARG}\s+){0,3}(?:destroy|apply\s+(?:${ARG}\s+){0,6}?-destroy)`,
+    String.raw`(?:terragrunt|cdk|cdktf)\s+(?:${ARG}\s+){0,3}?destroy(?![\p{L}\d-])`,
     String.raw`pulumi\s+destroy`,
+    // Chmury: podkomenda usuwania stoi za grupą zasobów (`gcloud sql instances delete`).
+    String.raw`gcloud\s+(?:${ARG}\s+){0,5}?(?:delete|rm)(?![\p{L}\d-])`,
+    String.raw`az\s+(?:[a-z][a-z\d-]*\s+){1,4}delete(?:-batch)?(?![\p{L}\d-])`,
+    // Operacja `aws` stoi zaraz za usługą; opcje globalne tylko przed nią, więc wartość
+    // opcji (`--function-name delete-old`) nie udaje operacji.
+    String.raw`aws\s+(?:--[a-z-]+(?:[ =](?!-)\S+)?\s+){0,3}[a-z][a-z\d-]*\s+(?:delete|terminate)-`,
+    String.raw`eksctl\s+delete(?![\p{L}\d-])`,
     String.raw`kubectl\s+(?:${ARG}\s+){0,4}?delete(?![\p{L}\d-])`,
     String.raw`helm\s+(?:${ARG}\s+){0,4}?(?:uninstall|delete)(?![\p{L}\d-])`,
     String.raw`volume\s+(?:rm|prune)`,
@@ -147,10 +172,42 @@ const DESTRUCTIVE = new RegExp(
 // Wielkość liter niesie sens: `branch -D` kasuje niescaloną gałąź, `-d` tylko scaloną;
 // `TRUNCATE users` to SQL, „truncate the text” to proza; `wipefs -a` i `-o` kasują
 // sygnatury dysku, a samo `wipefs` albo `-O` (kolumny) tylko je wypisuje.
+// `-d` razem z `-f` (`-d -f`, `-df`, `--delete --force`) to to samo co `-D`.
+const BRANCH_FORCE_DELETE = [
+  String.raw`-[a-zA-Z]*D`,
+  String.raw`-(?=[a-z]*d)(?=[a-z]*f)[a-z]+(?![\p{L}\d-])`,
+  String.raw`(?:-d|--delete)\s+(?:${ARG}\s+){0,2}?(?:-f|--force)(?![\p{L}\d-])`,
+  String.raw`(?:-f|--force)\s+(?:${ARG}\s+){0,2}?(?:-d|--delete)(?![\p{L}\d-])`,
+].join('|')
 const DESTRUCTIVE_CASED = new RegExp(
-  String.raw`(?<![\p{L}\d-])(?:branch\s+-[a-zA-Z]*D|TRUNCATE\s|wipefs\s+(?:${ARG}\s+){0,3}?(?:-[a-zA-Z]*[ao][a-zA-Z]*|--all|--offset)(?![\p{L}\d-]))`,
+  String.raw`(?<![\p{L}\d-])(?:branch\s+(?:${ARG}\s+){0,3}?(?:${BRANCH_FORCE_DELETE})|TRUNCATE\s|wipefs\s+(?:${ARG}\s+){0,3}?(?:-[a-zA-Z]*[ao][a-zA-Z]*|--all|--offset)(?![\p{L}\d-]))`,
   'u',
 )
+
+// Rekurencyjne `rm` kasuje całe drzewo, także rozdzielonymi albo długimi flagami
+// (`rm -r -f`, `rm --recursive`). `git rm -r` zdejmuje pliki z gita, a te wracają z historii;
+// zmiany w drzewie roboczym przepadają dopiero z `-f`. `rm` menedżera pakietów albo
+// kontenerów (`pnpm rm -r lodash`, `docker rm -f`) usuwa zależność albo kontener, nie drzewo.
+// Lookbehind narzędzia stoi za `(?=rm)`, więc wzorzec cofa się tylko przy słowie `rm`.
+const RM = new RegExp(String.raw`(?<![\p{L}\d-])(git\s+${GIT_OPTS})?(?=rm)(?<!(?:docker|podman|nerdctl|npm|pnpm|yarn|bun)\s+(?:-\S+\s+)*)rm((?:[ \t]+${ARG})+)`, 'giu')
+
+// Flaga to zlepek liter `rm` i `git rm`, więc `-print`, `-newer` czy `-user` z `find` nią nie są.
+const RM_FLAGS = '[dfiIrRvnq]'
+const RM_RECURSIVE = new RegExp(String.raw`^-${RM_FLAGS}*[rR]${RM_FLAGS}*$`, 'u')
+const RM_FORCE = new RegExp(String.raw`^-${RM_FLAGS}*f${RM_FLAGS}*$`, 'u')
+
+function removesTree(text: string): boolean {
+  for (const match of text.matchAll(RM)) {
+    // Za `--` stoją same nazwy plików, a `$(…)` i backtick to cudza komenda.
+    const all = match[2]!.trim().split(/\s+/u)
+    const stop = all.findIndex(arg => arg === '--' || arg.startsWith('$(') || arg.startsWith('`'))
+    const args = stop < 0 ? all : all.slice(0, stop)
+    const recursive = args.some(arg => arg === '--recursive' || RM_RECURSIVE.test(arg))
+    const force = args.some(arg => arg === '--force' || RM_FORCE.test(arg))
+    if (recursive && (force || match[1] === undefined)) return true
+  }
+  return false
+}
 
 // `git restore` nadpisuje zmiany w drzewie roboczym, chyba że cofa tylko indeks (`--staged`).
 // Argumenty kończą się na `&&`, `;` albo `|`: dalej stoi osobna komenda, sądzona osobno.
@@ -171,32 +228,66 @@ function restoresWorktree(text: string): boolean {
 // `SET`) albo następny zaczyna się od `WHERE`, `AND`, `OR`, `SET`, `FROM` lub `RETURNING`;
 // `;` i każdy inny wiersz je kończą, także zwykły wcięty kod z własnym `WHERE` dalej.
 const SQL_TEXT = String.raw`(?:[^;\n]|(?<=,[ \t]*)\n|\n(?=[ \t]*(?:where|and|or|set|from|returning)(?!\p{L})))`
-const UPDATE_SET = new RegExp(String.raw`(?<![\p{L}\d-])update\s+[\p{L}\d_."\x60]+\s+set\s+${SQL_TEXT}*?=${SQL_TEXT}*`, 'giu')
+// Między tabelą a `SET` może stać `ONLY` i alias (`UPDATE users AS u SET`).
+const UPDATE_HEAD = new RegExp(String.raw`(?<![\p{L}\d-])update\s+(?:only\s+)?[\p{L}\d_."\x60\[\]]+(?:\s+(?:as\s+)?(?!(?:set|and|or|then|to|i|oraz)(?!\p{L}))[\p{L}_][\p{L}\d_]*)?\s+set\s+`, 'giu')
+// Reszta zdania SQL za głową. Koniec nie zależy od miejsca startu, więc głowy z jednego
+// zdania dzielą jeden przebieg: setki `update … set` bez `=` w wierszu nie skanują go od nowa.
+const SQL_REST = new RegExp(`${SQL_TEXT}*`, 'iuy')
 
+// `WHERE` w literale albo w komentarzu `--` niczego nie zawęża. Zdanie bez `=` za `SET`
+// to proza; zdanie z nim sądzi pierwsza głowa, a kolejne głowy w nim już się nie liczą.
 function updatesAll(text: string): boolean {
-  for (const match of text.matchAll(UPDATE_SET)) if (!/(?<!\p{L})where(?!\p{L})/iu.test(match[0])) return true
+  let end = -1
+  let equals = -1
+  let judged = -1
+  for (const head of text.matchAll(UPDATE_HEAD)) {
+    const at = head.index ?? 0
+    const from = at + head[0].length
+    if (at < judged) continue
+    if (from > end) {
+      SQL_REST.lastIndex = from
+      SQL_REST.exec(text)
+      end = SQL_REST.lastIndex
+      equals = text.lastIndexOf('=', end - 1)
+    }
+    if (equals < from) continue
+    judged = end
+    const code = text.slice(at, end).replace(/'(?:[^']|'')*'/gu, "''").replace(/--.*/gu, '')
+    if (!/(?<!\p{L})where(?!\p{L})/iu.test(code)) return true
+  }
   return false
 }
 
 export function isDestructive(text: string): boolean {
-  return DESTRUCTIVE.test(text) || DESTRUCTIVE_CASED.test(text) || restoresWorktree(text) || updatesAll(text)
+  return DESTRUCTIVE.test(text) || DESTRUCTIVE_CASED.test(text) || removesTree(text) || restoresWorktree(text) || updatesAll(text)
 }
 
 // Prośba po polsku o skasowanie danych, historii, schowka albo infrastruktury i migracja
 // na żywych danych. Plik, import czy martwy kod to nie dane: wracają z gita.
+// Czasownik w trybie rozkazującym, bezokoliczniku („możesz usunąć”) i 1. os. l. mn.
+// („usuńmy”, „usuwamy”); rzeczownik odczynności („usuwanie”) to nie prośba, zakaz z „nie”
+// tuż przed czasownikiem („nie usuwaj danych”) też nie. Wzorce czytają tekst bez ogonków
+// (`folded`), więc „usun baze” waży tyle co „usuń bazę”.
 const RISK_WORDS = new RegExp(
-  `(?<!\\p{L})(?:${[
-    String.raw`(?:usuń|skasuj|wykasuj|wyczyść|wywal|zdropuj|dropnij|nadpisz|zresetuj|wyzeruj|zniszcz)\s+(?:\p{L}+\s+){0,2}?(?:baz\p{L}*|tabel\p{L}*|dane|danych|histori\p{L}*|gałąź|gałęz\p{L}*|branch\p{L}*|backup\p{L}*|kolumn\p{L}*|rekord\p{L}*|repo\p{L}*|wolumen\p{L}*|bucket\p{L}*|kubeł\p{L}*|kubł\p{L}*|klast\p{L}*|namespace\p{L}*|infrastruktur\p{L}*|środowisk\p{L}*|schowek|schowk\p{L}*|stash\p{L}*|dysk\p{L}*|partycj\p{L}*)`,
-    String.raw`(?:puść|odpal|uruchom|wykonaj|przeprowadź|zrób)\s+(?:\p{L}+\s+){0,2}?migracj\p{L}*`,
+  `(?<!\\p{L})(?<!(?<!\\p{L})nie\\s+)(?:${[
+    String.raw`(?:usun(?:my|cie|ac|iemy)?|usuwa(?:my|c|j(?:my|cie)?)|(?:s|wy)?kas(?:uj(?:my|cie|emy)?|owac)|wyczysc(?:my|cie|ic|imy)?|wywal(?:my|cie|ic|imy)?|zdrop(?:uj(?:my|cie|emy)?|owac)|dropn(?:ij(?:my|cie)?|ac)|nadpis(?:z(?:my|cie|emy)?|ac)|zreset(?:uj(?:my|cie|emy)?|owac)|wyzer(?:uj(?:my|cie|emy)?|owac)|zniszcz(?:my|cie|yc|ymy)?)\s+(?:[\p{L}\d]+\s+){0,2}?(?:baz\p{L}*|tabel\p{L}*|dane|danych|histori\p{L}*|galaz|galez\p{L}*|branch\p{L}*|commit\p{L}*|backup\p{L}*|kolumn\p{L}*|rekord\p{L}*|repo\p{L}*|wolumen\p{L}*|bucket\p{L}*|kubel\p{L}*|kubl\p{L}*|klast\p{L}*|namespace\p{L}*|infrastruktur\p{L}*|srodowisk\p{L}*|schowek|schowk\p{L}*|stash\p{L}*|dysk\p{L}*|partycj\p{L}*)`,
+    String.raw`(?:pusc(?:my|cie|ic)?|odpal(?:my|cie|ic)?|uruchom(?:my|cie|ic)?|wykona(?:j(?:my|cie)?|c)|przeprowadz(?:my|cie|ic)?|zrob(?:my|cie|ic)?)\s+(?:\p{L}+\s+){0,2}?migracj\p{L}*`,
     String.raw`zmigruj\p{L}*`,
   ].join('|')})(?!\\p{L})`,
   'iu',
 )
 
+// Tekst bez ogonków: NFD rozkłada „ą” na „a” i znak łączący, a „ł” nie ma rozkładu.
+function folded(text: string): string {
+  return text.normalize('NFD').replace(/\p{M}/gu, '').replace(/ł/gu, 'l').replace(/Ł/gu, 'L')
+}
+
 // Prośba o decyzję wydania: tu nastrój nie może przechylać szali. W symulacji
 // (docs/research/2026-10-09-mood-decisions-experiment.md) triumf zmienił
 // „wstrzymać” na „wypuszczać” bez nowej informacji. „Wydajność” to nie wydanie.
-const RELEASE_WORDS = /(?<!\p{L})(?:wypu[sś]\p{L}*|produkcj\p{L}*|deploy\p{L}*|wdr[oa]ż\p{L}*|release\p{L}*|wydani\p{L}*|wyda(?:ć|j(?!n)|m)\p{L}*|scal\p{L}*|merg\p{L}*)(?!\p{L})/iu
+// Spolszczenia biorą „z” na przedzie („zmerguj”, „zdeployuj”); publikacja paczki też wydaje.
+// Angielskie „publish” tylko całym słowem: `publishConfig`, `publisher.ts` i `publish-docs` to kod.
+const RELEASE_WORDS = /(?<!\p{L})(?:wypu[sś]\p{L}*|produkcj\p{L}*|z?deploy\p{L}*|wdr[oaó]ż\p{L}*|release\p{L}*|wydani\p{L}*|wyda(?:ć|j(?!n)|m)\p{L}*|scal\p{L}*|z?merg\p{L}*|opublikuj\p{L}*|publish(?![\p{L}\d_-]|\.[\p{L}\d]))(?!\p{L})/iu
 
 export function asksRelease(text: string): boolean {
   return RELEASE_WORDS.test(text.normalize('NFC'))
@@ -210,18 +301,20 @@ export const RISK_HINT = 'Ruch nieodwracalny: skutek i drogę odwrotu podaj peł
 export function riskHint(text: string): string | null {
   const clean = text.normalize('NFC').trim()
   if (clean === '' || clean.startsWith('/')) return null
-  return isDestructive(clean) || RISK_WORDS.test(clean) ? RISK_HINT : null
+  return isDestructive(clean) || RISK_WORDS.test(folded(clean)) ? RISK_HINT : null
 }
 
 // Rodzaj prośby z samego tekstu, bez wywołania modelu; `null`, gdy nie wiadomo.
 export function promptKind(text: string): PromptKind | null {
   const clean = text.normalize('NFC').trim()
   if (clean === '' || clean.startsWith('/')) return null
+  const rest = clean.replace(LEAD_IN, '')
   for (const [kind, pattern] of PROMPT_KINDS) {
-    if (kind === 'explain' && REQUEST.test(clean)) continue
-    if (pattern.test(clean)) return kind
+    if (kind === 'explain' && REQUEST.test(rest)) continue
+    if (pattern.test(rest)) return kind
   }
-  if (CHAT.test(clean) && clean.split(/\s+/u).length <= 6) return 'chat'
+  // Krótka rozmowa za wtrętem („Dzięki za pomoc!”, „Hej Krux”) to pogawędka, prośba za nim nie.
+  if (CHAT.test(clean) && !REQUEST.test(rest) && clean.split(/\s+/u).length <= 6) return 'chat'
   return null
 }
 
@@ -424,7 +517,7 @@ export function spinnerWord(mode: SpinnerMode, seed: string, scene?: KruxScene):
 // Podpis kowala w spoczynku zależy od tego, ile było roboty w ostatniej turze.
 export function restVerb(turnStrikes: number, seed: number): string {
   if (turnStrikes === 0) return pick(['Krux tylko gadać', 'Krux odłożyć młot, gadać'], seed)
-  if (turnStrikes <= 20) return pick(['Krux odpoczywać przy kowadle', 'Krux ocierać pot', 'Krux siedzieć na pniaku'], seed)
+  if (turnStrikes <= 20) return pick(['Krux odpoczywać przy ogniu', 'Krux ocierać pot', 'Krux siedzieć na pniaku'], seed)
   return pick(['Krux studzić żelazo', 'Krux prostować grzbiet', 'Krux pić z wiadra'], seed)
 }
 
@@ -443,14 +536,19 @@ function clip(text: unknown, size: number): string {
 export type ShellKind = 'test' | 'seal' | 'install' | 'build' | 'trail' | 'tear' | 'look' | 'dig'
 
 // Kolejność to priorytet: `cd repo && npm test` to próba stali, nie zaglądanie.
+// Testy także za filtrem monorepo (`pnpm --filter web test`, `npm -w pkg test`) i w innych
+// ekosystemach; `./gradlew build -x test` to budowanie, bo zadanie testów stoi za `-x`.
+// Sesja tox/nox od lintu, typów albo dokumentacji (`tox -e lint`) to nie próba testów.
 const SHELL_KINDS: readonly [ShellKind, RegExp][] = [
-  ['test', /^(?:(?:npm|pnpm|yarn|bun) (?:run )?test|(?:(?:pnpm(?: exec)?|yarn|bun(?: run)?) )?(?:vitest|jest|pytest|rspec|mocha|playwright)\b|claude plugin test|(?:cargo|go|deno|mix|dotnet) test|make (?:test|check)\b|node (?:\S+ )*--test\b|(?:bundle exec )?(?:rspec|rake test|rails test)|python3? -m (?:pytest|unittest))/u],
-  ['seal', /^git (?:commit|push|tag|merge|rebase|cherry-pick)\b|^gh pr (?:create|merge)\b/u],
+  ['test', /^(?:(?:npm|pnpm|yarn|bun)(?: -\S+(?: [^\s-]\S*)?)*? (?:run )?test|(?:npm|pnpm) t(?!\S)|yarn workspace \S+ (?:run )?test|(?:(?:pnpm(?: exec)?|yarn|bun(?: run)?) )?(?:\.?\/?(?:node_modules\/\.bin|vendor\/bin)\/)?(?:vitest|jest|pytest|py\.test|rspec|mocha|playwright|cypress run|phpunit|pest)\b|claude plugin test|(?:cargo|go|deno|mix|dotnet|swift|flutter|dart|bazel|hatch) test|cargo nextest|(?:tox|nox)(?!\s+(?:-[es]|--session)[ =]?(?:lint\w*|flake8|mypy|pyright|type\S*|docs?|format\w*|fmt|style|pre-commit|ruff|black|isort|pylint|pep8)\b)(?!\S)|ctest\b|php artisan test|composer (?:run(?:-script)? )?test|(?:\.\/)?(?:gradlew|gradle|mvnw|mvn)(?: (?:-\S+|clean))* (?:test|check|verify)\b|make(?: -\S+(?: [^\s-]\S*)?)*? (?:tests?|check)\b|node (?:\S+ )*--test\b|(?:bundle exec )?(?:rspec|rake test|rails test)|python3? -m (?:pytest|unittest))/u],
+  // `git merge-base` i lista tagów tylko czytają, więc nie pieczętują.
+  ['seal', /^git (?:commit|push|tag(?! (?:-l|--list)\b)(?!$)|merge(?!-)|rebase|cherry-pick)\b|^gh pr (?:create|merge)\b/u],
   ['install', /^(?:(?:npm|pnpm|yarn|bun) (?:install|add|ci|i)\b|(?:yarn|bun)$|pip3? install|bundle(?: install)?$|gem install|brew install|cargo add|go get)/u],
   ['build', /^(?:(?:npm|pnpm|yarn|bun) (?:run )?(?:build|lint|typecheck|check)\b|tsc\b|eslint|prettier|biome|claude plugin validate|make\b|cargo (?:build|check|clippy)|go (?:build|vet)|rubocop)/u],
   ['tear', /^(?:rm|rmdir|git (?:rm|clean|reset|restore))\b/u],
-  ['trail', /^git (?:status|diff|log|show|blame|branch|stash list|reflog)\b|^gh (?:pr|issue|run) (?:view|list|diff|checks)\b/u],
-  ['look', /^(?:ls|cat|head|tail|less|find|fd|rg|grep|tree|wc|pwd|which|file|stat|du|sed -n)\b/u],
+  // Odczyty, które zwykłym kodem 1 mówią „nie” albo „różne”: to nie zawał.
+  ['trail', /^git (?:status|diff|log|show|blame|branch|stash list|reflog|rev-parse|ls-files|ls-remote|ls-tree|merge-base|cat-file|for-each-ref|describe|shortlog|config (?:--get\S*|-l|--list)|remote(?: (?:-v|--verbose|show|get-url)|$)|tag(?: (?:-l|--list)|$))\b|^gh (?:pr|issue|run) (?:view|list|diff|checks)\b/u],
+  ['look', /^(?:(?:ls|cat|head|tail|less|find|fd|rg|grep|tree|wc|pwd|which|file|stat|du|sed -n|diff|cmp|jq|command -v)\b|test(?!\S)|\[\[? )/u],
 ]
 
 // Scena idzie za rodzajem komendy, tak jak podpis: pieczętowanie to nie kopanie.
@@ -510,12 +608,19 @@ function hereDocumentAt(command: string, offset: number): HereDocument | null {
   return word && quote === '' ? { delimiter, tabs, end: i } : null
 }
 
-// Kawałki łańcucha bez opakowań na przedzie (zmienne, `sudo`, `env`, `time`, `npx`,
-// `uv run`) i bez katalogu gita (`git -C repo commit` to dalej commit).
-function shellParts(command: unknown): string[] {
+type ShellPart = { text: string; background: boolean }
+
+// Kawałki łańcucha bez opakowań na przedzie (zmienne, `sudo`, `env`, `time`, `timeout`,
+// `nice`, `npx`, `uv run`) i bez opcji globalnych gita (`git -C repo commit`,
+// `git --no-pager log`). Samotne `&` puszcza w tło całą listę przed sobą, od poprzedniego
+// `;`, `&` albo nowej linii, z potokiem i `&&`/`||` (`npm test | tee log &`); `&&`, `>&`,
+// `&>` i `|&` nie.
+function shellChunks(command: unknown): ShellPart[] {
   if (typeof command !== 'string') return []
   // Separator w cytacie albo za backslashem należy do argumentu, nie łańcucha.
-  const parts: string[] = []
+  const parts: ShellPart[] = []
+  // Pierwszy kawałek bieżącej listy (`a | b && c`): samotne `&` puszcza w tło ją całą.
+  let list = 0
   const documents: HereDocument[] = []
   let quote = ''
   let arithmetic = 0
@@ -541,7 +646,7 @@ function shellParts(command: unknown): string[] {
       i += 1
     }
     else if (char === '#' && (i === 0 || /[\s;&|()]/u.test(command[i - 1]!))) {
-      parts.push(command.slice(start, i))
+      parts.push({ text: command.slice(start, i), background: false })
       const newline = command.indexOf('\n', i)
       if (newline < 0) { start = command.length; break }
       start = newline
@@ -551,9 +656,13 @@ function shellParts(command: unknown): string[] {
       const document = hereDocumentAt(command, i)
       if (document !== null) { documents.push(document); i = document.end - 1 }
     }
-    else if (char === ';' || char === '|' || char === '\n' || (char === '&' && command[i + 1] === '&')) {
-      parts.push(command.slice(start, i))
+    else if (char === ';' || char === '|' || char === '\n' || (char === '&' && command[i + 1] !== '>' && !/[<>|]/u.test(command[i - 1] ?? ''))) {
+      const background = char === '&' && command[i + 1] !== '&'
+      parts.push({ text: command.slice(start, i), background })
+      if (background) for (let k = list; k < parts.length; k += 1) parts[k]!.background = true
+      if (background || char === ';' || char === '\n') list = parts.length
       if ((char === '&' || char === '|') && command[i + 1] === char) i += 1
+      else if (char === '|' && command[i + 1] === '&') i += 1
       if (char === '\n' && documents.length > 0) {
         let after = i + 1
         for (const document of documents) {
@@ -571,17 +680,33 @@ function shellParts(command: unknown): string[] {
       start = i + 1
     }
   }
-  parts.push(command.slice(start))
+  parts.push({ text: command.slice(start), background: false })
   return parts
-    .map(part =>
-      part
+    .map(({ text, background }) => ({
+      text: text
         .trim()
-        .replace(/^(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+|(?:sudo|env|time)\s+|(?:npx|bunx|uvx)\s+(?:-p\s+\S+\s+)*|(?:uv|poetry|pipenv) run\s+)*/u, '')
-        .replace(/^git\s+(?:-[Cc]\s+\S+\s+)+/u, 'git ')
+        .replace(/^(?:[A-Za-z_][A-Za-z0-9_]*=\S*\s+|(?:sudo|env|time)\s+|timeout\s+(?:-[ks]\s+\S+\s+|-(?![ks]\s)\S+\s+)*\d\S*\s+|nice\s+(?:-n\s*\S+\s+|-\d+\s+)?|xvfb-run\s+(?:-\S+\s+)*|(?:npx|bunx|uvx)\s+(?:-p\s+\S+\s+)*|(?:uv|poetry|pipenv) run\s+)*/u, '')
+        .replace(/^git\s+(?:(?:-[Cc]\s+\S+|-[Pp]|--(?!help|version)[a-z][a-z-]*(?:=\S+)?)\s+)+/u, 'git ')
         .replace(/\s+/gu, ' '),
-    )
+      background,
+    }))
     // Zmiana katalogu to nie robota: `cd /repo && grep` dalej tylko patrzy.
-    .filter(part => part !== '' && !/^(?:cd|pushd|popd)(?:\s|$)/u.test(part))
+    .filter(({ text }) => text !== '' && !/^(?:cd|pushd|popd)(?:\s|$)/u.test(text))
+}
+
+function shellParts(command: unknown): string[] {
+  return shellChunks(command).map(part => part.text)
+}
+
+// Robota łańcucha puszczona w tle (`npm test > log 2>&1 &`): powłoka oddaje kod 0
+// od razu, więc wynik nic nie mówi o przebiegu. Ta sama robota na pierwszym planie
+// (`npm run dev & npm test`) albo z `wait` za nią (`npm test & wait`) daje prawdziwy wynik.
+export function inBackground(command: unknown): boolean {
+  const kind = bashKind(command)
+  const all = shellChunks(command)
+  const lastWait = all.findLastIndex(part => !part.background && /^wait(?:\s|$)/u.test(part.text))
+  const chunks = all.flatMap((part, index) => (shellKind(part.text) === kind ? [{ ...part, index }] : []))
+  return chunks.length > 0 && chunks.every(part => part.background && part.index > lastWait)
 }
 
 // Rodzaj kawałków łańcucha: rozpoznana robota ma priorytet nad resztą.

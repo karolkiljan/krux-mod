@@ -28,7 +28,11 @@ export const EMPTY_LORE: KruxLore = {
 const UI_FILE = /\.(?:css|scss|sass|less|html?|vue|svelte|tsx|jsx)$/iu
 
 // Błąd budowania w wyjściu: `| tail` zjada kod wyjścia, a dymek mówi tylko prawdę.
-const BUILD_ERROR = /(?<![\p{L}\d])error(?:\[\w+\]|:|\s+TS\d+)|✖\s+[1-9]/iu
+// Podsumowanie ESLinta i stylelinta „✖ 3 problems (0 errors, 3 warnings)” stoi też
+// przy samych ostrzeżeniach i kodzie 0: to nie padłe budowanie. Chyba że lint odmawia
+// przez limit ostrzeżeń (`--max-warnings 0`): ESLint „too many warnings”, stylelint
+// „Max warnings exceeded”; kod 1 zjada wtedy `| tail`.
+const BUILD_ERROR = /(?<![\p{L}\d])error(?:\[\w+\]|:|\s+TS\d+)|✖\s+[1-9](?!\d*\s+problems?\s+\(0\s+errors?)|too many warnings|max warnings exceeded/iu
 
 // Co jedno wywołanie narzędzia dopisuje do kroniki. Zawał to padła komenda, która
 // coś robiła: sam `grep` bez trafień albo `git diff` z kodem 1 tylko patrzyły.
@@ -70,10 +74,14 @@ export function recordTool(lore: KruxLore, tool: string, input: Record<string, u
   return isError ? { ...lore, last: 'zawał' } : lore
 }
 
-// Po turze: kto z hordy padł w odpowiedzi i ile tur minęło bez nikogo.
-export function recordAnswer(lore: KruxLore, mates: readonly KruxMate[]): KruxLore {
+// Po turze: kto z hordy padł w odpowiedzi i ile tur minęło bez nikogo. Ostatnią
+// wstawkę miał kumpel notki tej tury (`noted`), gdy odpowiedź go wymienia: Krux woła
+// wcześniej innego do roboty („Krux puszczać Niucha”). Bez niego pierwszy wymieniony
+// (`matesNamed` daje kolejność tekstu, w sporze para pada po podmiocie); tak też `replay`,
+// bo historia nie pamięta notki. Inaczej ten sam kumpel mógł dostać dwie wstawki z rzędu.
+export function recordAnswer(lore: KruxLore, mates: readonly KruxMate[], noted: KruxMate | null = null): KruxLore {
   if (mates.length === 0) return { ...lore, quietTurns: lore.quietTurns + 1 }
-  return { ...lore, lastMate: mates[mates.length - 1]!, quietTurns: 0 }
+  return { ...lore, lastMate: noted !== null && mates.includes(noted) ? noted : mates[0]!, quietTurns: 0 }
 }
 
 // Co kilka tur, nie co turę: wstawka w każdej odpowiedzi to wytarty szablon.
@@ -130,8 +138,9 @@ const PLACES = ['w środku, przy punkcie, do którego pasuje, nie na końcu odpo
 export type Recall = { trace: KruxTrace; days: number }
 
 // Dodatki notki: wspomnienie (bierze je tylko pierwsza wstawka sesji) i humor
-// kumpla, który wołający gasi przy planie i wydaniu, jak linię nastroju.
-export type Aside = { recall?: Recall | null; humor?: boolean; foe?: Foe | null }
+// kumpla, który wołający gasi przy planie i wydaniu, jak linię nastroju. `middle`
+// stawia wstawkę w środku: przy planie koniec należy do pytania o zgodę z linii formatu.
+export type Aside = { recall?: Recall | null; humor?: boolean; foe?: Foe | null; middle?: boolean }
 
 // Stary wróg: test, który pada teraz i padał na koniec poprzedniej sesji.
 export type Foe = { name: string; nick: string }
@@ -145,10 +154,26 @@ export function foeOf(failure: string | null, recall: Recall | null): Foe | null
   return { name, nick: pick(FOE_NICKS, hashOf(name)) }
 }
 
+// Kumpla wybiera ziarno wymieszane, formę gołe. Przy pięciu kandydatach i pięciu
+// formach to samo `seed` dawało każdemu kumplowi zawsze tę samą formę (Niuch tylko
+// cytat, Lont tylko spór), a notki co trzy tury krążyły w kółko bez Ochry. Mieszanie
+// to finalizer murmur3: deterministyczne, a reszta z dzielenia nie idzie za `seed`.
+function mixed(seed: number): number {
+  let hash = Math.imul(seed ^ (seed >>> 16), 0x85ebca6b)
+  hash = Math.imul(hash ^ (hash >>> 13), 0xc2b2ae35)
+  return (hash ^ (hash >>> 16)) >>> 0
+}
+
 // Notka dla modelu albo nic. Neutralna polszczyzna, bo to instrukcja. O tym, czy
 // wstawka ma sens w tej turze, decyduje wołający (prośba o ruch nieodwracalny
 // notki nie dostaje), więc notka nie zostawia modelowi „jeśli pasuje”.
 export function lifeNote(lore: KruxLore, seed: number, aside: Aside = {}): string | null {
+  return hordeNote(lore, seed, aside)?.text ?? null
+}
+
+// Notka razem z kumplem, o którym jest: po turze `recordAnswer` zapisuje go jako
+// ostatnią wstawkę, gdy odpowiedź go wymienia.
+export function hordeNote(lore: KruxLore, seed: number, aside: Aside = {}): { text: string; mate: KruxMate } | null {
   if (lore.quietTurns < QUIET_TURNS) return null
   const facts = factsOf(lore)
   const fresh = MATES.filter(name => name !== lore.lastMate)
@@ -162,7 +187,7 @@ export function lifeNote(lore: KruxLore, seed: number, aside: Aside = {}): strin
   const known = fresh.filter(name => facts[name] !== undefined)
   // Stary wróg to sprawa Młota, chyba że Młot właśnie gadał.
   const foe = aside.foe && fresh.includes('Młot') ? aside.foe : null
-  const mate = foe ? 'Młot' : pick(remembered.length > 0 ? remembered : known.length > 0 ? known : fresh, seed)
+  const mate = foe ? 'Młot' : pick(remembered.length > 0 ? remembered : known.length > 0 ? known : fresh, mixed(seed))
   const found = facts[mate]
   // Fakt z sesji to robota Kruxa: kumpel ją komentuje, nie przejmuje. Wspomnienie tak samo.
   const why = recall && memory[mate]
@@ -174,7 +199,8 @@ export function lifeNote(lore: KruxLore, seed: number, aside: Aside = {}): strin
   const humor = aside.humor === false ? null : humorOf(mate, lore)
   const form = pick(FORMS, seed)
   const shape = form === SPAR ? `krótka wymiana zdań z ${ROSTER[spar].instrumental}, spór: ${feud}` : form
-  return `Życie hordy: jedno zdanie łamaną mową o ${locative} (${trait}), słowa fachu: ${words};${humor ? ` humor: ${humor};` : ''} miejsce: ${pick(PLACES, seed + 1)}; forma: ${shape}.${why}${enemy}${avoid}`
+  const place = aside.middle ? PLACES[0] : pick(PLACES, seed + 1)
+  return { text: `Życie hordy: jedno zdanie łamaną mową o ${locative} (${trait}), słowa fachu: ${words};${humor ? ` humor: ${humor};` : ''} miejsce: ${place}; forma: ${shape}.${why}${enemy}${avoid}`, mate }
 }
 
 // Pamięć hordy między sesjami: ślad kroniki pod jednym kluczem `$.store` na repo.
@@ -240,15 +266,17 @@ export function recallOf(stored: unknown, session: string, now: number): Recall 
 }
 
 // Nastrój Kruxa z ostatniego zdarzenia kroniki: jedna linia dla modelu, a `key`
-// pozwala wołającemu podać ją raz na zdarzenie. Zielone bez wcześniejszego
-// smrodu to spokój, nie powód do nastroju. Neutralna polszczyzna, bo to instrukcja;
+// pozwala wołającemu podać ją raz na zdarzenie. Edycja to nie zdarzenie (`eventOf`),
+// więc klucz jej nie liczy: inaczej każda tura poprawek po smrodzie dostawała tę samą
+// linię od nowa; zawał po zawale bez innego zdarzenia daje jedną linię. Zielone bez
+// wcześniejszego smrodu to spokój, nie powód do nastroju. Neutralna polszczyzna, bo to instrukcja;
 // linia sama mówi, że nastrój nie rusza ocen, bo w symulacji triumf przechylał decyzje.
 // Forma zdania z kodu, „Krux + bezokolicznik”, bez słowa „nastrój”: przy „jednym
 // zdaniu o tym nastroju” Haiku pisał formy osobowe („zniknął”, „nastrój jest”), poprawek
 // dryfu było 2,70 zamiast 1,73 na przebieg, a w 4 z 19 zdań wracało samo słowo z linii.
 export function moodNote(lore: KruxLore): { key: string; text: string } | null {
   if (lore.last === null) return null
-  const key = `${lore.last}:${lore.testRuns}:${lore.builds}:${lore.commits}:${lore.tears}:${lore.edits}`
+  const key = `${lore.last}:${lore.testRuns}:${lore.builds}:${lore.commits}:${lore.tears}`
   const mood = (() => {
     switch (lore.last) {
       case 'test-fail': return `zadziorny (padłe przebiegi testów: ${lore.testFails} z ${lore.testRuns})`

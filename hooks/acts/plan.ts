@@ -10,10 +10,10 @@ const ROUTE: readonly Point[] = [[9, 4], [10, 3], [11, 3], [12, 4], [13, 3], [14
 const PEAKS: readonly Point[] = [[12, 1], [11, 2], [13, 2]]
 const EASEL: Frame = ['.hhhhhhhhhh.', 'h..........h', 'h..........h', 'h..........h', 'h..........h', '.h........h.']
 
-// Sztaluga z kartką rozwiniętą na `rows` wierszy.
+// Sztaluga z kartką rozwiniętą na `rows` wierszy pod górną listwą, która zostaje na widoku.
 function easel(rows: number): Layer[] {
-  const sheet: Layer[] = rows > 0 ? [[Array.from({ length: rows }, () => 'pppppppppp'), 9, 0]] : []
-  const peaks = rows === 5 ? dots(PEAKS, 'k') : []
+  const sheet: Layer[] = rows > 0 ? [[Array.from({ length: rows }, () => 'pppppppppp'), 9, 1]] : []
+  const peaks = rows === 4 ? dots(PEAKS, 'k') : []
   return [[EASEL, 8, 0], ...sheet, ...peaks]
 }
 
@@ -23,16 +23,16 @@ function easelLoop(t: number): Frame {
   const wiped = Math.max(0, t - 14)
   const route = ROUTE.slice(wiped, drawn)
   const goal = drawn === ROUTE.length && wiped < ROUTE.length ? dots([ROUTE[ROUTE.length - 1]!], 'R') : []
-  return draw(...easel(5), ...dots(route, 'n'), ...goal, [stander(t > 14 ? 'right' : 'mid', 'gg'), 0, 0])
+  return draw(...easel(4), ...dots(route, 'n'), ...goal, [stander(t > 14 ? 'right' : 'mid', 'gg'), 0, 0])
 }
 
 const easelAct: Act = {
   name: 'sztaluga',
   kit: draw(...easel(0)),
   intro: [
-    // Kartka rozwija się z górnej listwy, Krux podnosi węgiel.
-    ...[1, 2, 3, 4].map(rows => draw(...easel(rows), [stander('right'), 0, 0])),
-    draw(...easel(5), [stander('mid', 'g'), 0, 0]),
+    // Kartka rozwija się spod górnej listwy, Krux podnosi węgiel.
+    ...[1, 2, 3].map(rows => draw(...easel(rows), [stander('right'), 0, 0])),
+    draw(...easel(4), [stander('mid', 'g'), 0, 0]),
   ],
   length: 25,
   loop: easelLoop,
@@ -45,20 +45,20 @@ const SHOULDER_LOW: Point = [6, 4]
 const SKETCH: readonly Point[] = [
   // Strzała natarcia.
   [9, 4], [10, 4], [11, 4], [12, 4], [13, 4], [12, 5],
-  // Wieża wroga z blankami.
-  [17, 5], [17, 4], [18, 5], [19, 5], [19, 4],
+  // Wieża wroga z blankami, kreskę za strzałą.
+  [15, 5], [15, 4], [16, 5], [17, 5], [17, 4],
 ]
 const SKETCHED = SKETCH.length
 
-// Krux drepcze w kucki za czubkiem patyka, więc ręka zostaje krótka.
-function crouchAt(tip: Point): number {
-  return Math.max(0, tip[0] - 11)
+// Krux drepcze w kucki najwyżej o piksel na kreskę, więc ręka zostaje krótka, a ciało nie skacze.
+function crouchAt(i: number): number {
+  return lerp(0, 6, i / (SKETCHED - 1))
 }
 
 // Ręka nad rysunkiem w wierszu 2, piksel na lewo od czubka; patyk z dłoni do ziemi, czubek ciemny.
-function stick(tip: Point): Layer[] {
+function stick(tip: Point, x: number): Layer[] {
   const hand: Point = [tip[0] - 1, 2]
-  const shoulder: Point = [SHOULDER_LOW[0] + crouchAt(tip), SHOULDER_LOW[1]]
+  const shoulder: Point = [SHOULDER_LOW[0] + x, SHOULDER_LOW[1]]
   return [...line(shoulder, hand, 'g'), ...line(hand, tip, 'h').slice(1, -1), [['x'], tip[0], tip[1]]]
 }
 
@@ -66,10 +66,11 @@ function groundLoop(t: number): Frame {
   // 26 klatek: 11 kresek, 4 klatki namysłu, 11 klatek zamiatania od końca.
   const n = SKETCHED
   const shown = t < n ? t + 1 : t < n + 4 ? n : 2 * n + 3 - t
-  const tip = SKETCH[Math.min(n - 1, t < n ? t : t < n + 4 ? n - 1 : shown)]!
+  const i = Math.min(n - 1, t < n ? t : t < n + 4 ? n - 1 : shown)
+  const tip = SKETCH[i]!
   const look: Look = t >= n && t < n + 4 ? 'mid' : 'right'
-  const x = crouchAt(tip)
-  return draw(...dots(SKETCH.slice(0, shown), 'q'), [SQUAT, x, 0], [head(look), x, 1], ...stick(tip))
+  const x = crouchAt(i)
+  return draw(...dots(SKETCH.slice(0, shown), 'q'), [SQUAT, x, 0], [head(look), x, 1], ...stick(tip, x))
 }
 
 // Patyk leży przed orkiem, zanim ten go podniesie.

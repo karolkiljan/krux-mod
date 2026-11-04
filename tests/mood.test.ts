@@ -2,6 +2,8 @@ import { expect, test } from 'claude-code/testing'
 
 import { EMPTY_LORE, recordTool } from '../hooks/lore'
 import { CALM, EVENT_HOLD_MS, EVENT_SPEAKER, FADE_TOOLS, bubbleFor, eventLine, eventOf, mateIn, mateMoodAfter, mateOfType, mateStep, moodsAfter, moodsTick } from '../hooks/mood'
+import { BUBBLE_TEXT } from '../hooks/sprites'
+import { terminalText } from '../hooks/terminal-text'
 import { describeTool } from '../hooks/voice'
 
 const failed = recordTool(EMPTY_LORE, 'Bash', { command: 'npm test' }, true)
@@ -37,6 +39,34 @@ test('a failed look around is no cave-in: grep without hits, git diff with exit 
   expect(recordTool(EMPTY_LORE, 'Bash', { command: 'git commit -m x' }, true).last).toBe('zawał')
 })
 
+// Te odczyty kodem 1 odpowiadają „nie” albo „różne”: brak pliku, różnica, brak klucza.
+test('reads that answer no with exit 1 are no cave-in, and git global options hide no work', async () => {
+  for (const command of [
+    'diff -u a.ts b.ts',
+    'cmp a.bin b.bin',
+    'test -f dist/index.js',
+    '[ -d node_modules ]',
+    '[[ -f .env ]]',
+    'command -v bun',
+    'jq .version package.json',
+    'git rev-parse --verify feature/x',
+    'git config --get user.signingkey',
+    'git ls-files --error-unmatch a.ts',
+    'git merge-base --is-ancestor HEAD origin/main',
+    'git remote get-url upstream',
+    'git tag -l',
+    'git --no-pager diff --exit-code',
+    'git -P log -1',
+  ]) {
+    expect([command, recordTool(EMPTY_LORE, 'Bash', { command }, true)]).toEqual([command, EMPTY_LORE])
+  }
+  expect(recordTool(EMPTY_LORE, 'Bash', { command: 'git --no-pager commit -m x' }, false)).toMatchObject({ commits: 1, last: 'commit' })
+  expect(recordTool(EMPTY_LORE, 'Bash', { command: 'git merge feature/x' }, true).last).toBe('zawał')
+  expect(recordTool(EMPTY_LORE, 'Bash', { command: 'test -f a && ./deploy.sh' }, true).last).toBe('zawał')
+  expect(describeTool('Bash', { command: 'git tag v1.2' }).scene).toBe('seal')
+  expect(describeTool('Bash', { command: 'git --no-pager log' }).scene).toBe('torch')
+})
+
 test('a read in a command chain cannot hide a failed action', async () => {
   for (const command of [
     'pwd && ./scripts/migrate.sh',
@@ -60,6 +90,17 @@ test('failures in the output turn a zero exit red, as the board reads it', async
 
 test('a test run sent to the background is not a run yet', async () => {
   expect(recordTool(EMPTY_LORE, 'Bash', { command: 'npm test', run_in_background: true }, false, 'running')).toBe(EMPTY_LORE)
+})
+
+// Powłoka z `&` wraca od razu z kodem 0 i bez wyjścia przebiegu: to nie zielone.
+// `&` puszcza w tło cały potok i listę `&&` przed sobą, a `wait` czeka na zadania z tła.
+test('a run sent to the background by the shell is not a run either, a foreground one still is', async () => {
+  for (const command of ['npm test &', 'npm test > /tmp/t.log 2>&1 &', 'pytest -x > out.txt 2>&1 & echo started', 'npm test & sleep 1', 'npx tsc -p . &', 'npm test 2>&1 | tee test.log &', 'npm test > log 2>&1 && echo done &', 'wait; npm test &']) {
+    expect([command, recordTool(EMPTY_LORE, 'Bash', { command }, false, '')]).toEqual([command, EMPTY_LORE])
+  }
+  for (const command of ['npm run dev & npm test', 'npm test &> log', 'npm test 2>&1 | tail -5', 'npm test |& tail -5', 'npm test & wait', 'npm run test:a & npm run test:b & wait']) {
+    expect([command, recordTool(EMPTY_LORE, 'Bash', { command }, true, '1 failed').last]).toEqual([command, 'test-fail'])
+  }
 })
 
 test('moods follow the table in the spec', async () => {
@@ -119,9 +160,9 @@ test('a failed-test event names the supplied first failure in every variant', ()
   const failures = ['auth > login', 'cache > expiry']
   const lines = [0, 1, 2].map(seed => eventLine('test-fail', failed, seed, failures[0]))
   expect(lines).toEqual([
-    'Smród! 1 na 1 padać. Padły: auth > login.',
-    'Czerwono. Robak gryźć. Padły: auth > login.',
-    'Test padać. Kilof w dłoń! Padły: auth > login.',
+    'Smród! Padły: auth > login.',
+    'Robak! Padły: auth > login.',
+    'Grr! Padły: auth > login.',
   ])
 })
 
@@ -135,15 +176,25 @@ test('a failed-test event without a name keeps the existing text', () => {
 })
 
 test('a failed-test name fits 24 characters including the ellipsis', () => {
-  expect(eventLine('test-fail', failed, 0, 'abcdefghijklmnopqrstuvwx')).toBe('Smród! 1 na 1 padać. Padły: abcdefghijklmnopqrstuvwx.')
-  expect(eventLine('test-fail', failed, 0, 'abcdefghijklmnopqrstuvwxy')).toBe('Smród! 1 na 1 padać. Padły: abcdefghijklmnopqrstuvw…')
-  expect(eventLine('test-fail', failed, 0, 'abcdefghijklmnopqrstuvwxyz > login')).toBe('Smród! 1 na 1 padać. Padły: abcdefghijklmnopqrstuvw…')
-  expect(eventLine('test-fail', failed, 0, 'login…')).toBe('Smród! 1 na 1 padać. Padły: login…')
+  expect(eventLine('test-fail', failed, 0, 'abcdefghijklmnopqrstuvwx')).toBe('Smród! Padły: abcdefghijklmnopqrstuvwx.')
+  expect(eventLine('test-fail', failed, 0, 'abcdefghijklmnopqrstuvwxy')).toBe('Smród! Padły: abcdefghijklmnopqrstuvw…')
+  expect(eventLine('test-fail', failed, 0, 'abcdefghijklmnopqrstuvwxyz > login')).toBe('Smród! Padły: abcdefghijklmnopqrstuvw…')
+  expect(eventLine('test-fail', failed, 0, 'login…')).toBe('Smród! Padły: login…')
+})
+
+// Dymek tnie tekst do `BUBBLE_TEXT`: przy pełnym otwarciu („Test padać. Kilof w dłoń!”)
+// z nazwy zostawało kilka liter, więc z nazwą otwarcie jest krótkie, a liczby zostają w Sztolni.
+test('the bubble shows the whole truncated failure name, whatever the counters', () => {
+  const lore = { ...EMPTY_LORE, testRuns: 34, testFails: 12, last: 'test-fail' as const }
+  for (const seed of [0, 1, 2]) {
+    expect(terminalText(eventLine('test-fail', lore, seed, 'auth > login rejects expired token'), BUBBLE_TEXT).text).toContain('Padły: auth > login rejects ex…')
+    expect(terminalText(eventLine('test-fail', lore, seed, 'abcdefghijklmnopqrstuvwx'), BUBBLE_TEXT).text).toContain('Padły: abcdefghijklmnopqrstuvwx.')
+  }
 })
 
 test('failed-test names preserve Polish characters before and after truncation', () => {
-  expect(eventLine('test-fail', failed, 1, 'zażółć gęślą jaźń')).toBe('Czerwono. Robak gryźć. Padły: zażółć gęślą jaźń.')
-  expect(eventLine('test-fail', failed, 1, 'Zażółć gęślą jaźń — próba logowania')).toBe('Czerwono. Robak gryźć. Padły: Zażółć gęślą jaźń — pró…')
+  expect(eventLine('test-fail', failed, 1, 'zażółć gęślą jaźń')).toBe('Robak! Padły: zażółć gęślą jaźń.')
+  expect(eventLine('test-fail', failed, 1, 'Zażółć gęślą jaźń — próba logowania')).toBe('Robak! Padły: Zażółć gęślą jaźń — pró…')
 })
 
 test('other events never present a supplied name as a failed test', () => {

@@ -146,7 +146,7 @@ function hauling(t: number): Frame {
     : cart(CART_X + x, loaded)
   const spill: Layer[] = t >= 10 && t < 16 ? [[['qk', 'kqk'], 20, t < 12 ? 3 : 4]] : []
   const refill: Layer[] = t >= 22 && t < 27 ? [[['qkq'], CART_X + 2, Math.min(3, t - 22)]] : []
-  return draw(...tippedCart, ...spill, ...refill, [pusher(t, tipped ? 'g' : 'gg'), x, 0])
+  return draw(...tippedCart, ...spill, ...refill, [pusher(x, tipped ? 'g' : 'gg'), x, 0])
 }
 
 const haul: Act = {
@@ -175,7 +175,9 @@ function wallLayers(crack: number): Layer[] {
 
 function wallWork(t: number): Frame {
   if (t >= 14 && t < 20) {
-    return draw([WALL, WALL_X, 20 - t], [stander('right', 'gg'), 2, 0],
+    // 14–15: rozbity mur z gruzem osiada w ziemię; 16–19: nowy mur wyrasta, bez znikania naraz.
+    const wall = t < 16 ? wallLayers(3).map(([sprite, x, y]) => [sprite, x, y + (t - 13) * 2] as Layer) : [[WALL, WALL_X, 21 - t] as Layer]
+    return draw(...wall, [stander('right', 'gg'), 2, 0],
       ...line([9, 3], [11, 1], 'h'), [['SS', 'SS'], 11, 0])
   }
   const hit = t >= 5 && t <= 8
@@ -260,9 +262,9 @@ function measuring(t: number): Frame {
     return draw(...bench(BENCH_AT, { marks: CHALK, gap: t === 6 ? undefined : CUT }), lont(6, 'right'),
       ...reach(6, [CUT - 1, down]), [['x', 's'], CUT, down])
   }
-  // 9–11: zwinąć odcięty kawałek do dłoni, cofając się wzdłuż ławy.
+  // 9–11: zwinąć odcięty kawałek do dłoni, cofając się wzdłuż ławy o dwa piksele na klatkę.
   if (t < 12) {
-    const end = [13, 10, 7][t - 9]!
+    const end = [13, 11, 9][t - 9]!
     const orcX = Math.max(0, end - 8)
     const piece: Layer[] = []
     for (let x = BENCH_AT; x <= end; x += 1) piece.push(at(CHALK.includes(x) ? 'j' : 'h', x, 2))

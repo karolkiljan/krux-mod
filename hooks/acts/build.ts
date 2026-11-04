@@ -232,7 +232,7 @@ function billetTongs(tip: number, bent: boolean): Layer[] {
 
 function billetWork(t: number): Frame {
   const tip = BILLET_PATH[t]!
-  return draw(...billetProps(), [[...head('right'), ...pusher(t).slice(3)], tip - 13, 0],
+  return draw(...billetProps(), [[...head('right'), ...pusher(tip).slice(3)], tip - 13, 0],
     ...billetTongs(tip, t >= 8 && t <= 13),
     // Kęs naciska na róg kowadła; po powrocie do pieca ponownie się prostuje.
     ...(t === 8 || t === 9 ? [at('y', 16, 2), at('o', 17, 1)] : []))

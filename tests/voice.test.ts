@@ -187,6 +187,57 @@ test('shell commands are told apart by kind', async () => {
   expect(describeTool('Bash', { command: './run.sh' }).verb).toBe('Krux walić kilofem')
 })
 
+// Bez rozpoznania przebieg nie trafia na tablicę, a czerwony wraca do kroniki jako zawał.
+test('test runs behind wrappers, monorepo filters and other ecosystems are still test runs', () => {
+  for (const command of [
+    'timeout 300 npm test',
+    'timeout -s KILL 120 pytest -x',
+    'nice -n 10 npm test',
+    'xvfb-run -a npm test',
+    'npm t',
+    'pnpm -r test',
+    'pnpm --filter web test',
+    'npm -w pkg test',
+    'npm --workspace=pkg run test',
+    'yarn workspace web test',
+    './gradlew test',
+    'mvn -q clean verify',
+    './mvnw test',
+    'vendor/bin/phpunit',
+    './node_modules/.bin/jest',
+    'php artisan test',
+    'composer test',
+    'tox -e py311',
+    'tox',
+    'nox -s tests',
+    'cargo nextest run',
+    'npx cypress run',
+    'swift test',
+    'flutter test',
+    'bazel test //...',
+    'ctest',
+    'py.test',
+    'make -C pkg test',
+    'make tests',
+  ]) {
+    expect([command, workOf('Bash', { command })]).toEqual([command, 'test'])
+  }
+  for (const [command, kind] of [
+    ['./gradlew build -x test', 'dig'],
+    ['npm -w pkg run build', 'dig'],
+    ['npm install test-utils', 'install'],
+    ['npx cypress open', 'dig'],
+    ['make -j4', 'build'],
+    ['timeout 5 ./deploy.sh', 'dig'],
+    // Sesja tox/nox od lintu, typów albo dokumentacji to nie próba testów.
+    ['tox -e lint', 'dig'],
+    ['nox -s typecheck', 'dig'],
+    ['tox -e docs', 'dig'],
+  ] as const) {
+    expect([command, workOf('Bash', { command })]).toEqual([command, kind])
+  }
+})
+
 test('a seed picks a synonym, so the same work does not repeat word for word', async () => {
   const verbs = new Set([0, 1, 2].map(seed => describeTool('Read', { file_path: 'a.ts' }, seed).verb))
   expect(verbs.size).toBe(3)
@@ -195,7 +246,7 @@ test('a seed picks a synonym, so the same work does not repeat word for word', a
 
 test('at rest the caption matches how much work the turn took', async () => {
   expect(restVerb(0, 0)).toBe('Krux tylko gadać')
-  expect(restVerb(3, 0)).toBe('Krux odpoczywać przy kowadle')
+  expect(restVerb(3, 0)).toBe('Krux odpoczywać przy ogniu')
   expect(restVerb(40, 0)).toBe('Krux studzić żelazo')
   expect(restVerb(40, 5)).toBe(restVerb(40, 5))
 })
@@ -276,6 +327,30 @@ test('the kind of request is read from the prompt alone', async () => {
   for (const hint of [...Object.values(FORMAT_HINT), LENGTH_HINT, RISK_HINT]) expect(hint.length <= 120).toBe(true)
 })
 
+// Przy wyjaśnieniu miernik nie sądzi długości (hooks/CLAUDE.md): grzeczna forma i wtręt
+// „ok,” na przedzie nie mogą zrobić z prośby o wyjaśnienie pogawędki ani roboty.
+// Krótka rozmowa za wtrętem („Dzięki za pomoc!”, „Hej Krux”) to dalej pogawędka.
+test('a polite or prefixed request to explain is still explain, an interjection with small talk stays chat', () => {
+  for (const text of [
+    'Możesz wyjaśnić, jak działa cache?',
+    'możesz mi wytłumaczyć, czemu to działa',
+    'Czy mógłbyś opowiedzieć, jak działa replay?',
+    'ok, wyjaśnij jak działa cache',
+    'super, wytłumacz ten regex',
+  ]) {
+    expect([text, promptKind(text)]).toEqual([text, 'explain'])
+  }
+  for (const text of ['ok, dzięki', 'dzięki!', 'ok', 'hej, siema', 'Dzięki za pomoc!', 'Hej Krux', 'Siema, Krux!', 'dzięki, działa', 'Super robota!', 'ok, rozumiem']) {
+    expect([text, promptKind(text)]).toEqual([text, 'chat'])
+  }
+  expect(formatHint('Dzięki za pomoc!')).toBe(FORMAT_HINT.chat)
+  for (const text of ['ok, dodaj test dla parsera', 'okej, usuń tabelę users', 'Możesz dodać kolumnę email?', 'ok, możesz dodać kolumnę?']) {
+    expect([text, promptKind(text)]).toEqual([text, null])
+  }
+  expect(promptKind('ok, przejrzyj ten moduł')).toBe('review')
+  expect(formatHint('ok, wyjaśnij jak działa cache')).toBe(FORMAT_HINT.explain)
+})
+
 // Kotwica co turę pilnuje gramatyki; o ostrzeżeniu przypomina linia ryzyka,
 // tylko gdy prośba kasuje dane albo historię.
 test('a request to destroy data or history gets the risk line, ordinary work does not', async () => {
@@ -322,6 +397,186 @@ test('a request to destroy data or history gets the risk line, ordinary work doe
     expect([text, riskHint(text)]).toEqual([text, null])
   }
   expect(isDestructive('```sh\ngit push --force-with-lease\n```')).toBe(true)
+})
+
+// Grzeczna prośba idzie bezokolicznikiem albo 1. os. l. mn., często bez polskich znaków.
+test('a polite, plural or unaccented Polish request to destroy data gets the risk line too', () => {
+  for (const text of [
+    'możesz usunąć tabelę users?',
+    'trzeba usunąć bazę',
+    'chcę wyczyścić historię gita',
+    'musisz wywalić tabelę users',
+    'usuńmy bazę',
+    'skasujmy tabelę users',
+    'usuwamy tabelę users',
+    'usun baze',
+    'wyczysc historie',
+    'skasuj galaz feature/x',
+    'usuń ostatnie 3 commity',
+    'skasuj commit',
+    'możesz puścić migrację na produkcji?',
+    // Przeczenie stoi przed innym słowem albo za przecinkiem: prośba zostaje prośbą.
+    'nie, usuń bazę',
+    'Nie ruszaj kodu, usuń tabelę logs',
+  ]) {
+    expect([text, riskHint(text)]).toEqual([text, RISK_HINT])
+  }
+  for (const text of [
+    // Zakaz buduje się z formy niedokonanej („nie usuwaj”), więc „nie” przed czasownikiem to nie prośba.
+    'Dodaj kolumnę email, ale nie usuwaj danych z tabeli users',
+    'Nigdy nie usuwaj gałęzi main',
+    'Nie usuwać bazy!',
+    'Tylko nie kasuj historii!',
+    'usuwanie literówek',
+    'usun literowke',
+    'wyczyść kod',
+    'czyścimy kod w repo',
+    'możesz usunąć ten plik?',
+    'usunięcie martwego importu',
+    'trzeba zresetować licznik tur',
+    'dodaj usuwanie konta',
+  ]) {
+    expect([text, riskHint(text)]).toEqual([text, null])
+  }
+})
+
+// Rozdzielone, długie i sklejone flagi znaczą to samo co jeden zlepek krótkich.
+test('split, long and bundled flags are as irreversible as the bundled short ones', () => {
+  for (const text of [
+    'rm -r -f build',
+    'rm -f -r build',
+    'rm --recursive --force build',
+    'rm -r build',
+    'rm -R build',
+    'git rm -r -f src',
+    'git clean -d -f',
+    'git clean --force',
+    'git clean -d --force',
+    'git push -uf origin main',
+    'git push -fu origin main',
+    'git branch -d -f stara',
+    'git branch -df stara',
+    'git branch --delete --force stara',
+    'git branch --force --delete stara',
+    'git checkout -f main',
+    'git checkout --force main',
+    'git switch -f main',
+    'git switch --discard-changes main',
+    'rm -rfv build',
+    'rm -rI build',
+    'rm -rf $(dirname x)',
+    'sudo rm -rf /tmp/x',
+    'git rm -rfq src',
+  ]) {
+    expect([text, isDestructive(text)]).toEqual([text, true])
+  }
+  for (const text of [
+    'rm -i x',
+    'rm -f x',
+    'git rm -r --cached node_modules',
+    'docker run --rm -v data:/x alpine',
+    'docker rm -f web',
+    // Prymitywy find z „r” w `$(…)`, plik o nazwie `-rf` za `--` i podkomenda `rm`
+    // menedżera pakietów to nie rekurencyjne `rm`.
+    "rm $(find build -name '*.o' -print)",
+    'rm $(find . -type f -newer stamp)',
+    'rm -- -rf',
+    'pnpm rm -r lodash',
+    'npm rm -r foo',
+    'git clean -n',
+    'git clean -nd',
+    'git push -u origin feature/x',
+    'git checkout -b feature/x',
+    'git switch -c feature/x',
+    'git branch -d scalona',
+    'git branch -f main HEAD~1',
+  ]) {
+    expect([text, isDestructive(text)]).toEqual([text, false])
+  }
+})
+
+// `riskHint` biegnie synchronicznie w `prompt.submit`: długi zlepek liter albo łańcuch
+// `update … set` bez `=` nie może zawiesić hooka cofaniem wzorca.
+// Wejścia, które przed poprawką kosztowały po 4,5 s i więcej, teraz po kilka ms; próg 2 s
+// zostawia zapas na obciążoną maszynę, a cofanie kwadratowe albo gorsze dalej go przekracza.
+test('long flag bundles and UPDATE chains are judged without catastrophic backtracking', { timeoutMs: 30_000 }, () => {
+  for (const text of [
+    'git branch -' + 'df'.repeat(2000) + '1',
+    'git push -' + 'f'.repeat(20000) + '1',
+    'git checkout -' + 'f'.repeat(20000) + '1',
+    'update t u set a b c '.repeat(2000),
+    'update t set a b c '.repeat(2000),
+  ]) {
+    const start = Date.now()
+    expect(isDestructive(text)).toBe(false)
+    expect([text.slice(0, 24), Date.now() - start < 2000]).toEqual([text.slice(0, 24), true])
+  }
+})
+
+test('deleting cloud resources and Mongo collections is irreversible, listing them is not', () => {
+  for (const text of [
+    'gcloud storage rm -r gs://kubel',
+    'gcloud storage buckets delete gs://kubel',
+    'gcloud sql instances delete prod-db',
+    'az group delete -n prod --yes',
+    'az storage blob delete-batch -s dane',
+    'aws s3api delete-bucket --bucket kubel',
+    'aws rds delete-db-instance --db-instance-identifier prod',
+    'aws ec2 terminate-instances --instance-ids i-1',
+    'aws --profile prod ec2 terminate-instances --instance-ids i-1',
+    'aws --region eu-west-1 --profile p s3api delete-object --bucket b --key k',
+    'tofu destroy',
+    'terragrunt run-all destroy',
+    'cdk destroy --force',
+    'eksctl delete cluster -n prod',
+    'db.users.drop()',
+    'db.users.deleteMany({})',
+    'mongosh --eval "db.users.remove({})"',
+  ]) {
+    expect([text, isDestructive(text), riskHint(text)]).toEqual([text, true, RISK_HINT])
+  }
+  for (const text of [
+    'gcloud storage ls gs://kubel',
+    'az group list',
+    'aws s3api list-buckets',
+    'aws ec2 describe-instances',
+    // Nazwa zasobu albo wartość opcji z „delete-” to nie operacja usuwania.
+    'aws lambda invoke --function-name delete-old out.json',
+    'aws ssm get-parameter --name delete-flag',
+    'aws logs tail /aws/lambda/x --filter-pattern terminate-',
+    'tofu plan',
+    'terragrunt plan',
+    'cdk diff',
+    'eksctl get cluster',
+    'db.users.find({})',
+    'db.users.deleteOne({ _id: 1 })',
+  ]) {
+    expect([text, riskHint(text)]).toEqual([text, null])
+  }
+})
+
+// Alias, `ONLY` i nawiasy przed `SET` nie zawężają zdania; `WHERE` w literale ani w komentarzu też.
+test('an UPDATE with an alias or a quoted WHERE still overwrites the table', () => {
+  for (const text of [
+    'UPDATE users u SET active = false',
+    'UPDATE users AS u SET active = false',
+    'UPDATE ONLY users SET a = 1',
+    'UPDATE [dbo].[users] SET a = 1',
+    "UPDATE users SET note = 'where';",
+    'UPDATE users SET a = 1 -- WHERE id = 1',
+    'ALTER TABLE users DROP email',
+  ]) {
+    expect([text, isDestructive(text)]).toEqual([text, true])
+  }
+  for (const text of [
+    'UPDATE users u SET a = 1 WHERE u.id = 2',
+    "UPDATE users SET note = 'x' WHERE id = 2",
+    "UPDATE users SET name = 'O''Brien' WHERE id = 2",
+    'ALTER TABLE users DROP CONSTRAINT users_email_key',
+    'update package.json and set version = 2',
+  ]) {
+    expect([text, isDestructive(text)]).toEqual([text, false])
+  }
 })
 
 test('irreversible commands beyond git and SQL get the risk line, their safe neighbours do not', async () => {
@@ -551,11 +806,12 @@ test('arithmetic bit shifts are not heredocs and keep later test commands visibl
   }
 })
 
+// Angielskie „publish” liczy się tylko całym słowem: identyfikator (`publishConfig`, `publisher.ts`) to nie wydanie.
 test('a release question is recognised, performance talk is not', () => {
-  for (const text of ['Wypuszczamy to dziś na produkcję?', 'Co sprawdzić przed wydaniem?', 'można deployować?', 'wdrażamy jutro', 'scalamy PR?']) {
+  for (const text of ['Wypuszczamy to dziś na produkcję?', 'Co sprawdzić przed wydaniem?', 'można deployować?', 'wdrażamy jutro', 'scalamy PR?', 'wdróż to na staging', 'zmerguj PR', 'zdeployuj', 'npm publish', 'npm publish.', 'zrób publish paczki', 'opublikuj paczkę']) {
     expect([text, asksRelease(text)]).toEqual([text, true])
   }
-  for (const text of ['A co z wydajnością przy dużym ruchu?', 'napraw testy', 'Jak poszło?']) {
+  for (const text of ['A co z wydajnością przy dużym ruchu?', 'napraw testy', 'Jak poszło?', 'popraw opis produktu', 'zmień kolor przycisku', 'Popraw publisher.ts', 'czemu publishConfig nie działa?', 'npm run publish-docs pada', 'Popraw publish.ts']) {
     expect([text, asksRelease(text)]).toEqual([text, false])
   }
 })

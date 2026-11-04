@@ -1,4 +1,4 @@
-import { STAND, draw, line, pingPong, stander } from '../stage'
+import { STAND, at, draw, lerp, line, pingPong, stander } from '../stage'
 import type { Act, Frame, Layer } from '../stage'
 
 // Próby bez rozstrzygania wyniku: kanarek nadal żyje, ciężar wraca,
@@ -45,28 +45,35 @@ function loadRig(x: number, down: number): Layer[] {
   return [[RIG, x, 0], [LOAD, x + 3, down], ...(bend ? [[['hh...hh', '..hhh..'], x + 1, 4] as Layer] : [[['hhhhhhh'], x + 1, 4] as Layer])]
 }
 
+// Korba na piaście (10, 2): uchwyt obiega ją co dwie klatki (dół, środek, góra, środek),
+// a dłoń idzie za uchwytem.
+const CRANK_Y = [3, 2, 1, 2] as const
+
+function crank(grip: number): Layer[] {
+  return [at('h', 9, grip), at('S', 10, 2)]
+}
+
 function loadLoop(t: number): Frame {
-  const down = DROP[t]!
-  const grip = t < 8 ? 2 + t % 2 : 3 - t % 2
-  return draw(...loadRig(RIG_X, down), [stander('right', 'gg'), 0, 0], ...line([8, 3], [10, grip], 'h'), [['S'], 10, 2])
+  const grip = CRANK_Y[Math.floor(t / 2) % CRANK_Y.length]!
+  return draw(...loadRig(RIG_X, DROP[t]!), ...crank(grip), [stander('right', 'g'), 0, 0], ...line([6, 3], [8, grip], 'g'))
 }
 
 const load: Act = {
   name: 'obciążenie',
-  kit: draw(...loadRig(RIG_X, 0), [['hhS'], 8, 3]),
+  kit: draw(...loadRig(RIG_X, 0), ...crank(3)),
   intro: [
-    draw(...loadRig(RIG_X, 0), [['hhS'], 8, 3], [stander('right', 'g'), 0, 0]),
-    draw(...loadRig(RIG_X, 0), ...line([8, 3], [10, 2], 'h'), [['S'], 10, 2], [stander('right', 'gg'), 0, 0]),
+    draw(...loadRig(RIG_X, 0), ...crank(3), [stander('right', 'g'), 0, 0]),
+    loadLoop(0),
   ],
   length: DROP.length,
   loop: loadLoop,
 }
 
 // ——— Fiolki kontrolne ———
-// Pipeta przenosi kroplę między trzema odczynnikami. Pęcherzyki
+// Pipeta nabiera z niebieskiej fiolki i wpuszcza kroplę do zielonej. Pęcherzyki
 // wędrują od dna do szyjki i znikają, zamiast migać całą fiolką.
 const BENCH: Frame = ['hhhhhhhhhhhhh', '.x.........x.']
-const TUBES_X = [10, 14, 18] as const
+const TUBES_X = [9, 13, 17] as const
 
 function tubes(t: number): Layer[] {
   const colors = ['W', 'f', 'd'] as const
@@ -77,38 +84,54 @@ function tubes(t: number): Layer[] {
   })]
 }
 
+// Pipeta ma zawsze trzy piksele: bańkę 'hh' w dłoni i szklany czubek 'i' nad szyjką fiolki
+// albo w niej (`dip`); ręka idzie za pipetą, pipeta się nie wydłuża.
+function pipette(tip: number, dip: boolean): Layer[] {
+  const y = dip ? 1 : 0
+  return [at('h', tip - 2, y + 2), at('h', tip - 1, y + 1), at('i', tip, y)]
+}
+
+function hold(tip: number, dip: boolean): Layer[] {
+  return [...line([6, 3], [tip - 3, (dip ? 1 : 0) + 2], 'g'), ...pipette(tip, dip)]
+}
+
+const DROP_AT = TUBES_X[1] + 1
+
 function tubeLoop(t: number): Frame {
-  const x = 9 + pingPong(t, 10)
-  const drop = t % 8 === 4
-  return draw(...tubes(t), [stander('right', 'gg'), 0, 0], ...line([8, 3], [x, 0], 'h'), [['i'], x + 1, 0], ...(drop ? [[['W'], x + 1, 1] as Layer] : []))
+  // 16 klatek: nabrać z niebieskiej, przenieść nad zieloną, wpuścić kroplę, wrócić.
+  const p = pingPong(t, 8)
+  const tip = lerp(TUBES_X[0] + 1, DROP_AT, p / 8)
+  const dip = p === 0 || p === 8
+  return draw(...tubes(t), [stander('right', 'g'), 0, 0], ...hold(tip, dip), ...(p === 8 ? [at('W', DROP_AT, 2)] : []))
 }
 
 const assay: Act = {
   name: 'fiolki',
-  kit: draw(...tubes(0), [['hi'], 8, 3]),
+  // Pipeta stoi oparta w niebieskiej fiolce.
+  kit: draw(...tubes(0), ...pipette(TUBES_X[0] + 1, true)),
   intro: [
-    draw(...tubes(0), [['hi'], 8, 3], [stander('right', 'g'), 0, 0]),
-    draw(...tubes(0), ...line([8, 3], [9, 1], 'h'), [['i'], 10, 1], [stander('right', 'gg'), 0, 0]),
+    draw(...tubes(0), ...pipette(TUBES_X[0] + 1, true), [stander('right', 'g'), 0, 0]),
   ],
-  length: 20,
+  length: 16,
   loop: tubeLoop,
 }
 
 // ——— Liczydło Młota ———
 // Koraliki na dwóch drutach przesuwają się tam i z powrotem.
-// Młot powtarza rachunek, prowadząc palcem drugi rząd.
-const ABACUS: Frame = ['hhhhhhhhh', 'hsssssssh', 'h.......h', 'hsssssssh', 'hhhhhhhhh']
-const ABACUS_X = 12
+// Młot powtarza rachunek, prowadząc palcem drugi rząd. Liczydło stoi tuż przy nim,
+// więc palec sięga koralików bez wyciągania ręki przez pół warsztatu.
+const ABACUS: Frame = ['hhhhhhh', 'hsssssh', 'h.....h', 'hsssssh', 'hhhhhhh']
+const ABACUS_X = 8
 
 function abacusAt(shift: number): Layer[] {
-  return [[ABACUS, ABACUS_X, 1], [['yy'], 14 + shift, 2], [['yy'], 17 - shift, 4]]
+  return [[ABACUS, ABACUS_X, 1], [['yy'], ABACUS_X + 1 + shift, 2], [['yy'], ABACUS_X + 4 - shift, 4]]
 }
 
 function abacusLoop(t: number): Frame {
   const shift = Math.floor(pingPong(t, 4) * 3 / 4)
   const handY = t < 7 || t === 15 ? 2 : t === 7 || t === 14 ? 3 : 4
-  const handX = handY === 4 ? 16 - shift : 13 + shift
-  return draw(...abacusAt(shift), [stander('right', 'gg'), 0, 0], ...line([8, 3], [handX, handY], 'g'))
+  const handX = handY === 4 ? ABACUS_X + 3 - shift : ABACUS_X + shift
+  return draw(...abacusAt(shift), [stander('right', 'g'), 0, 0], ...line([6, 3], [handX, handY], 'g'))
 }
 
 const abacus: Act = {
@@ -117,7 +140,7 @@ const abacus: Act = {
   kit: draw(...abacusAt(0)),
   intro: [
     draw(...abacusAt(0), [stander('right', 'g'), 0, 0]),
-    draw(...abacusAt(0), [stander('right', 'gg'), 0, 0], ...line([8, 3], [10, 3], 'g')),
+    draw(...abacusAt(0), [stander('right', 'gg'), 0, 0]),
     abacusLoop(0),
   ],
   length: 16,
@@ -129,26 +152,27 @@ const abacus: Act = {
 // jasna fala odchodzi od odlewu, a ręka wycofuje pobijak do następnej próby.
 const BELL: Frame = ['...h...', '..yyy..', '.yy.yy.', 'yyy.yyy', '...S...']
 const BELL_STAND: Frame = ['hhhhhhhhh', '........x', '........x', '........x', '........x', '......xxx']
-const BELL_TAP = [10, 10, 11, 12, 13, 12, 11, 10, 10, 10, 10, 10] as const
+const BELL_X = 9
+const BELL_TAP = [7, 7, 8, 9, 10, 9, 8, 7, 7, 7, 7, 7] as const
 // Pobijak na haku belki: trzonek w górze, obuch w dole.
 const HANGING: Frame = ['h', 'S']
 
 function bellAt(): Layer[] {
-  return [[BELL_STAND, 12, 0], [BELL, 12, 0]]
+  return [[BELL_STAND, BELL_X, 0], [BELL, BELL_X, 0]]
 }
 
 function bellLoop(t: number): Frame {
   const x = BELL_TAP[t]!
-  const wave: Layer[] = t >= 5 && t <= 7 ? [[['j', '.', 'j'], 19 + t - 5, 1]] : []
-  return draw(...bellAt(), [stander('right', 'gg'), 0, 0], ...line([8, 3], [x - 1, 3], 'g'), [['S', 'h'], x, 2], ...wave)
+  const wave: Layer[] = t >= 5 && t <= 7 ? [[['j', '.', 'j'], BELL_X + 7 + t - 5, 1]] : []
+  return draw(...bellAt(), [stander('right', 'g'), 0, 0], ...line([6, 3], [x - 1, 3], 'g'), [['S', 'h'], x, 2], ...wave)
 }
 
 const bell: Act = {
   name: 'dzwon',
-  kit: draw(...bellAt(), [HANGING, 12, 1]),
+  kit: draw(...bellAt(), [HANGING, BELL_X, 1]),
   intro: [
-    draw(...bellAt(), [HANGING, 12, 1], [stander('right', 'g'), 0, 0]),
-    draw(...bellAt(), [HANGING, 12, 1], [stander('right', 'gg'), 0, 0], ...line([8, 3], [11, 2], 'g')),
+    draw(...bellAt(), [HANGING, BELL_X, 1], [stander('right', 'g'), 0, 0]),
+    draw(...bellAt(), [HANGING, BELL_X, 1], [stander('right', 'g'), 0, 0], ...line([6, 3], [8, 2], 'g')),
     bellLoop(0),
   ],
   length: BELL_TAP.length,

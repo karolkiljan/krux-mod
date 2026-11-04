@@ -137,6 +137,8 @@ test('git shows the branch, commits to push and files outside a commit; a clean 
   const clean = { ...GIT, ahead: 0, changed: 0 }
   expect(texts(section(draw({ git: clean }), 'git')!).map(line => line.text)).toEqual(['Git', '', '⎇ main → origin/main', '✓ czysto, równo z upstreamem'])
   expect(texts(section(draw({ git: { ...clean, upstream: null } }), 'git')!).map(line => line.text).slice(2)).toEqual(['⎇ main · bez upstreamu', '✓ czysto'])
+  // Upstream, którego gałąź zniknęła po scaleniu, nie jest „równo”: liczby są nieznane.
+  expect(texts(section(draw({ git: { ...clean, upstreamGone: true } }), 'git')!).map(line => line.text).slice(2)).toEqual(['⎇ main → origin/main · zniknął', '✓ czysto'])
   // Samo repo to nie robota: tablica dalej mówi, że pusta, pod repo.
   expect(texts(draw({ git: clean })).map(line => line.text)).toContain('Tablica pusta. Wątki, plan, testy i horda pojawią się przy robocie.')
 })

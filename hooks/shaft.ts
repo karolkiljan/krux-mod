@@ -112,7 +112,7 @@ export function shaftTree({ Box, Text }: ShaftElements, data: ShaftData): Render
       ? []
       : [
           section('git', 'Git', [
-            Text({ wrap: 'truncate-end', children: [`⎇ ${repo.branch}${repo.upstream === null ? ' · bez upstreamu' : ` → ${repo.upstream}`}`] }),
+            Text({ wrap: 'truncate-end', children: [`⎇ ${repo.branch}${repo.upstream === null ? ' · bez upstreamu' : ` → ${repo.upstream}${repo.upstreamGone ? ' · zniknął' : ''}`}`] }),
             ...gitRows(repo).map(row => Box({ key: row.key, children: [Text({ ...(row.color === undefined ? {} : { color: row.color }), children: [row.text] })] })),
             ...(commit === null
               ? []
@@ -311,7 +311,7 @@ function gitRows(git: KruxGit): { key: string; text: string; color?: string }[] 
     git.untracked > 0 ? { key: 'untracked', text: `+ nowe: ${git.untracked}` } : null,
   ].filter(row => row !== null)
   if (rows.length > 0) return rows
-  return [{ key: 'clean', text: git.upstream === null ? '✓ czysto' : '✓ czysto, równo z upstreamem', color: OK_COLOR }]
+  return [{ key: 'clean', text: git.upstream === null || git.upstreamGone ? '✓ czysto' : '✓ czysto, równo z upstreamem', color: OK_COLOR }]
 }
 
 // Skrót tablicy na pas nad promptem, gdy panelu Sztolni nie widać: po linii na

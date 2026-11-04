@@ -5,39 +5,54 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import vm from 'node:vm'
+import zlib from 'node:zlib'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { builtinModules, createRequire, stripTypeScriptTypes } from 'node:module'
 import { EventEmitter } from 'node:events'
 import { Writable } from 'node:stream'
-import { GIT_LOG, GIT_STATUS, gitOf } from '../hooks/git.ts'
+import { GIT_LOCAL, GIT_LOG, GIT_STATUS, gitOf } from '../hooks/git.ts'
 import { ROSTER } from '../hooks/roster.ts'
-import { riskHint } from '../hooks/voice.ts'
+import { promptKind, riskHint } from '../hooks/voice.ts'
 
 const sourceOf = file => fs.readFileSync(file, 'utf8').replace(/^import .*\n/gmu, '').replace(/\nmain\(\)\.catch[\s\S]*$/u, '')
+// Kawałki PNG z kontrolą CRC-32 i piksele z IDAT (8 bitów, RGB, filtr 0 w każdym wierszu).
+function decodePng(bytes) {
+  assert.deepEqual([...bytes.subarray(0, 8)], [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a], 'PNG signature')
+  const chunks = []
+  for (let at = 8; at < bytes.length;) {
+    const length = bytes.readUInt32BE(at)
+    const body = bytes.subarray(at + 4, at + 8 + length)
+    assert.equal(bytes.readUInt32BE(at + 8 + length), zlib.crc32(body) >>> 0, `CRC of ${body.subarray(0, 4)}`)
+    chunks.push({ type: body.subarray(0, 4).toString('ascii'), data: body.subarray(4) })
+    at += 12 + length
+  }
+  assert.deepEqual(chunks.map(chunk => chunk.type), ['IHDR', 'IDAT', 'IEND'])
+  const header = chunks[0].data
+  const width = header.readUInt32BE(0)
+  const height = header.readUInt32BE(4)
+  assert.deepEqual([...header.subarray(8)], [8, 2, 0, 0, 0], '8-bit RGB, no interlace')
+  const raw = zlib.inflateSync(chunks[1].data)
+  assert.equal(raw.length, (width * 3 + 1) * height)
+  for (let y = 0; y < height; y += 1) assert.equal(raw[y * (width * 3 + 1)], 0, `row ${y} filter`)
+  const pixel = (x, y) => [...raw.subarray(y * (width * 3 + 1) + 1 + x * 3, y * (width * 3 + 1) + 4 + x * 3)]
+  return { width, height, pixel }
+}
+
 for (const script of ['act-sheet', 'voice-bench']) test(script === 'act-sheet'
-  ? 'act sheet uses private exclusive BMP files, cleans failures, explains unsupported platforms and reports frame violations'
+  ? 'act sheet writes a valid PNG without external tools on any platform and reports frame violations'
   : 'voice bench handles stdin EPIPE, cleans up, announces cost and keeps report paths relative', async () => {
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'krux-script-test-'))
   try {
     if (script === 'act-sheet') {
-      const temps = []
       const outputs = []
       const logs = []
-      let exclusive = false
-      let fail = false
       const context = vm.createContext({
         Buffer, console: { log: text => logs.push(text) }, process: { platform: 'linux', argv: [], exitCode: 0 },
-        mkdtempSync: prefix => { const dir = fs.mkdtempSync(prefix); temps.push(dir); return dir },
-        tmpdir: () => scratch, join: path.join, resolve: path.resolve,
-        writeFileSync: (file, bytes, options) => { exclusive = options?.flag === 'wx'; fs.writeFileSync(file, bytes, options) },
-        rmSync: fs.rmSync,
-        execFileSync: (command, argv) => {
-          assert.equal(command, 'sips')
-          assert.equal(fs.readFileSync(argv[3]).subarray(0, 2).toString(), 'BM')
-          if (fail) throw new Error('conversion failed')
-          outputs.push(argv[5])
-          fs.writeFileSync(argv[5], 'PNG fixture')
-        },
+        mkdtempSync: fs.mkdtempSync, tmpdir: () => scratch, join: path.join, resolve: path.resolve,
+        writeFileSync: (file, bytes, options) => { outputs.push(file); fs.writeFileSync(file, bytes, options) },
+        crc32: zlib.crc32, deflateSync: zlib.deflateSync,
+        // Linux bez `sips`: arkusz nie woła żadnego programu.
+        execFileSync: () => assert.fail('act sheet must not run an external tool'),
       })
       for (const file of ['roster', 'stage', 'palette', 'apron']) {
         vm.runInContext(stripTypeScriptTypes(sourceOf(`hooks/${file}.ts`).replaceAll('export ', '')), context)
@@ -45,22 +60,23 @@ for (const script of ['act-sheet', 'voice-bench']) test(script === 'act-sheet'
       vm.runInContext(stripTypeScriptTypes(sourceOf('scripts/act-sheet.ts')), context)
       const stand = vm.runInContext('STAND', context)
       const act = { name: 'a', intro: [], length: 1, loop: () => stand }
-      context.sheet(context.actStrips([act]), path.join(scratch, 'sheet.png'))
-      assert.equal(exclusive, true, 'BMP must use exclusive creation')
-      assert.equal(temps.length, 1, 'BMP must have a private temporary directory')
-      assert.equal(fs.existsSync(temps[0]), false, 'success must remove the BMP directory')
-      fail = true
-      assert.throws(() => context.sheet(context.actStrips([act]), path.join(scratch, 'sheet.png')), /conversion failed/u)
-      assert.notEqual(temps[0], temps[1], 'runs must not share a BMP path')
-      assert.equal(fs.existsSync(temps[1]), false, 'failure must remove the BMP directory')
-      await assert.rejects(context.main(), /macOS.*sips|sips.*macOS/u)
-      fail = false
-      context.process.platform = 'darwin'
+      const strips = context.actStrips([act])
+      context.sheet(strips, path.join(scratch, 'sheet.png'))
+      const [W, H, GAP, SCALE, PER_ROW, PALETTE] = vm.runInContext('[W, H, GAP, SCALE, PER_ROW, PALETTE]', context)
+      const image = decodePng(fs.readFileSync(path.join(scratch, 'sheet.png')))
+      assert.equal(image.width, PER_ROW * (W + GAP) * SCALE)
+      assert.equal(image.height, strips.length * (H + GAP) * SCALE)
+      // Pierwsza klatka arkusza piksel w piksel: kolor z palety, puste pole szare, wiersze od góry.
+      strips[0][0].forEach((row, y) => [...row].forEach((cell, x) => {
+        const hex = PALETTE[cell] ?? '#262626'
+        const rgb = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16))
+        assert.deepEqual(image.pixel(x * SCALE + SCALE - 1, y * SCALE + SCALE - 1), rgb, `cell ${x},${y} '${cell}'`)
+      }))
       context.actsOf = async () => ['a', 'b', 'c'].map(name => ({ ...act, name }))
       await context.main()
       await context.main()
       assert.notEqual(outputs[1], outputs[2], 'default PNG outputs must not share a path')
-      assert.equal(fs.existsSync(outputs[1]), true, 'the requested PNG must survive cleanup')
+      assert.equal(decodePng(fs.readFileSync(outputs[1])).width, image.width, 'the default output is a PNG sheet')
       assert.equal(context.process.exitCode, 0, 'valid frames must succeed')
       assert.equal(logs.at(-1), 'Zasady klatek: wszystkie trzymać.')
       context.actsOf = async () => ['a', 'b', 'c'].map(name => ({
@@ -250,7 +266,7 @@ test('git refresh runs status, log and diff check concurrently and coalesces ove
   const gitSource = fs.readFileSync('hooks/git.ts', 'utf8').replace(/^import .*\n/gmu, '').replaceAll('export ', '')
   const gitContext = vm.createContext({})
   vm.runInContext(stripTypeScriptTypes(gitSource), gitContext)
-  const commands = vm.runInContext('({ GIT_STATUS, GIT_LOG, GIT_CHECK, GIT_CHECK_CACHED, GIT_UNPUSHED, gitOf })', gitContext)
+  const commands = vm.runInContext('({ GIT_STATUS, GIT_LOG, GIT_CHECK, GIT_CHECK_CACHED, GIT_UNPUSHED, GIT_LOCAL, gitOf })', gitContext)
   let state = null
   let failStatus = false
   let blocked = false
@@ -267,7 +283,8 @@ test('git refresh runs status, log and diff check concurrently and coalesces ove
     calls.push(command)
     if (command === 'status' && failStatus) throw new Error('git unavailable')
     if (blocked && command === 'log') await gate
-    return { exitCode: 0, stdout: command === 'status' ? '# branch.head main' : command === 'log' ? 'oid\tabc\tlocal' : '' }
+    // Gałąź bez upstreamu: `GIT_LOCAL` po statusie mówi, że commit nie leży na żadnym zdalnym.
+    return { exitCode: 0, stdout: command === 'status' ? '# branch.head main' : command === 'log' ? 'oid\tabc\tlocal' : command === 'rev-list' ? 'oid\n' : '' }
   } } }
   context.api = api
   const refresh = () => vm.runInContext('refreshGit(api)', context)
@@ -282,7 +299,7 @@ test('git refresh runs status, log and diff check concurrently and coalesces ove
   blocked = false
   release()
   await Promise.all([first, second, third])
-  assert.deepEqual(calls, ['status', 'log', 'diff', 'diff-cached', 'status', 'log', 'diff', 'diff-cached'])
+  assert.deepEqual(calls, ['status', 'log', 'diff', 'diff-cached', 'rev-list', 'status', 'log', 'diff', 'diff-cached', 'rev-list'])
   assert.equal(state.commits[0].pushed, false)
   assert.equal(state.whitespace, true)
   // Odrzucony status nie zwalnia blokady przed końcem równoległego logu.
@@ -299,38 +316,66 @@ test('git refresh runs status, log and diff check concurrently and coalesces ove
   failStatus = false
   release()
   await failing
-  assert.deepEqual(calls, ['status', 'log', 'diff', 'diff-cached', 'status', 'log', 'diff', 'diff-cached'])
+  // Bez statusu nie ma czego porównać z `rev-list`; zaległy odczyt już go ma.
+  assert.deepEqual(calls, ['status', 'log', 'diff', 'diff-cached', 'status', 'log', 'diff', 'diff-cached', 'rev-list'])
   calls.length = 0
   await refresh()
-  assert.deepEqual(calls, ['status', 'log', 'diff', 'diff-cached'])
+  assert.deepEqual(calls, ['status', 'log', 'diff', 'diff-cached', 'rev-list'])
 })
 
 test('git refresh reads upstream reachability with full hashes and safe global options', async () => {
   const gitContext = vm.createContext({})
   vm.runInContext(stripTypeScriptTypes(fs.readFileSync('hooks/git.ts', 'utf8').replace(/^import .*\n/gmu, '').replaceAll('export ', '')), gitContext)
-  const commands = vm.runInContext('({ GIT_STATUS, GIT_LOG, GIT_CHECK, GIT_CHECK_CACHED, GIT_UNPUSHED, gitOf })', gitContext)
+  const commands = vm.runInContext('({ GIT_STATUS, GIT_LOG, GIT_CHECK, GIT_CHECK_CACHED, GIT_UNPUSHED, GIT_LOCAL, gitOf })', gitContext)
   let state = null
   let reachability = 'ok'
+  let local = 'ok'
+  let status = '# branch.head main\n# branch.upstream origin/main\n# branch.ab +2 -0'
   const calls = []
   const context = registerContext({ ...commands, read: async () => state, update: async (_api, _atom, change) => { state = change(state) } })
+  const UPSTREAM = ['git', '--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'core.quotePath=false', 'rev-list', '@{upstream}..HEAD']
+  const REMOTES = ['git', '--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'core.quotePath=false', 'rev-list', '-n', '10', 'HEAD', '--not', '--remotes', '--']
   context.api = { process: { run: async (argv, options) => {
-    calls.push(Array.from(argv))
+    const command = Array.from(argv)
     assert.equal(options.timeoutMs, 5000)
     if (argv.includes('--check')) return { exitCode: 0, stdout: '' }
-    if (argv[6] === 'status') return { exitCode: 0, stdout: '# branch.head main\n# branch.upstream origin/main\n# branch.ab +2 -0' }
+    if (argv[6] === 'status') return { exitCode: 0, stdout: status }
     if (argv[6] === 'log') return { exitCode: 0, stdout: 'mergeoid\tmerge\tmerge\nremoteoid\tremote\tupstream\nlocaloid\tlocal\tlocal\nbaseoid\tbase\tbase' }
-    assert.deepEqual(Array.from(argv), ['git', '--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'core.quotePath=false', 'rev-list', '@{upstream}..HEAD'])
-    return { exitCode: reachability === 'failed' ? 128 : 0, stdout: reachability === 'truncated' ? 'mergeoid\n' : 'mergeoid\nlocaloid\n', isStdoutTruncated: reachability === 'truncated' }
+    calls.push(command.includes('@{upstream}..HEAD') ? 'upstream' : 'remotes')
+    if (command.includes('@{upstream}..HEAD')) {
+      assert.deepEqual(command, UPSTREAM)
+      return { exitCode: reachability === 'failed' ? 128 : 0, stdout: reachability === 'truncated' ? 'mergeoid\n' : 'mergeoid\nlocaloid\n', isStdoutTruncated: reachability === 'truncated' }
+    }
+    // Commity spoza wszystkich zdalnych: tu tylko merge, reszta leży na jakimś zdalnym.
+    assert.deepEqual(command, REMOTES)
+    return { exitCode: local === 'failed' ? 128 : 0, stdout: local === 'truncated' ? '' : 'mergeoid\n', isStdoutTruncated: local === 'truncated' }
   } } }
-  await vm.runInContext('refreshGit(api)', context)
-  assert.deepEqual(Array.from(state.commits, commit => commit.pushed), [false, true, false, true])
-  assert.equal(calls.length, 5)
+  const pushed = async () => {
+    calls.length = 0
+    await vm.runInContext('refreshGit(api)', context)
+    return Array.from(state.commits, commit => commit.pushed)
+  }
+  assert.deepEqual(await pushed(), [false, true, false, true])
+  assert.deepEqual(calls, ['upstream'])
+  // Upstream bez odczytu (kod różny od 0 albo ucięta lista): pytamy wszystkie zdalne.
   reachability = 'failed'
-  await vm.runInContext('refreshGit(api)', context)
-  assert.deepEqual(Array.from(state.commits, commit => commit.pushed), [false, false, false, false])
+  assert.deepEqual(await pushed(), [false, true, true, true])
+  assert.deepEqual(calls, ['upstream', 'remotes'])
   reachability = 'truncated'
-  await vm.runInContext('refreshGit(api)', context)
-  assert.deepEqual(Array.from(state.commits, commit => commit.pushed), [false, false, false, false])
+  assert.deepEqual(await pushed(), [false, true, true, true])
+  assert.deepEqual(calls, ['upstream', 'remotes'])
+  // Bez żadnego odczytu nic nie jest wypchnięte.
+  for (const broken of ['failed', 'truncated']) {
+    local = broken
+    assert.deepEqual(await pushed(), [false, false, false, false])
+  }
+  local = 'ok'
+  // Bez upstreamu i przy upstreamie bez `branch.ab` (`[gone]`) `@{upstream}` nie ma sensu.
+  for (const branch of ['# branch.head main', '# branch.head feature\n# branch.upstream origin/feature']) {
+    status = branch
+    assert.deepEqual(await pushed(), [false, true, true, true])
+    assert.deepEqual(calls, ['remotes'])
+  }
 })
 
 
@@ -351,7 +396,8 @@ test('a failed close observer does not repeat the downstream close', async () =>
   const hook = hooks.find(one => one.event === 'ui.close')
   let executions = 0
   const next = async () => { executions += 1; return {} }
-  const api = { store: { get: async () => { throw new Error('store unavailable') } } }
+  // Przełącznik czyta tryby ze stanu sesji, więc magazyn pada też przy zapisie.
+  const api = { store: { get: async () => { throw new Error('store unavailable') }, set: async () => { throw new Error('store unavailable') } } }
   // Silnik pomija hook bez .catch albo zostawia wynik next; mod nie może wołać next drugi raz.
   await assert.rejects(hook.run(api, { id: 'sztolnia', origin: { kind: 'person' } }, next), /unavailable/u)
   assert.ok(executions <= 1)
@@ -363,7 +409,7 @@ test('a refresh at completion reads again instead of joining a finished snapshot
   for (let depth = 0; depth < 8; depth += 1) {
     const gitContext = vm.createContext({})
     vm.runInContext(stripTypeScriptTypes(fs.readFileSync('hooks/git.ts', 'utf8').replace(/^import .*\n/gmu, '').replaceAll('export ', '')), gitContext)
-    const commands = vm.runInContext('({ GIT_STATUS, GIT_LOG, GIT_CHECK, GIT_CHECK_CACHED, GIT_UNPUSHED, gitOf })', gitContext)
+    const commands = vm.runInContext('({ GIT_STATUS, GIT_LOG, GIT_CHECK, GIT_CHECK_CACHED, GIT_UNPUSHED, GIT_LOCAL, gitOf })', gitContext)
     let state = commands.gitOf('# branch.head main', 'oid\tabc\tlocal')
     let schedule = true
     let later
@@ -390,7 +436,7 @@ test('a refresh at completion reads again instead of joining a finished snapshot
     await first
     await lateCall
     await later
-    assert.deepEqual(calls, ['status', 'log', 'diff', 'diff-cached', 'status', 'log', 'diff', 'diff-cached'], `microtask depth ${depth}`)
+    assert.deepEqual(calls, ['status', 'log', 'diff', 'diff-cached', 'rev-list', 'status', 'log', 'diff', 'diff-cached', 'rev-list'], `microtask depth ${depth}`)
   }
 })
 
@@ -419,39 +465,121 @@ test('mod git reads do not run a core.fsmonitor command from the repository conf
   }
 })
 
-test('a real repository without upstream keeps its complete local commit history', t => {
-  const repository = fs.mkdtempSync(path.join(os.tmpdir(), 'krux-git-contract-'))
-  t.after(() => fs.rmSync(repository, { recursive: true, force: true }))
-  const gitEnv = {
-    ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_'))),
-    GIT_CONFIG_NOSYSTEM: '1',
-    GIT_CONFIG_GLOBAL: os.devNull,
-    GIT_AUTHOR_NAME: 'Krux test',
-    GIT_AUTHOR_EMAIL: 'krux-test@example.invalid',
-    GIT_COMMITTER_NAME: 'Krux test',
-    GIT_COMMITTER_EMAIL: 'krux-test@example.invalid',
-  }
-  const git = args => {
-    const result = spawnSync('git', args, { cwd: repository, env: gitEnv, encoding: 'utf8', timeout: 10_000 })
+// Git w izolowanym środowisku: bez konfiguracji systemu i Morry, z tożsamością testu.
+const GIT_ENV = {
+  ...Object.fromEntries(Object.entries(process.env).filter(([key]) => !key.startsWith('GIT_'))),
+  GIT_CONFIG_NOSYSTEM: '1',
+  GIT_CONFIG_GLOBAL: os.devNull,
+  GIT_AUTHOR_NAME: 'Krux test',
+  GIT_AUTHOR_EMAIL: 'krux-test@example.invalid',
+  GIT_COMMITTER_NAME: 'Krux test',
+  GIT_COMMITTER_EMAIL: 'krux-test@example.invalid',
+}
+
+function gitIn(repository) {
+  return args => {
+    const result = spawnSync('git', args, { cwd: repository, env: GIT_ENV, encoding: 'utf8', timeout: 10_000 })
     assert.ifError(result.error)
     assert.equal(result.status, 0, result.stderr)
     return result.stdout
   }
+}
+
+// `refreshGit` z `register.ts` na prawdziwym repo: komendy moda idą do gita w `repository`,
+// a decyzję, który odczyt wypchnięcia wziąć, podejmuje kod moda. Wynik: zapisany `KruxGit`.
+async function refreshedIn(repository) {
+  const gitContext = vm.createContext({})
+  vm.runInContext(stripTypeScriptTypes(fs.readFileSync('hooks/git.ts', 'utf8').replace(/^import .*\n/gmu, '').replaceAll('export ', '')), gitContext)
+  const commands = vm.runInContext('({ GIT_STATUS, GIT_LOG, GIT_CHECK, GIT_CHECK_CACHED, GIT_UNPUSHED, GIT_LOCAL, gitOf })', gitContext)
+  let state = null
+  const context = registerContext({ ...commands, read: async () => state, update: async (_api, _atom, change) => { state = change(state) } })
+  context.api = { process: { run: async ([command, ...args], options) => {
+    const result = spawnSync(command, args, { cwd: repository, env: GIT_ENV, encoding: 'utf8', timeout: options.timeoutMs })
+    return { exitCode: result.status, stdout: result.stdout, stderr: result.stderr, isStdoutTruncated: false, isStderrTruncated: false }
+  } } }
+  await vm.runInContext('refreshGit(api)', context)
+  return state
+}
+
+// Podpisy commitów z flagą wypchnięcia, od najnowszego.
+const pushedOf = git => Array.from(git.commits, commit => [commit.subject, commit.pushed])
+
+test('a real repository without upstream keeps its complete local commit history', t => {
+  const repository = fs.mkdtempSync(path.join(os.tmpdir(), 'krux-git-contract-'))
+  t.after(() => fs.rmSync(repository, { recursive: true, force: true }))
+  const git = gitIn(repository)
   git(['init', '--initial-branch=main'])
   const expected = []
   for (const subject of ['base', 'first local change', 'second local change']) {
     fs.writeFileSync(path.join(repository, 'history.txt'), `${subject}\n`)
     git(['add', '--', 'history.txt'])
     git(['-c', 'commit.gpgSign=false', 'commit', '-m', subject])
-    expected.unshift({ hash: git(['rev-parse', '--short', 'HEAD']).trim(), subject, pushed: false })
+    expected.unshift({ hash: git(['rev-parse', '--short', 'HEAD']).trim(), subject, pushed: false, at: Number(git(['show', '-s', '--format=%ct', 'HEAD']).trim()) * 1000 })
   }
 
   // Exercise the shipped Git commands and the native parser with real output.
   // Expected commits come from the commits we created, not from the parser.
-  const actual = gitOf(git(GIT_STATUS.slice(1)), git(GIT_LOG.slice(1)))
+  // Bez żadnego zdalnego `GIT_LOCAL` daje całą historię: nic nie jest wypchnięte.
+  const actual = gitOf(git(GIT_STATUS.slice(1)), git(GIT_LOG.slice(1)), git(GIT_LOCAL.slice(1)))
   assert.equal(actual.branch, 'main')
   assert.equal(actual.upstream, null)
   assert.deepEqual(actual.commits, expected)
+})
+
+// Repo z bare origin i klonem roboczym; `commit` pisze jeden plik i commituje.
+function originAndWork(scratch) {
+  const origin = path.join(scratch, 'origin.git')
+  const work = path.join(scratch, 'work')
+  gitIn(scratch)(['init', '--bare', '--initial-branch=main', origin])
+  gitIn(scratch)(['init', '--initial-branch=main', work])
+  const git = gitIn(work)
+  const commit = subject => {
+    fs.writeFileSync(path.join(work, 'history.txt'), `${subject}\n`)
+    git(['add', '--', 'history.txt'])
+    git(['-c', 'commit.gpgSign=false', 'commit', '-m', subject])
+  }
+  return { origin, work, git, commit }
+}
+
+test('a real branch before its first push keeps commits from origin/main pushed and only its own unpushed', async t => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'krux-git-new-branch-'))
+  t.after(() => fs.rmSync(scratch, { recursive: true, force: true }))
+  const { origin, work, git, commit } = originAndWork(scratch)
+  commit('base')
+  git(['remote', 'add', 'origin', origin])
+  git(['push', '-u', 'origin', 'main'])
+  git(['checkout', '-b', 'nowa'])
+  commit('own change')
+  // Plik o nazwie HEAD robi z gołego `rev-list HEAD` dwuznaczny argument; `--` to rozstrzyga.
+  fs.writeFileSync(path.join(work, 'HEAD'), 'not a ref\n')
+  const fresh = await refreshedIn(work)
+  assert.deepEqual([fresh.branch, fresh.upstream], ['nowa', null])
+  assert.deepEqual(pushedOf(fresh), [['own change', false], ['base', true]])
+})
+
+test('a real branch whose upstream was deleted after a merge reads as gone, not as even', async t => {
+  const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'krux-git-gone-'))
+  t.after(() => fs.rmSync(scratch, { recursive: true, force: true }))
+  const { origin, work, git, commit } = originAndWork(scratch)
+  commit('base')
+  git(['remote', 'add', 'origin', origin])
+  git(['push', '-u', 'origin', 'main'])
+  git(['checkout', '-b', 'feature'])
+  commit('feature change')
+  git(['push', '-u', 'origin', 'feature'])
+  const even = gitOf(git(GIT_STATUS.slice(1)))
+  assert.equal(even.upstream, 'origin/feature')
+  assert.equal(even.upstreamGone, undefined)
+  // PR scalony, gałąź na zdalnym usunięta, `fetch --prune` zdejmuje jej ref.
+  gitIn(origin)(['branch', '-D', 'feature'])
+  git(['fetch', '--prune'])
+  const gone = gitOf(git(GIT_STATUS.slice(1)))
+  assert.deepEqual([gone.upstream, gone.upstreamGone, gone.ahead, gone.behind], ['origin/feature', true, 0, 0])
+  // `@{upstream}..HEAD` pada kodem 128, więc o wypchnięciu mówią wszystkie zdalne:
+  // commit gałęzi nie leży już na żadnym, a base leży na origin/main.
+  const refreshed = await refreshedIn(work)
+  assert.equal(refreshed.upstreamGone, true)
+  assert.deepEqual(pushedOf(refreshed), [['feature change', false], ['base', true]])
 })
 
 // Run the shipped CLI against a local executable at the external Claude boundary.
@@ -599,9 +727,13 @@ unrelated = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(30)
 process = None
 owned = None
 before = None
+# Zombie to proces zakończony. dash przy 'sh -c' nie robi exec, więc dziecko jest wnukiem
+# tui-shot: po SIGKILL trafia pod PID 1, a ten w kontenerze często zombie nie zbiera.
 def alive(pid):
-    try: os.kill(pid, 0); return True
+    try: os.kill(pid, 0)
     except ProcessLookupError: return False
+    try: return Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()[0] != 'Z'
+    except FileNotFoundError: return not Path('/proc/self').exists()
 try:
     command = ' '.join(shlex.quote(str(value)) for value in [sys.executable, child, pidfile, heartbeat])
     process = subprocess.Popen([sys.executable, script, '--cmd', command, *config['steps']], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -649,7 +781,7 @@ for (const [name, steps, exit, interrupt] of [
     assert.equal(result.ownedStarted, true, result.stderr)
     if (exit === null) assert.notEqual(result.exit, 0)
     else assert.equal(result.exit, exit, result.stderr)
-    assert.equal(result.childAlive, false, 'the owned child must be terminated and reaped')
+    assert.equal(result.childAlive, false, 'the owned child must be terminated')
     assert.equal(result.descendantWorking, false, 'the owned descendant must stop with the group')
     assert.equal(result.unrelatedAlive, true, 'cleanup must leave an unrelated process alone')
   })
@@ -720,18 +852,25 @@ test('the bench knows every mate of the roster by name and declension', () => {
 
 // Odtworzenie w benchu powtarza regułę moda: QUIET_TURNS z hooks/lore.ts, dwa miejsca
 // z „w środku” w turach nieparzystych, ziarno z numeru tury i brak notki przy prośbie
-// o ruch nieodwracalny, której żaden prompt benchu nie robi. Gdy reguła się zmieni, ten
-// test pada, zanim liczby w notatkach zaczną kłamać.
+// o ruch nieodwracalny, której żaden prompt benchu nie robi. Prośba o plan dostaje
+// środek zawsze; w benchu stoi tylko w turze nieparzystej, gdzie rotacja daje to samo.
+// Gdy reguła się zmieni, ten test pada, zanim liczby w notatkach zaczną kłamać.
 test('the bench replays the horde notes by the rule the mod uses', () => {
   const lore = fs.readFileSync('hooks/lore.ts', 'utf8')
   const quietTurns = source => source.match(/^const QUIET_TURNS = (\d+)$/mu)?.[1]
   assert.ok(quietTurns(lore))
   assert.equal(quietTurns(fs.readFileSync('scripts/voice-bench.mjs', 'utf8')), quietTurns(lore))
-  assert.match(lore, /miejsce: \$\{pick\(PLACES, seed \+ 1\)\}/u)
+  assert.match(lore, /const place = aside\.middle \? PLACES\[0\] : pick\(PLACES, seed \+ 1\)\n/u)
+  assert.match(lore, /miejsce: \$\{place\}/u)
   assert.match(lore, /^const PLACES = \['w środku[^'\n]*', 'na końcu'\] as const$/mu)
-  assert.match(fs.readFileSync('hooks/register.ts', 'utf8'), /const life = risk === null \? lifeNote\(chronicle, turn, aside\) : null/u)
+  const register = fs.readFileSync('hooks/register.ts', 'utf8')
+  assert.match(register, /const life = risk === null \? hordeNote\(chronicle, turn, aside\) : null/u)
+  assert.match(register, /const plan = promptKind\(e\.text\) === 'plan'\n[\s\S]*middle: plan \}/u)
   for (const { prompts } of Object.values(vm.runInContext('SCENARIOS', benchContext()))) {
-    for (const prompt of prompts) assert.equal(riskHint(prompt), null, prompt)
+    prompts.forEach((prompt, turn) => {
+      assert.equal(riskHint(prompt), null, prompt)
+      if (promptKind(prompt) === 'plan') assert.equal(turn % 2, 1, prompt)
+    })
   }
 })
 
@@ -797,4 +936,23 @@ test('voice markdown closes every quote with the plain ASCII character like VOIC
     const bad = lines.findIndex(line => /[”“«»]/u.test(line))
     assert.equal(bad, -1, `voice/${file}:${bad + 1}: cudzysłów spoza ASCII`)
   }
+})
+
+// Typy silnika w `.claude-plugin/types/` powstają dopiero po `claude --plugin-dir .`. Bez nich
+// `extends` się nie czyta, a tsc z domyślnymi opcjami pisał .js obok każdego .ts w katalogu pluginu.
+test('tsconfig never emits JavaScript, even before the engine writes its types', () => {
+  const config = JSON.parse(fs.readFileSync('tsconfig.json', 'utf8'))
+  assert.equal(config.extends, './.claude-plugin/types/tsconfig.json')
+  assert.equal(config.compilerOptions?.noEmit, true)
+})
+
+// O Morrze i o kumplach bez rodzaju: model kopiuje powierzchnię przykładów, więc
+// „Grom wygonić go” w przykładzie persony ciągnął zaimki z rodzajem także do Ochry.
+test('persona examples name Morra and the mates without a gendered pronoun', () => {
+  const lines = fs.readFileSync('voice/persona.md', 'utf8').split('\n')
+  const names = new RegExp(`(?<!\\p{L})(?:Morr\\p{L}*|${Object.values(ROSTER).map(mate => mate.pattern.source.replace(/^\(\?<!\\p\{L\}\)|\(\?!\\p\{L\}\)$/gu, '')).join('|')})(?!\\p{L})`, 'u')
+  const pronoun = /(?<!\p{L})(?:go|mu|jego|jej|ją|niego|niej|nim|nią|on|ona)(?!\p{L})/u
+  lines.forEach((line, at) => {
+    if (line.startsWith('Krux:') && names.test(line)) assert.doesNotMatch(line, pronoun, `voice/persona.md:${at + 1}`)
+  })
 })

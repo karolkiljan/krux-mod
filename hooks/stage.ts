@@ -24,6 +24,8 @@ export type Act = {
   length: number
   loop: (t: number, frame: number) => Frame
   who?: readonly ('Krux' | KruxMate)[]
+  // Czynność przy ogniu: bez paleniska na podłodze wypada z trasy.
+  fire?: true
 }
 
 // Stójka: od niej zaczyna się i na niej kończy każda czynność, także marsz na scenę.
@@ -81,6 +83,20 @@ export const SQUAT: Frame = croucher('mid', 'g')
 
 // Bez pokoju nie ma skąd przynieść: rekwizyt wysuwa się spod orka na swoje miejsce.
 const PULL = [-14, -11, -8, -6, -4, -2, -1] as const
+
+// Rekwizyt sięgający dalej niż `PULL` chowa: zaczyna o krok wcześniej, z prawą krawędzią za orkiem,
+// więc nic z niego nie stoi obok orka od pierwszej klatki.
+const pulls = new WeakMap<Frame, readonly number[]>()
+
+function pullOf(kit: Frame): readonly number[] {
+  const known = pulls.get(kit)
+  if (known !== undefined) return known
+  const reach = Math.max(0, ...kit.map(row => row.replace(/\.+$/u, '').length))
+  const hidden = STAND[0]!.length - reach
+  const pull = hidden < PULL[0] ? [hidden, ...PULL] : PULL
+  pulls.set(kit, pull)
+  return pull
+}
 
 // Marsz od stójki do x, piksel na klatkę, między rekwizytami; `held` niesie przy prawej dłoni.
 export function stroll(to: number, props: readonly Layer[], held: Frame = []): Frame[] {
@@ -157,8 +173,9 @@ export function bonfire(x: number, frame: number, size: number): Layer[] {
 
 export type Leg = { act: Act; frames: number }
 
-// Gest wiercenia: na chwilę zmienia pozę z początku pętli, nie puszcza rekwizytu.
-// `apply` dostaje tę pozę i krok gestu; klatka zostaje w zasadach czynności.
+// Gest wiercenia: na chwilę zmienia bieżącą pozę pętli, nie puszcza rekwizytu ani nie zatrzymuje
+// pętli, więc po geście nic nie przeskakuje. `apply` dostaje pozę i krok gestu; klatka zostaje
+// w zasadach czynności.
 export type Gesture = {
   name: string
   who?: readonly ('Krux' | KruxMate)[]
@@ -178,14 +195,14 @@ export function entryOf(act: Act): readonly Frame[] {
   const known = entries.get(act)
   if (known !== undefined) return known
   const { kit } = act
-  const entry = kit === undefined ? act.intro : [...[...PULL, 0].map(dx => draw([kit, dx, 0], [STAND, 0, 0])), ...act.intro]
+  const entry = kit === undefined ? act.intro : [...[...pullOf(kit), 0].map(dx => draw([kit, dx, 0], [STAND, 0, 0])), ...act.intro]
   entries.set(act, entry)
   return entry
 }
 
 // Krok, w którym ork stoi przy rekwizycie na ziemi; 0, gdy rekwizytu nie ma.
 export function kitLead(act: Act): number {
-  return act.kit === undefined ? 0 : PULL.length + 1
+  return act.kit === undefined ? 0 : pullOf(act.kit).length + 1
 }
 
 function loopsOf(leg: Leg): number {
@@ -229,11 +246,35 @@ function gestureAt(route: Route, spot: Spot): { gesture: Gesture; t: number } | 
   const round = Math.floor(i / span)
   if (round % route.every !== route.every - 1) return null
   const t = i - round * span
-  const gesture = route.gestures[Math.floor(noise(route.seed, spot.leg, round) * route.gestures.length)]!
-  if (t >= gesture.length) return null
+  // Gest, który nie mieści się na pozach tej czynności, ustępuje następnemu z listy.
+  const { gestures } = route
+  const start = Math.floor(noise(route.seed, spot.leg, round) * gestures.length)
+  const gesture = gestures.map((_, k) => gestures[(start + k) % gestures.length]!).find(candidate => fits(act, candidate))
+  if (gesture === undefined || t >= gesture.length) return null
   const loops = loopsOf(route.legs[spot.leg]!) * act.length
   if (i - t + gesture.length > loops) return null
   return { gesture, t }
+}
+
+const fitting = new WeakMap<Act, Map<Gesture, boolean>>()
+
+// Gest gra na bieżącej pozie, więc musi zmieścić się na każdej pozie obiegu tak samo jak na
+// pierwszej: inaczej lont albo dłoń przy brodzie migałyby co klatkę. Taki obieg idzie bez gestu.
+function fits(act: Act, gesture: Gesture): boolean {
+  const known = fitting.get(act)?.get(gesture)
+  if (known !== undefined) return known
+  const changes = (pose: Frame, t: number) => gesture.apply(pose, t).join() !== pose.join()
+  const first = act.loop(0, 0)
+  let any = false
+  let same = true
+  for (let t = 0; t < gesture.length && same; t += 1) {
+    const live = changes(act.loop(t % act.length, t), t)
+    any ||= live
+    same = live === changes(first, t)
+  }
+  const result = same && any
+  fitting.set(act, (fitting.get(act) ?? new Map<Gesture, boolean>()).set(gesture, result))
+  return result
 }
 
 // Obieg wiercenia liczy się w pełnych pętlach czynności, około 3 s.
@@ -244,9 +285,9 @@ function frameOf(route: Route, spot: Spot, frame: number): Frame {
   if (phase === 'stand') return STAND
   if (phase === 'intro') return entryOf(act)[i]!
   if (phase === 'loop') {
+    const pose = act.loop(i % act.length, frame)
     const fidget = gestureAt(route, spot)
-    if (fidget !== null) return fidget.gesture.apply(act.loop((i - fidget.t) % act.length, frame - fidget.t), fidget.t)
-    return act.loop(i % act.length, frame)
+    return fidget === null ? pose : fidget.gesture.apply(pose, fidget.t)
   }
   const entry = entryOf(act)
   return entry[entry.length - 1 - i]!
@@ -291,16 +332,28 @@ export function restFrame(route: Route): Frame {
 
 // Droga do stójki po przerwanej scenie: reszta wejścia albo całe zejście, na końcu stójka.
 // `kept`: rekwizyt zostaje na ziemi, droga kończy się przy nim, bo ork zaraz go odniesie.
-export function settleFrames(route: Route, step: number, kept = false): Frame[] {
+// Pierwsza klatka drogi to poza sprzed przerwy. Przerwana pętla najpierw domyka obieg krótszą
+// drogą do swojej pierwszej pozy, wstecz albo naprzód: poza w środku pętli bywa daleko od wejścia
+// (patrol, taczka), a ork się nie teleportuje. `frame`: klatka zegara, w której droga rusza.
+// `fast`: nowa scena już czeka, więc wejście wstecz idzie co drugą klatką (stójka na końcu zostaje,
+// rekwizyt odjeżdża dwa razy szybciej, ale dalej odjeżdża); pętla domyka się dalej co jedną pozę,
+// tylko bez pozy sprzed przerwy, która już stoi na ekranie.
+export function settleFrames(route: Route, step: number, kept = false, frame = step, fast = false): Frame[] {
   const { act, phase, i } = spotOf(route, step)
   const entry = entryOf(act)
   const lead = kept ? kitLead(act) : 0
   const last = entry[lead - 1] ?? STAND
   const back = (from: number) => [...entry.slice(lead, Math.max(lead, from))].reverse()
+  const hurry = (frames: Frame[]) => (fast ? frames.filter((_, j) => j % 2 === 1 || j === frames.length - 1) : frames)
   if (phase === 'stand') return []
-  if (phase === 'intro') return [...back(i), last]
-  if (phase === 'loop') return [...back(entry.length), last]
-  return [...back(entry.length - 1 - i), last]
+  if (phase === 'intro') return hurry([...back(i), last])
+  if (phase === 'loop') {
+    const shown = i === 0 ? null : (i - 1) % act.length
+    const poses = shown === null ? [] : shown <= act.length - shown ? Array.from({ length: shown + 1 }, (_, j) => shown - j) : [...Array.from({ length: act.length - shown }, (_, j) => shown + j), 0]
+    const closing = poses.map((pose, j) => act.loop(pose, frame + j))
+    return [...(fast ? closing.slice(1) : closing), ...hurry([...back(entry.length), last])]
+  }
+  return hurry([...back(entry.length - 1 - i), last])
 }
 
 // Humor na oczach: brwi nad 'r' przy złości, złote oczy przy dumie, mrugnięcie w spokoju.
