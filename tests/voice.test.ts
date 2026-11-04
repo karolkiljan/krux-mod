@@ -187,6 +187,51 @@ test('shell commands are told apart by kind', async () => {
   expect(describeTool('Bash', { command: './run.sh' }).verb).toBe('Krux walić kilofem')
 })
 
+// Bez rozpoznania przebieg nie trafia na tablicę, a czerwony wraca do kroniki jako zawał.
+test('test runs behind wrappers, monorepo filters and other ecosystems are still test runs', () => {
+  for (const command of [
+    'timeout 300 npm test',
+    'timeout -s KILL 120 pytest -x',
+    'nice -n 10 npm test',
+    'xvfb-run -a npm test',
+    'npm t',
+    'pnpm -r test',
+    'pnpm --filter web test',
+    'npm -w pkg test',
+    'npm --workspace=pkg run test',
+    'yarn workspace web test',
+    './gradlew test',
+    'mvn -q clean verify',
+    './mvnw test',
+    'vendor/bin/phpunit',
+    './node_modules/.bin/jest',
+    'php artisan test',
+    'composer test',
+    'tox -e py311',
+    'cargo nextest run',
+    'npx cypress run',
+    'swift test',
+    'flutter test',
+    'bazel test //...',
+    'ctest',
+    'py.test',
+    'make -C pkg test',
+    'make tests',
+  ]) {
+    expect([command, workOf('Bash', { command })]).toEqual([command, 'test'])
+  }
+  for (const [command, kind] of [
+    ['./gradlew build -x test', 'dig'],
+    ['npm -w pkg run build', 'dig'],
+    ['npm install test-utils', 'install'],
+    ['npx cypress open', 'dig'],
+    ['make -j4', 'build'],
+    ['timeout 5 ./deploy.sh', 'dig'],
+  ] as const) {
+    expect([command, workOf('Bash', { command })]).toEqual([command, kind])
+  }
+})
+
 test('a seed picks a synonym, so the same work does not repeat word for word', async () => {
   const verbs = new Set([0, 1, 2].map(seed => describeTool('Read', { file_path: 'a.ts' }, seed).verb))
   expect(verbs.size).toBe(3)
@@ -276,6 +321,28 @@ test('the kind of request is read from the prompt alone', async () => {
   for (const hint of [...Object.values(FORMAT_HINT), LENGTH_HINT, RISK_HINT]) expect(hint.length <= 120).toBe(true)
 })
 
+// Przy wyjaśnieniu miernik nie sądzi długości (hooks/CLAUDE.md): grzeczna forma i wtręt
+// „ok,” na przedzie nie mogą zrobić z prośby o wyjaśnienie pogawędki ani roboty.
+test('a polite or prefixed request to explain is still explain, a bare interjection stays chat', () => {
+  for (const text of [
+    'Możesz wyjaśnić, jak działa cache?',
+    'możesz mi wytłumaczyć, czemu to działa',
+    'Czy mógłbyś opowiedzieć, jak działa replay?',
+    'ok, wyjaśnij jak działa cache',
+    'super, wytłumacz ten regex',
+  ]) {
+    expect([text, promptKind(text)]).toEqual([text, 'explain'])
+  }
+  for (const text of ['ok, dzięki', 'dzięki!', 'ok', 'hej, siema']) {
+    expect([text, promptKind(text)]).toEqual([text, 'chat'])
+  }
+  for (const text of ['ok, dodaj test dla parsera', 'okej, usuń tabelę users', 'Możesz dodać kolumnę email?', 'ok, możesz dodać kolumnę?']) {
+    expect([text, promptKind(text)]).toEqual([text, null])
+  }
+  expect(promptKind('ok, przejrzyj ten moduł')).toBe('review')
+  expect(formatHint('ok, wyjaśnij jak działa cache')).toBe(FORMAT_HINT.explain)
+})
+
 // Kotwica co turę pilnuje gramatyki; o ostrzeżeniu przypomina linia ryzyka,
 // tylko gdy prośba kasuje dane albo historię.
 test('a request to destroy data or history gets the risk line, ordinary work does not', async () => {
@@ -322,6 +389,142 @@ test('a request to destroy data or history gets the risk line, ordinary work doe
     expect([text, riskHint(text)]).toEqual([text, null])
   }
   expect(isDestructive('```sh\ngit push --force-with-lease\n```')).toBe(true)
+})
+
+// Grzeczna prośba idzie bezokolicznikiem albo 1. os. l. mn., często bez polskich znaków.
+test('a polite, plural or unaccented Polish request to destroy data gets the risk line too', () => {
+  for (const text of [
+    'możesz usunąć tabelę users?',
+    'trzeba usunąć bazę',
+    'chcę wyczyścić historię gita',
+    'musisz wywalić tabelę users',
+    'usuńmy bazę',
+    'skasujmy tabelę users',
+    'usuwamy tabelę users',
+    'usun baze',
+    'wyczysc historie',
+    'skasuj galaz feature/x',
+    'usuń ostatnie 3 commity',
+    'skasuj commit',
+    'możesz puścić migrację na produkcji?',
+  ]) {
+    expect([text, riskHint(text)]).toEqual([text, RISK_HINT])
+  }
+  for (const text of [
+    'usuwanie literówek',
+    'usun literowke',
+    'wyczyść kod',
+    'czyścimy kod w repo',
+    'możesz usunąć ten plik?',
+    'usunięcie martwego importu',
+    'trzeba zresetować licznik tur',
+    'dodaj usuwanie konta',
+  ]) {
+    expect([text, riskHint(text)]).toEqual([text, null])
+  }
+})
+
+// Rozdzielone, długie i sklejone flagi znaczą to samo co jeden zlepek krótkich.
+test('split, long and bundled flags are as irreversible as the bundled short ones', () => {
+  for (const text of [
+    'rm -r -f build',
+    'rm -f -r build',
+    'rm --recursive --force build',
+    'rm -r build',
+    'rm -R build',
+    'git rm -r -f src',
+    'git clean -d -f',
+    'git clean --force',
+    'git clean -d --force',
+    'git push -uf origin main',
+    'git push -fu origin main',
+    'git branch -d -f stara',
+    'git branch -df stara',
+    'git branch --delete --force stara',
+    'git branch --force --delete stara',
+    'git checkout -f main',
+    'git checkout --force main',
+    'git switch -f main',
+    'git switch --discard-changes main',
+  ]) {
+    expect([text, isDestructive(text)]).toEqual([text, true])
+  }
+  for (const text of [
+    'rm -i x',
+    'rm -f x',
+    'git rm -r --cached node_modules',
+    'docker run --rm -v data:/x alpine',
+    'docker rm -f web',
+    'git clean -n',
+    'git clean -nd',
+    'git push -u origin feature/x',
+    'git checkout -b feature/x',
+    'git switch -c feature/x',
+    'git branch -d scalona',
+    'git branch -f main HEAD~1',
+  ]) {
+    expect([text, isDestructive(text)]).toEqual([text, false])
+  }
+})
+
+test('deleting cloud resources and Mongo collections is irreversible, listing them is not', () => {
+  for (const text of [
+    'gcloud storage rm -r gs://kubel',
+    'gcloud storage buckets delete gs://kubel',
+    'gcloud sql instances delete prod-db',
+    'az group delete -n prod --yes',
+    'az storage blob delete-batch -s dane',
+    'aws s3api delete-bucket --bucket kubel',
+    'aws rds delete-db-instance --db-instance-identifier prod',
+    'aws ec2 terminate-instances --instance-ids i-1',
+    'tofu destroy',
+    'terragrunt run-all destroy',
+    'cdk destroy --force',
+    'eksctl delete cluster -n prod',
+    'db.users.drop()',
+    'db.users.deleteMany({})',
+    'mongosh --eval "db.users.remove({})"',
+  ]) {
+    expect([text, isDestructive(text), riskHint(text)]).toEqual([text, true, RISK_HINT])
+  }
+  for (const text of [
+    'gcloud storage ls gs://kubel',
+    'az group list',
+    'aws s3api list-buckets',
+    'aws ec2 describe-instances',
+    'tofu plan',
+    'terragrunt plan',
+    'cdk diff',
+    'eksctl get cluster',
+    'db.users.find({})',
+    'db.users.deleteOne({ _id: 1 })',
+  ]) {
+    expect([text, riskHint(text)]).toEqual([text, null])
+  }
+})
+
+// Alias, `ONLY` i nawiasy przed `SET` nie zawężają zdania; `WHERE` w literale ani w komentarzu też.
+test('an UPDATE with an alias or a quoted WHERE still overwrites the table', () => {
+  for (const text of [
+    'UPDATE users u SET active = false',
+    'UPDATE users AS u SET active = false',
+    'UPDATE ONLY users SET a = 1',
+    'UPDATE [dbo].[users] SET a = 1',
+    "UPDATE users SET note = 'where';",
+    'UPDATE users SET a = 1 -- WHERE id = 1',
+    'ALTER TABLE users DROP email',
+  ]) {
+    expect([text, isDestructive(text)]).toEqual([text, true])
+  }
+  for (const text of [
+    'UPDATE users u SET a = 1 WHERE u.id = 2',
+    "UPDATE users SET note = 'x' WHERE id = 2",
+    "UPDATE users SET name = 'O''Brien' WHERE id = 2",
+    'ALTER TABLE users DROP CONSTRAINT users_email_key',
+    'update package.json and set version = 2',
+  ]) {
+    expect([text, isDestructive(text)]).toEqual([text, false])
+  }
 })
 
 test('irreversible commands beyond git and SQL get the risk line, their safe neighbours do not', async () => {
@@ -552,10 +755,10 @@ test('arithmetic bit shifts are not heredocs and keep later test commands visibl
 })
 
 test('a release question is recognised, performance talk is not', () => {
-  for (const text of ['Wypuszczamy to dziś na produkcję?', 'Co sprawdzić przed wydaniem?', 'można deployować?', 'wdrażamy jutro', 'scalamy PR?']) {
+  for (const text of ['Wypuszczamy to dziś na produkcję?', 'Co sprawdzić przed wydaniem?', 'można deployować?', 'wdrażamy jutro', 'scalamy PR?', 'wdróż to na staging', 'zmerguj PR', 'zdeployuj', 'npm publish', 'opublikuj paczkę']) {
     expect([text, asksRelease(text)]).toEqual([text, true])
   }
-  for (const text of ['A co z wydajnością przy dużym ruchu?', 'napraw testy', 'Jak poszło?']) {
+  for (const text of ['A co z wydajnością przy dużym ruchu?', 'napraw testy', 'Jak poszło?', 'popraw opis produktu', 'zmień kolor przycisku']) {
     expect([text, asksRelease(text)]).toEqual([text, false])
   }
 })
