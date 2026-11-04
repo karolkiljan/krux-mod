@@ -70,7 +70,8 @@ type Actor = {
   // Gość z kwater niesie kufle: przynosi je na scenkę i z nimi wraca.
   mugs?: true
   handoff?: { at: number; flight: number }
-  cue?: { id: string; kind: KruxEvent; at: number }
+  // `held`: zdarzenie przyszło w drodze albo w głębi; reakcja rusza dopiero na stanowisku.
+  cue?: { id: string; kind: KruxEvent; at: number; held?: true }
   workAt?: number
   effortAt?: number
 }
@@ -236,6 +237,12 @@ function depart(actor: Actor, frame: number, still: boolean, handoff: boolean, s
     }
   }
   return { ...stopped, leftAt: at, ...(handoff ? tossFrom(stopped, at, kruxX, stage, actor.left !== undefined) : {}) }
+}
+
+// Zdarzenie wstrzymane w drodze rusza w klatce, w której ork staje na stanowisku: w marszu
+// i w głębi reakcji nie widać, więc bez tego przepadała, zanim ork doszedł.
+function released(actor: Actor, frame: number): Pick<Actor, 'cue'> {
+  return actor.cue?.held === true ? { cue: { id: actor.cue.id, kind: actor.cue.kind, at: frame } } : {}
 }
 
 // Wezwany z kwater albo z nory stoi w otworze na progu, potem schodzi w pokój piksel na klatkę.
@@ -443,7 +450,9 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
       // Bezruch włączony w drodze: zegar stoi, więc marsz i wyprawa nie skończą się same.
       if (home !== actor.home || actor.from !== home || actor.pending !== undefined || actor.errand !== undefined || actor.rise !== undefined || actor.left !== undefined) {
         const { pending, errand: _stopped, rise: _up, left: _gone, ...rest } = actor
-        actors[key] = { ...rest, home, from: home, enter: frame, ...(pending === undefined ? {} : { track: trackArrive(actor.track, nextEpisode(actor.track, pending, key, frame), frame), worked: pending }) }
+        // Wstrzymana reakcja przepada jak każda w bezruchu: nie zagra przy dojściu, gdy ruch wróci.
+        const quiet = actor.cue?.held === true ? { cue: { id: actor.cue.id, kind: actor.cue.kind, at: frame - CUE_FRAMES } } : {}
+        actors[key] = { ...rest, ...quiet, home, from: home, enter: frame, ...(pending === undefined ? {} : { track: trackArrive(actor.track, nextEpisode(actor.track, pending, key, frame), frame), worked: pending }) }
         changed = true
       }
     } else if (layout && home !== actor.home && (!pinned(actor) || onFloor(actor.home) !== actor.home)) {
@@ -590,7 +599,8 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
     const actor = actors[cue.key]
     const id = `${cue.kind}:${cue.until}`
     if (actor !== undefined && actor.cue?.id !== id) {
-      actors[cue.key] = { ...actor, cue: { id, kind: cue.kind, at: props.still ? frame - CUE_FRAMES : frame } }
+      const busy = !props.still && (actor.pending !== undefined || actor.errand !== undefined)
+      actors[cue.key] = { ...actor, cue: { id, kind: cue.kind, at: props.still ? frame - CUE_FRAMES : frame, ...(busy ? { held: true as const } : {}) } }
       changed = true
     }
   }
@@ -641,21 +651,20 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
       const { pending, left, ...rest } = actor
       if (left !== undefined && pending === actor.track.scene) {
         // Wrócił do swojego rekwizytu: dalej ta sama czynność.
-        actor = { ...rest, track: trackResume(actor.track, frame), arrived: frame }
+        actor = { ...rest, ...released(actor, frame), track: trackResume(actor.track, frame), arrived: frame }
       } else {
         const errand = fetching ? errandOf(actor, pending, key, frame, stage, hearth) : null
-        actor = errand !== null ? { ...actor, errand } : { ...rest, track: trackArrive(actor.track, nextEpisode(actor.track, pending, key, frame), frame), arrived: frame, worked: pending }
+        actor = errand !== null ? { ...actor, errand } : { ...rest, ...released(actor, frame), track: trackArrive(actor.track, nextEpisode(actor.track, pending, key, frame), frame), arrived: frame, worked: pending }
       }
       actors[key] = actor
       changed = true
     }
     if (actor.errand !== undefined && frame - actor.errand.at >= ERRAND_FRAMES) {
       const { errand, pending, left: _gone, ...rest } = actor
-      // Zdarzenie w głębi nie przepada: reakcja gra po powrocie.
-      const cue = actor.cue !== undefined && actor.cue.at >= errand.at ? { cue: { ...actor.cue, at: frame } } : {}
-      if (errand.episode !== undefined) actor = { ...rest, ...cue, from: actor.home, track: trackArrive(actor.track, errand.episode, frame, errand.brings !== undefined), arrived: frame, worked: errand.episode.scene }
+      // Zdarzenie z głębi nie przepada: reakcja gra, gdy ork wróci do roboty (`held`).
+      if (errand.episode !== undefined) actor = { ...rest, ...released(actor, frame), from: actor.home, track: trackArrive(actor.track, errand.episode, frame, errand.brings !== undefined), arrived: frame, worked: errand.episode.scene }
       // Odniósł i idzie dalej: nowe stanowisko wyznaczy następny rysunek, stąd `enter` o klatkę później.
-      else actor = { ...rest, ...cue, track: trackBare(actor.track), ...(pending === undefined ? {} : { pending, from: actor.home, enter: frame + 1 }) }
+      else actor = { ...rest, track: trackBare(actor.track), ...(pending === undefined ? {} : { pending, from: actor.home, enter: frame + 1 }) }
       actors[key] = actor
       changed = true
     }
@@ -705,7 +714,7 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
     }
     if (actor.mugs && at.walking) loads.push({ rows: draw([MUGS, 0, 2]), x: leftward ? at.x - MUGS[0]!.length : at.x + 6 })
     const tossing = actor.handoff !== undefined && frame >= actor.handoff.at && frame < actor.leftAt!
-    const reacting = actor.cue !== undefined && frame - actor.cue.at < CUE_FRAMES
+    const reacting = actor.cue !== undefined && actor.cue.held === undefined && frame - actor.cue.at < CUE_FRAMES
     moving ||= at.walking || tossing || reacting || actor.pending !== undefined || (actor.leftAt !== null && frame < actor.leftAt)
     let raw = tossing ? tossGrid(frame - actor.handoff!.at, actor.mood) : trackGrid(actor.track, frame, 'band', actor.mood, frozen)
     if (!at.walking && !props.still) {
@@ -771,7 +780,8 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
     if (errand === undefined || frame < errand.at) return [trackOut(actor.track)]
     return [frame - errand.at < ERRAND_SWAP ? (errand.of ?? null) : errand.brings === undefined ? null : (errand.episode?.scene ?? null)]
   }).filter(scene => scene !== null)
-  const felt = krux?.cue !== undefined && frame - krux.cue.at < CUE_FRAMES ? { kind: krux.cue.kind, age: frame - krux.cue.at } : null
+  // Ściana reaguje razem z Kruxem: zdarzenie wstrzymane w drodze czeka i tu.
+  const felt = krux?.cue !== undefined && krux.cue.held === undefined && frame - krux.cue.at < CUE_FRAMES ? { kind: krux.cue.kind, age: frame - krux.cue.at } : null
   const when = new Date(props.now ?? 43_200_000)
   const roomState = { feel: felt, alive: !frozen, red: props.red === true, blessed: props.blessed === true, phase: dayPhase(when.getHours(), when.getMonth() + 1), date: { month: when.getMonth() + 1, day: when.getDate() }, taken, door: doorway }
   const scene = room ? paint(deep.reduce<string[]>((back, orc) => paint(back, orc.rows, orc.x, orc.y), roomGrid(width, frame, hearth, roomState)), grid, 0, 6) : grid

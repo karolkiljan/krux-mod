@@ -24,7 +24,7 @@ function surfaceOf() {
   return { surface, tick: () => tick?.() }
 }
 
-type Seen = { frame: number; idle: boolean; duet?: { host: string; guest: string; kind: string; at: number | null }; duetAt?: number; snoozing?: boolean; actors: Record<string, { leftAt: number | null; slot: number; home: number; arrived: number; from: number; pending?: string; errand?: { at: number; from: number; spot: number; took?: readonly string[]; brings?: readonly string[] }; enter: number; track: Track; handoff?: { at: number; flight: number }; cue?: { id: string; at: number }; effortAt?: number; rise?: number; door?: number; left?: { x: number; rows?: readonly string[] } }> }
+type Seen = { frame: number; idle: boolean; duet?: { host: string; guest: string; kind: string; at: number | null }; duetAt?: number; snoozing?: boolean; actors: Record<string, { leftAt: number | null; slot: number; home: number; arrived: number; from: number; pending?: string; errand?: { at: number; from: number; spot: number; took?: readonly string[]; brings?: readonly string[] }; enter: number; track: Track; handoff?: { at: number; flight: number }; cue?: { id: string; at: number; held?: true }; effortAt?: number; rise?: number; door?: number; left?: { x: number; rows?: readonly string[] } }> }
 
 const KRUX: ForgeOrc = { key: 'krux', face: 'Krux', scene: 'lounge', mood: 'calm' }
 const NIUCH: ForgeOrc = { key: 'a1', face: 'Niuch', scene: 'scout', mood: 'calm' }
@@ -663,17 +663,59 @@ test('a mate who finishes deep in the room comes back before marching off, witho
   expect((surface.state as Seen).actors.a1).toBe(undefined)
 })
 
-test('an event deep in the room still speaks, and the reaction plays on the way back', () => {
+test('an event deep in the room still speaks, and the reaction plays once the orc is back at work', () => {
   const seen = surfaceOf()
   untilErrand(onFloor, seen)
   const at = (seen.surface.state as Seen).actors.krux!.errand!.at
   const hit: ForgeProps = { ...onFloor('pick'), bubble: { key: 'krux', text: 'Zawał! Komenda paść.', speaker: 'Krux' }, cues: [{ key: 'krux', kind: 'zawał', until: 9_000_000 }] }
   seen.tick()
   expect(JSON.stringify(draw(hit, seen.surface))).toContain('Za')
-  const cueAt = (seen.surface.state as Seen).actors.krux!.cue!.at
-  expect(cueAt).toBeGreaterThan(at)
-  for (let i = 0; i < ERRAND_FRAMES + 2; i++) { seen.tick(); draw(hit, seen.surface) }
-  expect((seen.surface.state as Seen).actors.krux!.cue!.at).toBe(at + ERRAND_FRAMES)
+  // W głębi i w marszu reakcji nie widać: zdarzenie czeka, aż Krux stanie przy sztolni z kilofem.
+  expect((seen.surface.state as Seen).actors.krux!.cue).toMatchObject({ held: true })
+  expect((seen.surface.state as Seen).actors.krux!.cue!.at).toBeGreaterThan(at)
+  for (let i = 0; i < 160 && (seen.surface.state as Seen).actors.krux!.cue!.held === true; i++) { seen.tick(); draw(hit, seen.surface) }
+  const krux = (seen.surface.state as Seen).actors.krux!
+  expect([krux.track.scene, krux.pending, krux.errand, krux.cue!.held]).toEqual(['pick', undefined, undefined, undefined])
+  expect(krux.cue!.at).toBe((seen.surface.state as Seen).frame)
+})
+
+test('a commit right after a change of station plays its reaction when Krux reaches the forge', () => {
+  // Z drogą i bez zdarzenia: reakcja to różnica pikseli na podłodze.
+  const run = (cued: boolean) => {
+    const seen = surfaceOf()
+    draw(onFloor('write'), seen.surface)
+    for (let i = 0; i < 40; i++) { seen.tick(); draw(onFloor('write'), seen.surface) }
+    const floors: string[] = []
+    for (let i = 0; i < 140; i++) {
+      seen.tick()
+      const props: ForgeProps = { ...onFloor('seal'), cues: cued && i >= 5 ? [{ key: 'krux', kind: 'commit', until: 9_000_000 }] : [] }
+      floors.push(JSON.stringify(pixelsOf(draw(props, seen.surface)).slice(6)))
+    }
+    return { floors, krux: (seen.surface.state as Seen).actors.krux! }
+  }
+  const cued = run(true)
+  const plain = run(false)
+  // `git commit` przestawia scenę na pieczęć: Krux odnosi zwój, idzie do kuźni, przynosi pieczęć i dopiero tam się cieszy.
+  expect(cued.krux.track.scene).toBe('seal')
+  expect(cued.krux.cue!.held).toBe(undefined)
+  expect(cued.floors.filter((floor, i) => floor !== plain.floors[i]).length).toBeGreaterThanOrEqual(12)
+})
+
+test('reduced motion drops a reaction that waits on the way, so it never plays late after motion returns', () => {
+  const seen = surfaceOf()
+  untilErrand(onFloor, seen)
+  const hit: ForgeProps = { ...onFloor('pick'), cues: [{ key: 'krux', kind: 'zawał', until: 9_000_000 }] }
+  seen.tick()
+  draw(hit, seen.surface)
+  expect((seen.surface.state as Seen).actors.krux!.cue!.held).toBe(true)
+  draw({ ...hit, still: true }, seen.surface)
+  expect((seen.surface.state as Seen).actors.krux!.cue!.held).toBe(undefined)
+  // Ruch wraca, Krux idzie do stołu: przy dojściu stare zdarzenie już nie gra.
+  const table: ForgeProps = { ...hit, orcs: [{ ...KRUX, scene: 'read' }] }
+  for (let i = 0; i < 200 && ((seen.surface.state as Seen).actors.krux!.track.scene !== 'read' || (seen.surface.state as Seen).actors.krux!.pending !== undefined); i++) { seen.tick(); draw(table, seen.surface) }
+  const state = seen.surface.state as Seen
+  expect(state.actors.krux!.track.scene).toBe('read')
+  expect(state.frame - state.actors.krux!.cue!.at).toBeGreaterThanOrEqual(14)
 })
 
 test('homes move once a frame at most, so a crowded table cannot trip the engine', () => {
