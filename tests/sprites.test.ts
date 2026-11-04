@@ -527,21 +527,29 @@ test('the horde rests behind the door of the quarters, not on the floor: no slee
 })
 
 test('wall furniture never overlaps on any room width, and each torch keeps a free column on both sides', () => {
+  // Pokój stoi na każdym pasie z wierszami dymka: płótno z dymkiem nie bywa węższe od ściany.
+  expect(WALL_MIN).toBeLessThanOrEqual(canvasColumns(1, true))
   for (let width = WALL_MIN; width <= 300; width += 1) {
     for (const hearth of [false, true]) {
       const label = `${width}:${hearth}`
       const spans = wallSpans(width, hearth)
       const [forge, table, trial, mine] = spans
-      // Meble w płótnie i bez nachodzenia; od `WALL_ROOMY` każdy z przerwą i wolną kolumną z prawej.
-      expect([label, spans.every(([left, right], i) => left >= 0 && right <= width && (i === 0 || left >= spans[i - 1]![1]))]).toEqual([label, true])
+      // Meble bez nachodzenia; kuźnia, regał i skrzynia w płótnie, a za prawą krawędź wychodzi
+      // tylko sztolnia, i to tak, że w płótnie zostaje oprawa z otworem i całym sprzętem (8 kolumn).
+      expect([label, spans.every(([left, right], i) => left >= 0 && (i === spans.length - 1 ? left + 8 <= width : right <= width) && (i === 0 || left >= spans[i - 1]![1]))]).toEqual([label, true])
+      // Od `WALL_ROOMY` każdy mebel ma przerwę, a za sztolnią zostaje wolna kolumna.
       if (width >= WALL_ROOMY) expect([label, spans.every(([left, right], i) => right < width && (i === 0 || left > spans[i - 1]![1]))]).toEqual([label, true])
-      // Węższa ściana dosuwa tylko skrzynię do regału: kuźnia zawsze ma przerwę, inaczej belka wchodzi w księgę.
+      // Węższa ściana nie dosuwa kuźni do regału: belka weszłaby w księgę, a haki w półkę.
       expect([label, table![0] > forge![1]]).toEqual([label, true])
-      // Pochodnia zwiadu wisi tuż przed sztolnią, z przerwą od skrzyni z kanarkiem.
-      expect([label, mine![0] - 1 > trial![1]]).toEqual([label, true])
       const room = roomGrid(width, 0, hearth)
-      // Bez kolumny za sztolnią prawą krawędź płótna i tak trzyma pusta ostatnia kolumna sztolni.
-      if (width < WALL_ROOMY) expect([label, room.every(row => row[width - 1] === '.')]).toEqual([label, true])
+      // Sztolnia za krawędzią ciągnie się dalej: ostatnia kolumna płótna to jej otwór, sprzęt albo oprawa, nie pusta ściana.
+      if (mine![1] > width) expect([label, room.slice(2, 6).every(row => row[width - 1] !== '.')]).toEqual([label, true])
+      // Pochodnia zwiadu, przed sztolnią albo w jej otworze, nie przykleja się ani do skrzyni z kanarkiem,
+      // ani do oprawy sztolni: obok niej nie ma drewna.
+      const taken = roomGrid(width, 0, hearth, { taken: ['torch'] })
+      const flame = [...room[2]!].findIndex((cell, x) => cell !== taken[2]![x])
+      expect([label, flame > trial![1] && flame < width]).toEqual([label, true])
+      expect([label, [1, 2, 3, 4].every(y => room[y]![flame - 1] !== 'E' && room[y]![flame + 1] !== 'E')]).toEqual([label, true])
       // Pochodnia między kuźnią a regałem: tylko w przerwie, nigdy na rogu półki.
       const torches = [...room[3]!].flatMap((cell, x) => (cell === 'E' && room[4]![x] === 'E' && x >= forge![1] && x < table![0] ? [x] : []))
       expect([label, torches.every(x => x > forge![1] && x < table![0] - 1)]).toEqual([label, true])
@@ -555,8 +563,15 @@ test('wall furniture never overlaps on any room width, and each torch keeps a fr
 })
 
 test('the depth spot reaches its stash and every exit stays on the canvas, on narrow and wide room widths', () => {
-  // Najszerszy ork w głębi ma 5 pikseli.
-  const far = 5
+  // Przy ścianie, w drzwiach i w wylocie sztolni ork jest najmniejszy: szerszy staje się dopiero bliżej podłogi.
+  const deep = farPose(1, 0, 0, null).rows[0]!.length
+  // Skarbnik z lampą na szerokiej ścianie: tyle pikseli zmienia jego zjawa.
+  const blessed = { blessed: true, feel: { kind: 'test-pass' as const, age: 4 } }
+  const ghost = (width: number) => {
+    const plain = roomGrid(width, 4, false, { feel: blessed.feel })
+    return roomGrid(width, 4, false, blessed).flatMap((row, y) => [...row].flatMap((cell, x) => (cell !== plain[y]![x] ? [x] : [])))
+  }
+  const whole = ghost(140).length
   // Każda szerokość wąskiej ściany, dalej co kilka kolumn: tam meble stoją już przy stanowiskach.
   const widths = Array.from({ length: 301 - WALL_MIN }, (_, i) => WALL_MIN + i).filter(width => width <= WALL_ROOMY + 30 || width % 13 === 0)
   for (const width of widths) {
@@ -567,23 +582,31 @@ test('the depth spot reaches its stash and every exit stays on the canvas, on na
       const frames = hearth ? [0, 2, 4, 6, 8] : [0]
       const walls = frames.map(frame => roomGrid(width, frame, hearth).slice(0, 6))
       for (const scene of Object.keys(ACTS) as StageScene[]) {
-        // Sprzęt sceny to piksele, które znikają ze ściany, gdy ork go zdejmie; ork w głębi staje tuż przed nim.
+        // Ork w głębi zawsze cały w płótnie, także przy kuźni dosuniętej do lewej krawędzi.
+        const spot = depthSpot(scene, width, hearth)
+        expect([label, scene, spot >= 0 && spot + deep <= width]).toEqual([label, scene, true])
+        // Sprzęt sceny to piksele, które znikają ze ściany, gdy ork go zdejmie; ork w głębi staje tuż przed nim,
+        // a przy krawędzi płótna tuż przy niej.
         const gone = frames.flatMap((frame, i) => {
           const taken = roomGrid(width, frame, hearth, { taken: [scene] })
           return walls[i]!.flatMap((row, y) => row === taken[y] ? [] : [...row].flatMap((cell, x) => (cell !== taken[y]![x] ? [x] : [])))
         })
         if (gone.length === 0) continue
-        expect([label, scene, Math.min(...gone) - 1]).toEqual([label, scene, depthSpot(scene, width, hearth)])
+        expect([label, scene, Math.max(0, Math.min(width - deep, Math.min(...gone) - 1))]).toEqual([label, scene, spot])
         expect([label, scene, Math.max(...gone) < width]).toEqual([label, scene, true])
       }
       // Wyjście z kwater albo ze sztolni mieści orka w głębi; drzwi stoją między skrzynią a sztolnią albo ich nie ma.
       for (const face of [null, ...MATES]) {
         const x = doorX(face, width, hearth)
-        expect([label, face, x >= 0 && x + far <= width]).toEqual([label, face, true])
+        expect([label, face, x >= 0 && x + deep <= width]).toEqual([label, face, true])
       }
+      // Nora w otworze sztolni, za jej oprawą, choćby sztolnia wychodziła za kadr.
+      expect([label, doorX(null, width, hearth) > mine![0] + 1]).toEqual([label, true])
       const door = quartersDoor(width, hearth)
       expect([label, door === null || (door - 1 > trial![1] && door + 4 < mine![0] - 1)]).toEqual([label, true])
     }
+    // Skarbnik staje z lampą cały, także w sztolni za krawędzią kadru.
+    expect([width, ghost(width).length, Math.max(...ghost(width)) < width]).toEqual([width, whole, true])
   }
 })
 

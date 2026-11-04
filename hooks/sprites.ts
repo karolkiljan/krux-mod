@@ -504,7 +504,7 @@ export function carried(scene: StageScene, x: number, rightward: boolean): Place
 // a piksele są kwadratowe, więc scena dostaje głębię bez zabierania ekranu i bez tła.
 export const ROOM_ROWS = 12
 
-// Meble na ścianie. `x` to odstęp od stanowiska; meble rozsuwa `wallSpots`, żeby się nie wpychały.
+// Meble na ścianie. `x` to odstęp od stanowiska; meble rozsuwa `wallOf`, żeby się nie wpychały.
 // Pod belką kuźni wiszą haki: każdy trzyma swój sprzęt, a gdy ork go zdejmie, hak zostaje pusty.
 const WALL_PROPS: Record<Station, { x: number; rows: Frame }> = {
   forge: { x: 1, rows: ['', 'EEEEEEEEEEEEEE', '.C..C..C..C..C'] },
@@ -540,16 +540,29 @@ const STASH: Record<StageScene, { x: number; y: number; rows: Frame }> = {
 }
 
 // Pusta przerwa przed meblem (`gap`) i wolne kolumny za sztolnią (`edge`), od najluźniejszej ściany.
-// Przed sztolnią zawsze dwie kolumny: w drugiej wisi pochodnia, którą bierze zwiad, więc nie
-// przykleja się do skrzyni z kanarkiem. Na wąskim płótnie (terminal 80 kolumn) odpada najpierw
-// kolumna za sztolnią, bo ostatnia kolumna sztolni i tak jest pusta, potem przerwa przed skrzynią,
-// która styka się z regałem samą dolną deską. Przerwa przed regałem zostaje: bez niej belka kuźni
-// wchodzi w księgę, haki w półkę, szezlong w dolną deskę i ściana od kuźni po skrzynię zlewa się w jedną masę.
-type WallLayout = { gap: Record<Station, number>; edge: number }
+// Ujemne `edge`: sztolnia wychodzi za prawą krawędź kadru, a kopalnia ciągnie się dalej poza obraz.
+// `shaft` przestawia sprzęt w sztolni (kolumna od jej lewej krawędzi, jak `STASH.x`).
+// Przed sztolnią dwie kolumny: w drugiej wisi pochodnia, którą bierze zwiad, więc nie przykleja się
+// do skrzyni z kanarkiem. Węższe płótno oddaje kolejno: kolumnę za sztolnią, pustą ostatnią kolumnę
+// sztolni, jej prawą oprawę (otwór biegnie za kadr), przerwy przed sztolnią (pochodnia przechodzi
+// do otworu, w wolną kolumnę za kilofem, a od skrzyni dzieli sztolnię jej własna pusta pierwsza
+// kolumna), przerwę przed skrzynią (styka się z regałem samą dolną deską) i dwie kolejne kolumny
+// otworu; przy ostatniej drążek zwiadu przesuwa się o kolumnę bliżej, żeby został w kadrze.
+// Przerwa przed regałem zostaje: bez niej belka kuźni wchodzi w księgę, haki w półkę, szezlong
+// w dolną deskę i ściana od kuźni po skrzynię zlewa się w jedną masę.
+type WallLayout = { gap: Record<Station, number>; edge: number; shaft?: Partial<Record<StageScene, number>> }
+const ROOMY_GAP: Record<Station, number> = { forge: 0, table: 1, trial: 1, mine: 2 }
+const TORCH_IN = { torch: 4 }
 const WALL_LAYOUTS: readonly WallLayout[] = [
-  { gap: { forge: 0, table: 1, trial: 1, mine: 2 }, edge: 1 },
-  { gap: { forge: 0, table: 1, trial: 1, mine: 2 }, edge: 0 },
-  { gap: { forge: 0, table: 1, trial: 0, mine: 2 }, edge: 0 },
+  { gap: ROOMY_GAP, edge: 1 },
+  { gap: ROOMY_GAP, edge: 0 },
+  { gap: ROOMY_GAP, edge: -1 },
+  { gap: ROOMY_GAP, edge: -2 },
+  { gap: { ...ROOMY_GAP, mine: 1 }, edge: -2, shaft: TORCH_IN },
+  { gap: { ...ROOMY_GAP, mine: 0 }, edge: -2, shaft: TORCH_IN },
+  { gap: { ...ROOMY_GAP, trial: 0, mine: 0 }, edge: -2, shaft: TORCH_IN },
+  { gap: { ...ROOMY_GAP, trial: 0, mine: 0 }, edge: -3, shaft: TORCH_IN },
+  { gap: { ...ROOMY_GAP, trial: 0, mine: 0 }, edge: -4, shaft: { ...TORCH_IN, scout: 7 } },
 ]
 const WALL_WIDE = WALL_ORDER.map(station => Math.max(...WALL_PROPS[station].rows.map(row => row.length)))
 
@@ -558,15 +571,17 @@ function wallNeed({ gap, edge }: WallLayout): number {
 }
 
 // Najwęższe płótno, na którym meble jeszcze stają obok siebie bez nachodzenia; od `WALL_ROOMY`
-// każdy z przerwą. Węższy pas z wierszami dymka zostaje płaski, bez pokoju (`forge.ts`).
+// każdy z przerwą. `WALL_MIN` nie przekracza płótna z dymkiem (`canvasColumns`, test), więc pokój
+// stoi na każdym pasie z wierszami dymka.
 export const WALL_MIN = wallNeed(WALL_LAYOUTS[WALL_LAYOUTS.length - 1]!)
 export const WALL_ROOMY = wallNeed(WALL_LAYOUTS[0]!)
 
-const wallCache = new Map<string, Record<Station, number>>()
+type Wall = { spots: Record<Station, number>; layout: WallLayout }
+const wallCache = new Map<string, Wall>()
 
 // Lewe krawędzie mebli: każdy jak najbliżej stanowiska, bez nachodzenia na sąsiada, z najluźniejszymi
 // przerwami, które mieszczą się w płótnie.
-function wallSpots(floor: number, hearth: boolean): Record<Station, number> {
+function wallOf(floor: number, hearth: boolean): Wall {
   const key = `${floor}:${hearth}`
   const known = wallCache.get(key)
   if (known) return known
@@ -576,13 +591,18 @@ function wallSpots(floor: number, hearth: boolean): Record<Station, number> {
   const xs = WALL_ORDER.map(station => stationX(SCENE_OF[station], floor, hearth) + WALL_PROPS[station].x)
   xs.forEach((x, i) => { xs[i] = i === 0 ? x : Math.max(x, xs[i - 1]! + wide[i - 1]! + gap(i)) })
   for (let i = xs.length - 1; i >= 0; i -= 1) xs[i] = Math.max(0, Math.min(xs[i]!, i === xs.length - 1 ? floor - wide[i]! - layout.edge : xs[i + 1]! - wide[i]! - gap(i + 1)))
-  const spots = Object.fromEntries(WALL_ORDER.map((station, i) => [station, xs[i]!])) as Record<Station, number>
-  wallCache.set(key, spots)
-  return spots
+  const wall = { spots: Object.fromEntries(WALL_ORDER.map((station, i) => [station, xs[i]!])) as Record<Station, number>, layout }
+  wallCache.set(key, wall)
+  return wall
 }
 
 function wallX(station: Station, floor: number, hearth: boolean): number {
-  return wallSpots(floor, hearth)[station]
+  return wallOf(floor, hearth).spots[station]
+}
+
+// Lewa kolumna sprzętu sceny na ścianie: mebel stanowiska plus miejsce sprzętu, w ciasnej sztolni przestawione.
+function stashX(scene: StageScene, floor: number, hearth: boolean): number {
+  return wallX(STATIONS[scene], floor, hearth) + (wallOf(floor, hearth).layout.shaft?.[scene] ?? STASH[scene].x)
 }
 
 // Kolumny mebli od lewej: pierwsza i za ostatnią, w kolejności ściany.
@@ -674,7 +694,7 @@ function roomLife(room: string[][], width: number, frame: number, hearth: boolea
   roomWall(room, width, hearth, frame, state, put)
 }
 
-// Wolne miejsce ściany przed drzwiami kwater: w święta jedna rzecz, poza nimi pusto. Skarbnik w sztolni.
+// Wolne miejsce ściany przed drzwiami kwater: w święta jedna rzecz, poza nimi pusto.
 function roomWall(room: string[][], width: number, hearth: boolean, frame: number, state: RoomState, put: (x: number, y: number, cell: string) => void): void {
   const [from, gapEnd] = wallGap(width, hearth)
   const door = doorLeft(width, hearth)
@@ -692,14 +712,18 @@ function roomWall(room: string[][], width: number, hearth: boolean, frame: numbe
     stamp(PUMPKIN, left, 3)
     if (state.alive && frame % 10 < 3) put(left + 1, 5, 'Z')
   }
-  // Skarbnik przychodzi tylko w zielonej chwili po padłych: lampa, broda, potem znika.
+}
+
+// Skarbnik przychodzi tylko w zielonej chwili po padłych: lampa, broda, potem znika. Staje przed
+// sprzętem sztolni i przed pochodnią, która w ciasnej sztolni wisi w otworze.
+function roomGhost(room: string[][], width: number, hearth: boolean, state: RoomState): void {
   const age = state.feel?.age ?? -1
   const green = state.feel?.kind === 'test-pass' || state.feel?.kind === 'build-pass' || state.feel?.kind === 'commit'
-  if (state.blessed && green && age >= 0) {
-    const left = wallX('mine', width, hearth) + 4
-    if (age >= 1 && age <= 12) stamp(SKARBNIK, left, 1)
-    put(left, 2, age % 2 === 0 ? 'o' : 'y')
-  }
+  if (!state.blessed || !green || age < 0) return
+  const put = (x: number, y: number, cell: string) => { if (room[y]?.[x] !== undefined) room[y]![x] = cell }
+  const left = wallX('mine', width, hearth) + 4
+  if (age >= 1 && age <= 12) SKARBNIK.forEach((row, dy) => [...row].forEach((cell, dx) => { if (cell !== '.') put(left + dx, 1 + dy, cell) }))
+  put(left, 2, age % 2 === 0 ? 'o' : 'y')
 }
 
 // Co pokój wie o robocie: zdarzenie, którym żyje Krux, ruch, czerwone testy, czyj sprzęt zszedł
@@ -738,21 +762,21 @@ export function roomGrid(width: number, frame: number, hearth: boolean, state: P
   const room = roomBase(width, hearth).map(row => [...row])
   for (const scene of Object.keys(STASH) as StageScene[]) {
     if (full.taken.includes(scene)) continue
-    const { x, y, rows } = STASH[scene]
-    const left = wallX(STATIONS[scene], width, hearth) + x
+    const { y, rows } = STASH[scene]
+    const left = stashX(scene, width, hearth)
     rows.forEach((row, dy) => [...row].forEach((cell, dx) => { if (cell !== '.' && room[y + dy]?.[left + dx] !== undefined) room[y + dy]![left + dx] = cell }))
   }
   roomSky(room, width, hearth, frame, full)
   roomLife(room, width, frame, hearth, full)
   const red = feel?.kind === 'test-fail' || feel?.kind === 'build-fail' || feel?.kind === 'zawał'
   const bright = feel?.kind === 'test-pass' || feel?.kind === 'build-pass' || feel?.kind === 'commit'
-  // Pierwsza pochodnia świeci między kuźnią a regałem, druga przy wejściu do sztolni:
-  // tę ork bierze ze sobą, gdy idzie szukać.
+  // Pierwsza pochodnia świeci między kuźnią a regałem, druga przy wejściu do sztolni, w ciasnej
+  // sztolni w jej otworze: tę ork bierze ze sobą, gdy idzie szukać.
   // Pierwsza tylko w przerwie z wolną kolumną po obu stronach: inaczej płomień siada na rogu półki.
   const after = wallX('forge', width, hearth) + WALL_PROPS.forge.rows[2]!.length
   const table = wallX('table', width, hearth)
   const between = table - after >= 3 ? Math.round((after + table - 1) / 2) : null
-  for (const x of [between, wallX('mine', width, hearth) - 1]) {
+  for (const x of [between, stashX('torch', width, hearth)]) {
     if (x === null || x >= width || x < 0) continue
     room[3]![x] = 'E'
     room[4]![x] = 'E'
@@ -760,6 +784,7 @@ export function roomGrid(width: number, frame: number, hearth: boolean, state: P
     room[2]![x] = red ? 'R' : bright ? 'Z' : (frame + x) % 3 === 0 ? 'Z' : 'Q'
     room[1]![x] = red ? 'Q' : bright ? 'Z' : (frame + x) % 4 === 1 ? 'Q' : room[1]![x]!
   }
+  roomGhost(room, width, hearth, full)
   if (feel?.kind === 'zawał' || feel?.kind === 'tear') {
     for (let i = 0; i < DUST_GRAINS; i += 1) {
       const y = 1 + (feel.age + i) % 5
@@ -788,6 +813,8 @@ const FAR_ORCS: readonly (readonly [Frame, Frame])[] = [
   [['rgr', 'bbb', 'G.G'], ['rgr', 'bbb', '.G.']],
 ]
 const FEET = [10, 8, 7] as const
+// Szerokość orka w największej głębi: przy ścianie, w drzwiach kwater i w wylocie sztolni.
+const DEEP_WIDE = FAR_ORCS[FAR_ORCS.length - 1]![0][0]!.length
 
 export type Far = { rows: readonly string[]; x: number; y: number }
 
@@ -833,10 +860,11 @@ export function errandSwap(route: { lead?: number }): number {
   return (route.lead ?? ERRAND_IN) + Math.floor(ERRAND_HOLD / 2)
 }
 
-// Kolumna orka przy miejscu sprzętu tej sceny na ścianie.
+// Kolumna orka przy miejscu sprzętu tej sceny na ścianie: tuż przed nim, a przy krawędzi płótna
+// tuż przy niej, bo ork w głębi nie wychodzi poza kadr (kuźnia dosunięta do lewej krawędzi, drążek
+// zwiadu w ostatniej kolumnie ciasnej sztolni).
 export function depthSpot(scene: StageScene, floor: number, hearth: boolean): number {
-  const station = STATIONS[scene]
-  return wallX(station, floor, hearth) + STASH[scene].x - 1
+  return Math.max(0, Math.min(floor - DEEP_WIDE, stashX(scene, floor, hearth) - 1))
 }
 
 // Rekwizyt zmniejszony do `size` wierszy: komórka bierze pierwszy niepusty piksel swojego pola.

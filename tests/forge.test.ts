@@ -39,21 +39,28 @@ const FLAT: ForgeProps = { ...BAND, bubbleRows: false }
 const draw = (props: ForgeProps, surface: ReturnType<typeof surfaceOf>['surface']) => Forge(props, surface as never)
 
 test('a band too narrow for the wall keeps its bubble rows but stays flat, without the room', () => {
+  // Jedno miejsce: płótno ma szerokość podłogi, a nie dwóch orków.
   for (const [floor, room] of [[WALL_MIN - 1, false], [WALL_MIN, true]] as const) {
     const { surface } = surfaceOf()
-    const tree = draw({ ...BAND, floor, orcs: [{ ...KRUX, scene: 'hammer' }] }, surface) as unknown as { props: { children: unknown[] } }
+    const tree = draw({ ...BAND, slots: 1, floor, orcs: [{ ...KRUX, scene: 'hammer' }] }, surface) as unknown as { props: { children: unknown[] } }
     // Wysokość ta sama: trzy wiersze dymka i trzy wiersze podłogi albo sześć wierszy pokoju.
     expect([floor, tree.props.children.length]).toEqual([floor, 6])
     expect([floor, JSON.stringify(tree).includes(PALETTE.E!)]).toEqual([floor, room])
   }
 })
 
-test('an 80-column terminal keeps the room: the wall tightens its gaps instead of going flat', () => {
-  // Podpis 28 kolumn i przerwa 2 zostawiają płótnu 50 kolumn z wierszami dymka.
-  const plan = bandPlan({ working: true, activity: { scene: 'hammer', verb: 'Krux kuć', target: '' }, strikes: 1, total: 1, moods: CALM, members: [], held: null, waiting: false, still: false, now: 10_000, columns: 80, rows: 10, hasClient: true })
-  const { surface } = surfaceOf()
-  const tree = draw(plan.stage!.props, surface)
-  expect([plan.stage!.props.floor, plan.stage!.props.bubbleRows, JSON.stringify(tree).includes(PALETTE.E!)]).toEqual([50, true, true])
+test('every band with bubble rows has the room, also on an 80-column terminal', () => {
+  // Na terminalu 80 kolumn przycisk silnika zabiera prawy brzeg: `bodyColumns` 75, płótno 45
+  // (zrzut prawdziwego TUI). Wiersze dymka pas ma od 74 kolumn (terminal 79), i od nich stoi pokój.
+  for (let columns = 70; columns <= 90; columns += 1) {
+    for (const working of [true, false]) {
+      const plan = bandPlan({ working, activity: working ? { scene: 'hammer', verb: 'Krux kuć', target: '' } : null, strikes: 1, total: 1, moods: CALM, members: [], held: null, waiting: false, still: false, now: 10_000, columns, rows: 10, hasClient: true })
+      if (plan.stage === null) continue
+      const { surface } = surfaceOf()
+      const tree = JSON.stringify(draw(plan.stage.props, surface))
+      expect([columns, working, plan.stage.props.bubbleRows, tree.includes(PALETTE.E!)]).toEqual([columns, working, columns >= 74, columns >= 74])
+    }
+  }
 })
 
 test('a marching orc looks where it goes: a mate running in from the right has its pupils on the left', () => {
