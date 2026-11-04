@@ -104,15 +104,16 @@ export function mateIn(...texts: string[]): KruxMate | null {
 
 // Liczby przy bezokoliczniku albo w etykiecie: „2 na 2 padać”, „smrodów po
 // drodze: 1”. Tak nie trzeba odmiany, której „padło” i „po 1 smrodach” nie miały.
-// `failure` to `failures[0]` z bieżącego przebiegu, nigdy zgadywana nazwa.
+// `failure` to `failures[0]` z bieżącego przebiegu, nigdy zgadywana nazwa. Z nazwą
+// otwarcie ma najwyżej 6 komórek: „Padły: ” i 24 znaki nazwy z kropką mieszczą się
+// wtedy w `BUBBLE_TEXT`; przy pełnym otwarciu dymek ucinał nazwę do kilku liter.
 export function eventLine(event: KruxEvent, lore: KruxLore, seed: number, failure?: string): string {
   switch (event) {
     case 'test-fail': {
-      const line = pick([`Smród! ${lore.testFails} na ${lore.testRuns} padać.`, 'Czerwono. Robak gryźć.', 'Test padać. Kilof w dłoń!'], seed)
-      if (!failure) return line
+      if (!failure) return pick([`Smród! ${lore.testFails} na ${lore.testRuns} padać.`, 'Czerwono. Robak gryźć.', 'Test padać. Kilof w dłoń!'], seed)
       const chars = Array.from(failure)
       const name = chars.length > 24 ? `${chars.slice(0, 23).join('')}…` : failure
-      return `${line} Padły: ${name}${name.endsWith('…') ? '' : '.'}`
+      return `${pick(['Smród!', 'Robak!', 'Grr!'], seed)} Padły: ${name}${name.endsWith('…') ? '' : '.'}`
     }
     case 'test-pass':
       return lore.testFails > 0

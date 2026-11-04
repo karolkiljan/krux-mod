@@ -844,12 +844,14 @@ export const register: Register = on => {
         const chronicle = await read($, lore)
         // Decyzja o wydaniu, plan i ruch nieodwracalny idą samymi faktami: tam nastrój
         // przechylał wybór, więc przepada linia nastroju i humor kumpla w notce.
-        const decides = promptKind(e.text) === 'plan' || asksRelease(e.text)
+        const plan = promptKind(e.text) === 'plan'
+        const decides = plan || asksRelease(e.text)
         // Wspomnienie bierze tylko pierwsza wstawka sesji, a starego wroga czerwony test,
         // więc magazyn czytamy tylko wtedy.
         const failing = await read($, ownRed)
         const recalled = risk === null && (chronicle.lastMate === null || failing !== null) ? await recallFor($) : null
-        const aside = { recall: recalled, foe: foeOf(failing, recalled), humor: !decides }
+        // Plan kończy pytanie o zgodę z linii formatu, więc wstawka idzie w środek.
+        const aside = { recall: recalled, foe: foeOf(failing, recalled), humor: !decides, middle: plan }
         const life = risk === null ? lifeNote(chronicle, turn, aside) : null
         if (life) extra.push(life)
         // Nastrój z ostatniego zdarzenia, raz na zdarzenie.

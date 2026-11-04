@@ -1319,6 +1319,22 @@ test('the mood of a fresh chronicle event reaches the model once, and never on a
   expect((report.context ?? []).some(entry => entry.startsWith('Nastrój Kruxa'))).toBe(false)
 })
 
+// Tury poprawek po smrodzie: edycja między promptami to nie nowe zdarzenie, więc linia nie wraca.
+test('an edit between prompts does not bring the same mood line back', async ($, on) => {
+  const extras: Extras = { toolError: '1 failed' }
+  engine(on, new Map(), extras)
+  await start($)
+  await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  const first = await $.prompt.submit({ text: 'co z tym?', wait: false, origin: ORIGIN })
+  expect((first.context ?? []).filter(entry => entry.startsWith('Nastrój Kruxa: zadziorny'))).toHaveLength(1)
+  extras.toolError = undefined
+  for (const file of ['/work/a.ts', '/work/b.ts']) {
+    await $.tool.call({ tool: 'Edit', file_path: file, old_string: 'a', new_string: 'b' } as never)
+    const fixing = await $.prompt.submit({ text: 'popraw dalej', wait: false, origin: ORIGIN })
+    expect((fixing.context ?? []).some(entry => entry.startsWith('Nastrój Kruxa'))).toBe(false)
+  }
+})
+
 test('a request for an irreversible move gets the warning line instead of a horde aside', async ($, on) => {
   engine(on, new Map(), { toolError: '1 failed' })
   await start($)
@@ -1332,6 +1348,20 @@ test('a request for an irreversible move gets the warning line instead of a hord
   // Wstawka nie przepada, tylko czeka na zwykłą turę.
   const next = await $.prompt.submit({ text: 'i?', wait: false, origin: ORIGIN })
   expect((next.context ?? []).some(entry => entry.startsWith('Życie hordy'))).toBe(true)
+})
+
+// Linia formatu planu każe skończyć pytaniem o zgodę: notka nie może bić się o to samo zdanie.
+test('a plan request puts the horde aside in the middle, the end belongs to the consent question', async ($, on) => {
+  engine(on, new Map())
+  await start($)
+  for (const turnId of ['t1', 't2']) {
+    await $.turn.complete({ answer: 'Krux szukać dalej.', durationMs: 10, isAborted: false, turnId, reason: 'answer' })
+  }
+  // Tura 0: rotacja dałaby „na końcu”.
+  const planned = await $.prompt.submit({ text: 'zaplanuj migrację bazy', wait: false, origin: ORIGIN })
+  expect(planned.context).toContain(FORMAT_HINT.plan)
+  const note = (planned.context ?? []).find(entry => entry.startsWith('Życie hordy'))
+  expect(note).toContain('miejsce: w środku, przy punkcie, do którego pasuje, nie na końcu odpowiedzi;')
 })
 
 test('a dispatched Młot whose tests fail says so himself, and Krux’s chronicle stays clean', async ($, on) => {
