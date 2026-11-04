@@ -110,14 +110,14 @@ const DOZE_FRAMES = Math.round(60 * SECOND)
 
 // Trasa orka w scenie: `first` to czynność, od której rusza epizod roboty; `done` to odcinki
 // czekania już zagrane, bo między nimi ork chodzi po nowy mebel.
-export function routeOf(scene: StageScene, face: Face, seed: number, first = seed, done = 0): Route {
+export function routeOf(scene: StageScene, face: Face, seed: number, first = seed, done = 0, cold = false): Route {
   const gestures = gesturesFor(face)
   const every = 3 + (seed % 2)
   if (scene === 'lounge') {
     const legs = waitLegs(seed)
     return { legs: legs.slice(Math.min(done, legs.length - 1)), cyclic: false, gestures, every, seed }
   }
-  return { legs: rotation(actsFor(scene, face), first, WORK_FRAMES), cyclic: true, gestures, every, seed }
+  return { legs: rotation(actsFor(scene, face).filter(act => !(cold && act.fire === true)), first, WORK_FRAMES), cyclic: true, gestures, every, seed }
 }
 
 // Siatka pikseli jednej klatki: `step` liczy od początku sceny, `seed` wybiera pierwszą czynność,
@@ -153,10 +153,12 @@ export type Track = {
   leaving: { scene: StageScene; face: Face; seed: number; first: number; done: number; step: number; at: number; fast?: boolean; kept?: boolean } | null
   // Ork skończył i czeka na następny epizod: przy rekwizycie na ziemi albo z pustymi rękami.
   stops?: 'kit' | 'bare'
+  // Na podłodze nie ma paleniska: czynności przy ogniu (`Act.fire`) wypadają z trasy.
+  cold?: true
 }
 
-function routeOfTrack(track: Pick<Track, 'scene' | 'face' | 'seed' | 'first' | 'done'>): Route {
-  return routeOf(track.scene, track.face, track.seed, track.first, track.done)
+function routeOfTrack(track: Pick<Track, 'scene' | 'face' | 'seed' | 'first' | 'done' | 'cold'>): Route {
+  return routeOf(track.scene, track.face, track.seed, track.first, track.done, track.cold === true)
 }
 
 // Przed zmianą sceny: następny epizod tej sceny ruszy od czynności po obecnej.

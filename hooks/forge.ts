@@ -666,6 +666,14 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
   }
   // Bez slotu i bez widoków na wolny: schodzi.
   for (const [key, actor] of Object.entries(actors)) if (!present.has(key) && !visiting(key) && (actor.leftAt === null || props.still)) leave(key, actor)
+  // Bez paleniska Krux nie grzeje dłoni do pustej krawędzi: czynności przy ogniu wypadają z trasy.
+  const fireless = props.variant === 'band' && !hearth
+  for (const [key, actor] of Object.entries(actors)) {
+    if ((actor.track.cold === true) === fireless) continue
+    const { cold: _warm, ...track } = actor.track
+    actors[key] = { ...actor, track: fireless ? { ...track, cold: true } : track }
+    changed = true
+  }
   const placed: (Placed & { walking: boolean })[] = []
   const scrolls: Placed[] = []
   const loads: Placed[] = []

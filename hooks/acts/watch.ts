@@ -15,6 +15,7 @@ const WARM_LOOKS: readonly Look[] = ['left', 'left', 'left', 'left', 'left', 'sh
 // Grzanie rąk: dłonie ku żarowi, co jakiś czas pociera jedną o drugą, czasem spojrzy na pokój.
 const warm: Act = {
   name: 'grzanie rąk',
+  fire: true,
   intro: [
     // Dwa kroki ku ogniu, przykucnąć.
     draw([walker(0, 'left'), 1, 0]),

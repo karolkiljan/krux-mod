@@ -24,6 +24,8 @@ export type Act = {
   length: number
   loop: (t: number, frame: number) => Frame
   who?: readonly ('Krux' | KruxMate)[]
+  // Czynność przy ogniu: bez paleniska na podłodze wypada z trasy.
+  fire?: true
 }
 
 // Stójka: od niej zaczyna się i na niej kończy każda czynność, także marsz na scenę.

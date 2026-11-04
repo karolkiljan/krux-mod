@@ -3,9 +3,9 @@ import { expect, test } from 'claude-code/testing'
 import Forge from '../hooks/forge'
 import type { ForgeOrc, ForgeProps } from '../hooks/forge'
 import { MATES } from '../hooks/roster'
-import { ACTS, DUET_FRAMES, SPEAKER_COLOR, WALL_MIN, DUET_GAP, ERRAND_FRAMES, PALETTE, RISE_FRAMES, TOAST_RETURN, carried, doorX, kitAt, kitReach, quartersDoor, stationX, tossFrames, trackGrid } from '../hooks/sprites'
+import { ACTS, DUET_FRAMES, SPEAKER_COLOR, WALL_MIN, DUET_GAP, ERRAND_FRAMES, PALETTE, RISE_FRAMES, TOAST_RETURN, carried, doorX, kitAt, kitReach, quartersDoor, routeOf, stationX, tossFrames, trackGrid } from '../hooks/sprites'
 import type { Track } from '../hooks/sprites'
-import { STAND, pad } from '../hooks/stage'
+import { STAND, legAt, pad } from '../hooks/stage'
 import { drawHeadless, headless, svgOf } from '../hooks/vector'
 
 // Powierzchnia na niby: stan, zegar klatek i elementy jako zwykłe obiekty.
@@ -106,6 +106,35 @@ test('in the room a mate done carries the kit back, walks to the quarters and th
   expect(done.actors.krux!.home).toBe(12)
   // Kumpel odpoczywa za drzwiami kwater: jego fartucha w pokoju już nie ma.
   expect(JSON.stringify(draw(after, surface))).not.toContain(PALETTE.M)
+})
+
+test('without a hearth Krux at rest never warms his hands at the empty edge, by the fire he does', () => {
+  // Czynność, którą Krux gra w danej klatce: ta sama trasa co w rysunku, z `cold` osi.
+  const playing = (track: Track, frame: number) => {
+    const route = routeOf(track.scene, track.face, track.seed, track.first, track.done, track.cold === true)
+    return route.legs[legAt(route, Math.max(0, frame - track.since))]!.act.name
+  }
+  const acts = (floor: number, slots: number) => {
+    const seen = new Set<string>()
+    for (let n = 0; n < 16; n++) {
+      const { surface, tick } = surfaceOf()
+      const work: ForgeProps = { ...FLOOR, slots, floor, orcs: [{ ...KRUX, scene: 'test' }] }
+      draw(work, surface)
+      for (let i = 0; i < 10 + 7 * n; i++) { tick(); draw(work, surface) }
+      const rest: ForgeProps = { ...work, rest: true, orcs: [{ ...KRUX, scene: 'watch' }] }
+      for (let i = 0; i < 160; i++) {
+        tick()
+        draw(rest, surface)
+        const { track } = (surface.state as Seen).actors.krux!
+        if (track.scene === 'watch' && (surface.state as Seen).frame >= track.since) seen.add(playing(track, (surface.state as Seen).frame))
+      }
+    }
+    return seen
+  }
+  // Pas obok Sztolni na terminalu 80 kolumn: dwa miejsca, bez paleniska.
+  expect(acts(50, 2).has('grzanie rąk')).toBe(false)
+  expect(acts(50, 2).size).toBeGreaterThan(0)
+  expect(acts(140, 3).has('grzanie rąk')).toBe(true)
 })
 
 test('at rest the canvas mounts with Krux watching by the hearth and nobody else on the floor', () => {
