@@ -1,10 +1,11 @@
 import { expect, test } from 'claude-code/testing'
 
-import { GESTURES } from '../hooks/fidget'
+import { GESTURES, headOf } from '../hooks/fidget'
 import { MATES } from '../hooks/roster'
-import { ACTS, BUBBLE_TEXT, CATCH_X, DUET_FRAMES, carried, doorX, dayPhase, duetPose, floorHomes, kitAt, kitReach, quartersDoor, roomGrid, hasHearth, stationX, CUE_FRAMES, FRAME_MS, HOLD_FRAMES, actsFor, routeOf, trackDozing, trackFace, ORC_GAP, ORC_WIDTH, PALETTE, bandColumns, behind, bubbleLines, canvasColumns, catchStep, caughtScroll, dress, frameGrid, forgeColumns, runsOf, slotX, stageGrid, tossFrames, trackGrid, trackOff, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withNap } from '../hooks/sprites'
+import { ACTS, BUBBLE_TEXT, WALL_MIN, wallSpans, errandPose, farPose, CATCH_X, DUET_FRAMES, DUET_GAP, carried, doorX, dayPhase, duetPose, floorHomes, kitAt, kitReach, quartersDoor, roomGrid, hasHearth, stationX, CUE_FRAMES, FRAME_MS, HOLD_FRAMES, actsFor, routeOf, trackDozing, trackFace, ORC_GAP, ORC_WIDTH, PALETTE, bandColumns, behind, bubbleLines, canvasColumns, catchStep, caughtScroll, dress, frameGrid, forgeColumns, runsOf, slotX, stageGrid, tossFrames, trackGrid, trackOff, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withNap } from '../hooks/sprites'
 import type { DayPhase, StageScene } from '../hooks/sprites'
-import { H, STAND, W, actFrame, entryOf, head, kitLead, legAt, moodOf, pad, stander } from '../hooks/stage'
+import { H, STAND, W, actFrame, entryOf, head, kitLead, legAt, moodOf, pad, settleFrames, stander } from '../hooks/stage'
+import type { Frame } from '../hooks/stage'
 
 test('every forge frame is a rectangle and two pixels make one cell', async () => {
   const width = forgeColumns('band', 1)
@@ -202,26 +203,98 @@ test('Krux dozes off by the campfire after a minute, not before', async () => {
 
 test('gestures keep the frame rules on every loop pose and show up while working', async () => {
   const mates = new Set(['N', 'M', 'P', 'O', 'L', 'T', 'u'])
+  // Gest gra na bieżącej pozie pętli; obieg wiercenia to pełne pętle, więc krok gestu `t`
+  // trafia zawsze na pozę `t` modulo długość pętli.
+  const broken: string[] = []
   for (const gesture of GESTURES) {
     for (const [scene, acts] of Object.entries(ACTS)) {
       for (const act of acts) {
         for (let t = 0; t < gesture.length; t += 1) {
-          const rows = gesture.apply(act.loop(0, 0), t)
-          const label = `${gesture.name}/${scene}/${act.name}/${t}`
+          const rows = gesture.apply(act.loop(t % act.length, t), t)
           const cells = rows.join('')
-          expect([label, rows.length <= H && rows.every(row => row.length <= W)]).toEqual([label, true])
-          expect([label, [...cells].every(cell => cell === '.' || (PALETTE[cell] !== undefined && !mates.has(cell)))]).toEqual([label, true])
-          expect([label, [0, 2].includes([...cells].filter(cell => cell === 'r').length)]).toEqual([label, true])
-          expect([label, cells.includes('b')]).toEqual([label, true])
+          const keeps = rows.length <= H && rows.every(row => row.length <= W) && [...cells].every(cell => cell === '.' || (PALETTE[cell] !== undefined && !mates.has(cell))) && [0, 2].includes([...cells].filter(cell => cell === 'r').length) && cells.includes('b')
+          if (!keeps) broken.push(`${gesture.name}/${scene}/${act.name}/${t}`)
         }
       }
     }
   }
+  expect(broken).toEqual([])
   const route = routeOf('hammer', 'Krux', 0)
   const act = route.legs[0]!.act
   const lead = 1 + act.intro.length
   const changed = Array.from({ length: 150 }, (_, i) => lead + i).some(step => actFrame(route, step, step).join('') !== act.loop((step - lead) % act.length, step).join(''))
   expect(changed).toBe(true)
+})
+
+// Ile pikseli różni dwie klatki.
+const pixelsApart = (a: Frame, b: Frame) => {
+  const other = pad(b)
+  return pad(a).reduce((sum, row, y) => sum + [...row].filter((cell, x) => cell !== other[y]![x]).length, 0)
+}
+// O ile przesunęła się głowa; bez głowy w którejś klatce 0.
+const headApart = (a: Frame, b: Frame) => {
+  const from = headOf(a)
+  const to = headOf(b)
+  return from === null || to === null ? 0 : Math.max(Math.abs(from.x - to.x), Math.abs(from.top - to.top))
+}
+const widest = (frames: readonly Frame[], apart: (a: Frame, b: Frame) => number) => frames.slice(1).reduce((most, rows, i) => Math.max(most, apart(frames[i]!, rows)), 0)
+
+test('an act interrupted anywhere in its loop settles back without a jump bigger than its own steps', () => {
+  const jumps: string[] = []
+  for (const [scene, acts] of Object.entries(ACTS)) {
+    for (const act of acts) {
+      const entry = entryOf(act)
+      const loop = Array.from({ length: act.length }, (_, t) => act.loop(t, t))
+      // Własne kroki czynności: od stójki przez wejście i cały obieg pętli z powrotem do jej początku.
+      const natural = [STAND, ...entry, ...loop, loop[0]!]
+      const pixels = widest(natural, pixelsApart)
+      const heads = widest(natural, headApart)
+      const route = { legs: [{ act, frames: 100_000 }], cyclic: true, gestures: [], every: 3, seed: 0 }
+      for (const kept of act.kit === undefined ? [false] : [false, true]) {
+        for (let i = 0; i <= act.length; i += 1) {
+          const step = 1 + entry.length + i
+          const shown = i === 0 ? entry[entry.length - 1]! : act.loop(i - 1, step - 1)
+          const way = [shown, ...settleFrames(route, step, kept, step)]
+          if (widest(way, pixelsApart) > pixels || widest(way, headApart) > heads) jumps.push(`${scene}/${act.name}/${i}/${kept}`)
+        }
+      }
+    }
+  }
+  expect(jumps).toEqual([])
+})
+
+test('a gesture rides on the running loop and changes only a few pixels of the pose the clock plays', () => {
+  const frozen: string[] = []
+  for (const scene of Object.keys(ACTS) as StageScene[]) {
+    for (const face of ['Krux', 'Grom'] as const) {
+      if (actsFor(scene, face).length === 0) continue
+      for (const seed of [0, 1]) {
+        const route = routeOf(scene, face, seed)
+        const bare = { ...route, gestures: [] }
+        for (let step = 0; step < 300; step += 1) {
+          if (pixelsApart(actFrame(route, step, step), actFrame(bare, step, step)) > 12) frozen.push(`${scene}/${face}/${seed}/${step}`)
+        }
+      }
+    }
+  }
+  expect(frozen).toEqual([])
+})
+
+test('effort paints only on the background: gear held at the head stays gear', () => {
+  const painted: string[] = []
+  for (const [scene, acts] of Object.entries(ACTS)) {
+    for (const act of acts) {
+      for (let k = 0; k < act.length; k += 1) {
+        const rows = pad(act.loop(k, k))
+        // Jeden obieg potu i ocieranie czoła.
+        for (const age of [...Array.from({ length: 12 }, (_, i) => 67 + i), 200, 201, 202, 203]) {
+          const effort = withEffort(rows, age)
+          if (!effort.every((row, y) => [...row].every((cell, x) => cell === rows[y]![x] || rows[y]![x] === '.'))) painted.push(`${scene}/${act.name}/${k}/${age}`)
+        }
+      }
+    }
+  }
+  expect(painted).toEqual([])
 })
 
 test('the bubble sits over its speaker, clipped to forty terminal cells, inside the canvas', async () => {
@@ -284,7 +357,11 @@ test('the room lives on its own and answers the chronicle', () => {
 })
 
 test('the window shows the sky of the hour, and the room has no background', () => {
-  expect([0, 4, 5, 7, 8, 17, 18, 21, 22].map(dayPhase)).toEqual(['night', 'night', 'dawn', 'dawn', 'day', 'day', 'dusk', 'dusk', 'night'])
+  // Pora roku przesuwa świt i zmierzch: w listopadzie o 17 już noc, w czerwcu jeszcze dzień.
+  const hours = [0, 4, 6, 7, 12, 16, 17, 20, 21, 22]
+  expect(hours.map(hour => dayPhase(hour, 11))).toEqual(['night', 'night', 'dawn', 'day', 'day', 'dusk', 'night', 'night', 'night', 'night'])
+  expect(hours.map(hour => dayPhase(hour, 6))).toEqual(['night', 'day', 'day', 'day', 'day', 'day', 'day', 'day', 'dusk', 'night'])
+  expect(hours.map(hour => dayPhase(hour, 12))).toEqual(['night', 'night', 'night', 'dawn', 'day', 'night', 'night', 'night', 'night', 'night'])
   const room = (phase: DayPhase) => roomGrid(160, 8, true, { phase }).join('')
   expect(room('day')).toContain('9')
   expect(room('night')).toContain('7')
@@ -310,6 +387,10 @@ test('duet poses stay in the palette, keep both eyes and open with the partner i
   for (const t of [0, DUET_FRAMES - 1]) expect(pad(duetPose('toast', t).prop)[3]!.slice(7, 14)).toBe('....hh.')
   expect(pad(duetPose('toast', 12).prop)[0]!.slice(8, 12)).toBe('jjjj')
   expect(pad(duetPose('toast', 9).prop)[0]!.slice(8, 12)).toBe('j..j')
+  // Piątka: w klatce przybicia ręce gospodarza i gościa (od kolumny 12) łączy błysk, bez luki.
+  const touch = Array.from({ length: DUET_FRAMES }, (_, t) => duetPose('highfive', t)).find(pose => pose.prop.length > 0)!
+  const clap = stageGrid([{ rows: touch.host, x: 0 }, { rows: touch.guest, x: DUET_GAP - 2 }, { rows: pad(touch.prop), x: 0 }], 30)
+  expect(clap.slice(0, 3).map(row => row.slice(6, 14))).toEqual(['..gyyg..', '.g.oo.g.', 'g......g'])
 })
 
 test('the kit left on the ground is the one of the act playing, and its reach is measured from the orc', () => {
@@ -402,6 +483,8 @@ test('a prop never slides in by itself: an act stands at its kit, and without a 
       const right = (rows: readonly string[]) => Math.max(...pad(rows).map(row => row.replace(/\.+$/u, '').length))
       const edges = entry.slice(0, lead).map(right)
       expect([label, edges.every((edge, i) => i === 0 || edge >= edges[i - 1]!)]).toEqual([label, true])
+      // Pierwsza klatka chowa cały rekwizyt za orkiem: nic nie stoi obok niego od razu.
+      expect([label, pad(entry[0]!).every(row => row.slice(6) === '.'.repeat(W - 6))]).toEqual([label, true])
     }
   }
 })
@@ -430,6 +513,49 @@ test('the horde rests behind the door of the quarters, not on the floor: no slee
   expect(doorX('Grom', 46, false)).toBe(doorX(null, 46, false))
   const room = roomGrid(200, 8, false).join('')
   for (const apron of ['N', 'M', 'P', 'O', 'L', 'T', 'u']) expect(room).not.toContain(apron)
+})
+
+test('wall furniture never overlaps on any room width, and each torch keeps a free column on both sides', () => {
+  for (let width = WALL_MIN; width <= 300; width += 1) {
+    for (const hearth of [false, true]) {
+      const label = `${width}:${hearth}`
+      const spans = wallSpans(width, hearth)
+      const [forge, table, trial, mine] = spans
+      expect([label, spans.every(([left, right], i) => left >= 0 && right < width && (i === 0 || left > spans[i - 1]![1]))]).toEqual([label, true])
+      // Pochodnia zwiadu wisi tuż przed sztolnią, z przerwą od skrzyni z kanarkiem.
+      expect([label, mine![0] - 1 > trial![1]]).toEqual([label, true])
+      // Pochodnia między kuźnią a regałem: tylko w przerwie, nigdy na rogu półki.
+      const room = roomGrid(width, 0, hearth)
+      const torches = [...room[3]!].flatMap((cell, x) => (cell === 'E' && room[4]![x] === 'E' && x >= forge![1] && x < table![0] ? [x] : []))
+      expect([label, torches.every(x => x > forge![1] && x < table![0] - 1)]).toEqual([label, true])
+      for (let frame = 0; frame < 12; frame += 1) {
+        const grid = roomGrid(width, frame, hearth)
+        const burning = grid.slice(0, 6).some(row => /[QZ]/u.test(row.slice(table![0], table![1])))
+        expect([label, frame, burning]).toEqual([label, frame, false])
+      }
+    }
+  }
+})
+
+test('a kit carried into the depth shrinks with the orc and never swells: thin lines do not double', () => {
+  const swollen: string[] = []
+  for (const [scene, acts] of Object.entries(ACTS)) {
+    for (const act of acts) {
+      if (act.kit === undefined) continue
+      const full = act.kit.join('').replace(/\./gu, '').length
+      // Krok 0, 3 i 6 wyprawy: ork w głębi ma 5, 4 i 3 piksele wysokości.
+      for (const t of [0, 3, 6]) {
+        const [kit, orc] = errandPose(t, 0, { spot: 10, back: 10, took: act.kit }, 'Krux')
+        if (kit!.rows.length !== orc!.rows.length || kit!.rows.join('').replace(/\./gu, '').length > full) swollen.push(`${scene}/${act.name}/${t}`)
+      }
+    }
+  }
+  expect(swollen).toEqual([])
+  // Najbliższy ork w głębi ma szczękę jak ork na podłodze: oczy nie leżą na fartuchu.
+  for (const step of [0, 1]) {
+    const near = farPose(0.1, 0, step, 'Krux').rows
+    expect(near.findIndex(row => row.includes('b')) - near.findIndex(row => row.includes('r'))).toBe(2)
+  }
 })
 
 test('gear leaves the wall when an orc takes it and the wall keeps the gap', () => {

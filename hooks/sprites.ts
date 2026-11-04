@@ -23,7 +23,7 @@ import { MATES, ROSTER } from './roster'
 import { GESTURES } from './fidget'
 import { terminalText } from './terminal-text'
 import { H, STAND, W, actFrame, at, dots, draw, entryOf, finalLoop, flame, inLoop, kitLead, leadIn, legAt, legDone, lerp, moodOf, noise, pad, restFrame, rotation, settleFrames, stander, walker } from './stage'
-import type { Act, Frame, Layer, Leg, Route } from './stage'
+import type { Act, Frame, Layer, Leg, Look, Route } from './stage'
 
 // Siatki pikseli kowala i hordy. Czyste funkcje: płótno `forge.ts` tylko je rysuje.
 
@@ -283,7 +283,7 @@ function hurried(frames: Frame[]): Frame[] {
 }
 
 function settleOf(left: NonNullable<Track['leaving']>): Frame[] {
-  const frames = settleFrames(routeOfTrack(left), left.step, left.kept)
+  const frames = settleFrames(routeOfTrack(left), left.step, left.kept, left.at)
   return left.fast === true ? hurried(frames) : frames
 }
 
@@ -519,6 +519,15 @@ const STASH: Record<StageScene, { x: number; y: number; rows: Frame }> = {
   raven: { x: 5, y: 1, rows: ['wy', 'ww'] },
 }
 
+// Pusta przerwa przed meblem; przed sztolnią dwie kolumny: w drugiej wisi pochodnia, którą bierze zwiad,
+// więc nie przykleja się do skrzyni z kanarkiem.
+const WALL_GAP: Record<Station, number> = { forge: 0, table: 1, trial: 1, mine: 2 }
+const WALL_WIDE = WALL_ORDER.map(station => Math.max(...WALL_PROPS[station].rows.map(row => row.length)))
+
+// Najwęższe płótno, na którym meble stają obok siebie z przerwami i kolumną wolną z prawej.
+// Węższy pas z wierszami dymka zostaje płaski, bez pokoju (`forge.ts`).
+export const WALL_MIN = WALL_ORDER.reduce((sum, station, i) => sum + WALL_GAP[station] + WALL_WIDE[i]!, 0) + 1
+
 const wallCache = new Map<string, Record<Station, number>>()
 
 // Lewe krawędzie mebli: każdy jak najbliżej stanowiska, bez nachodzenia na sąsiada.
@@ -526,10 +535,11 @@ function wallSpots(floor: number, hearth: boolean): Record<Station, number> {
   const key = `${floor}:${hearth}`
   const known = wallCache.get(key)
   if (known) return known
-  const wide = WALL_ORDER.map(station => Math.max(...WALL_PROPS[station].rows.map(row => row.length)))
+  const wide = WALL_WIDE
+  const gap = (i: number) => WALL_GAP[WALL_ORDER[i]!]
   const xs = WALL_ORDER.map(station => stationX(SCENE_OF[station], floor, hearth) + WALL_PROPS[station].x)
-  xs.forEach((x, i) => { xs[i] = i === 0 ? x : Math.max(x, xs[i - 1]! + wide[i - 1]! + 1) })
-  for (let i = xs.length - 1; i >= 0; i -= 1) xs[i] = Math.max(0, Math.min(xs[i]!, i === xs.length - 1 ? floor - wide[i]! - 1 : xs[i + 1]! - wide[i]! - 1))
+  xs.forEach((x, i) => { xs[i] = i === 0 ? x : Math.max(x, xs[i - 1]! + wide[i - 1]! + gap(i)) })
+  for (let i = xs.length - 1; i >= 0; i -= 1) xs[i] = Math.max(0, Math.min(xs[i]!, i === xs.length - 1 ? floor - wide[i]! - 1 : xs[i + 1]! - wide[i]! - gap(i + 1)))
   const spots = Object.fromEntries(WALL_ORDER.map((station, i) => [station, xs[i]!])) as Record<Station, number>
   wallCache.set(key, spots)
   return spots
@@ -537,6 +547,11 @@ function wallSpots(floor: number, hearth: boolean): Record<Station, number> {
 
 function wallX(station: Station, floor: number, hearth: boolean): number {
   return wallSpots(floor, hearth)[station]
+}
+
+// Kolumny mebli od lewej: pierwsza i za ostatnią, w kolejności ściany.
+export function wallSpans(floor: number, hearth: boolean): (readonly [number, number])[] {
+  return WALL_ORDER.map((station, i) => [wallX(station, floor, hearth), wallX(station, floor, hearth) + WALL_WIDE[i]!] as const)
 }
 
 // Drzwi kwater w wolnym miejscu ściany przy sztolni: za nimi odpoczywa horda, której nie ma
@@ -697,9 +712,12 @@ export function roomGrid(width: number, frame: number, hearth: boolean, state: P
   const bright = feel?.kind === 'test-pass' || feel?.kind === 'build-pass' || feel?.kind === 'commit'
   // Pierwsza pochodnia świeci między kuźnią a regałem, druga przy wejściu do sztolni:
   // tę ork bierze ze sobą, gdy idzie szukać.
-  const between = Math.round((wallX('forge', width, hearth) + WALL_PROPS.forge.rows[2]!.length + wallX('table', width, hearth)) / 2)
+  // Pierwsza tylko w przerwie z wolną kolumną po obu stronach: inaczej płomień siada na rogu półki.
+  const after = wallX('forge', width, hearth) + WALL_PROPS.forge.rows[2]!.length
+  const table = wallX('table', width, hearth)
+  const between = table - after >= 3 ? Math.round((after + table - 1) / 2) : null
   for (const x of [between, wallX('mine', width, hearth) - 1]) {
-    if (x >= width || x < 0) continue
+    if (x === null || x >= width || x < 0) continue
     room[3]![x] = 'E'
     room[4]![x] = 'E'
     if (x !== between && full.taken.includes('torch')) continue
@@ -726,8 +744,10 @@ export function paint(grid: readonly string[], rows: readonly string[], x: numbe
 }
 
 // Ork w głębi: im dalej, tym mniejszy i wyżej na podłodze. Stopy na wierszu `FEET`.
+// Najbliższy ma szczękę między oczami a fartuchem, jak ork na podłodze: czerwony fartuch
+// (Grom) nie zlewa się z oczami.
 const FAR_ORCS: readonly (readonly [Frame, Frame])[] = [
-  [['.ggg.', 'grgrg', 'bbbbb', '.bGb.', '.G.G.'], ['.ggg.', 'grgrg', 'bbbbb', '.bGb.', '..G..']],
+  [['.ggg.', 'grgrg', '.ggg.', 'bbbbb', '.G.G.'], ['.ggg.', 'grgrg', '.ggg.', 'bbbbb', '..G..']],
   [['.gg.', 'rggr', 'bbbb', 'G..G'], ['.gg.', 'rggr', 'bbbb', '.GG.']],
   [['rgr', 'bbb', 'G.G'], ['rgr', 'bbb', '.G.']],
 ]
@@ -739,15 +759,20 @@ function levelOf(depth: number): number {
   return Math.max(1, Math.ceil(depth * FAR_ORCS.length)) - 1
 }
 
-// Ork w drodze przez głąb pokoju: `depth` 0 tuż przy widzu, 1 przy ścianie.
-export function farPose(depth: number, x: number, step: number, face: Face): Far {
+// Ork w drodze przez głąb pokoju: `depth` 0 tuż przy widzu, 1 przy ścianie. `lift` podnosi go
+// o tyle pikseli: w otwartych drzwiach stoi na progu, w ciemnym otworze, nie pod nim.
+export function farPose(depth: number, x: number, step: number, face: Face, lift = 0): Far {
   const level = levelOf(depth)
   const rows = FAR_ORCS[level]![step % 2]!
-  return { rows: dress(rows, face), x, y: FEET[level]! - rows.length + 1 }
+  return { rows: dress(rows, face), x, y: FEET[level]! - rows.length + 1 - lift }
 }
 
 // Kumpel staje w otwartych drzwiach kwater, zanim ruszy do roboty.
 export const RISE_FRAMES = 2
+
+// Próg drzwi kwater i wylotu sztolni leży o tyle pikseli nad stopami orka przy ścianie:
+// ork schodzi z niego piksel na klatkę.
+export const SILL_LIFT = FEET[FEET.length - 1]! - (DOOR.length - 1)
 
 // Kufle gościa w drodze przez głąb pokoju: piana nad drewnem przy dłoni, po stronie marszu.
 // Im dalej, tym mniej z nich widać, jak z orka.
@@ -771,11 +796,13 @@ export function depthSpot(scene: StageScene, floor: number, hearth: boolean): nu
 }
 
 // Rekwizyt zmniejszony do `size` wierszy: komórka bierze pierwszy niepusty piksel swojego pola.
+// Pola dzielą rekwizyt bez zakładek: piksel trafia do jednego pola, więc cienka linia (drzewce,
+// nóżka fotela) się nie podwaja, a rekwizyt w głębi nie puchnie w klocek.
 function shrunk(kit: Frame, size: number): string[] {
   const grid = pad(kit)
   const ratio = H / size
   return Array.from({ length: size }, (_, y) => Array.from({ length: Math.ceil(W / ratio) }, (_, x) => {
-    const cells = grid.slice(Math.floor(y * ratio), Math.ceil((y + 1) * ratio)).flatMap(row => [...row.slice(Math.floor(x * ratio), Math.ceil((x + 1) * ratio))])
+    const cells = grid.slice(Math.round(y * ratio), Math.round((y + 1) * ratio)).flatMap(row => [...row.slice(Math.round(x * ratio), Math.round((x + 1) * ratio))])
     return cells.find(cell => cell !== '.') ?? '.'
   }).join(''))
 }
@@ -834,8 +861,9 @@ export function duetPose(kind: DuetKind, t: number): DuetFrame {
     return { host: RIGHT(t < 22 ? 'gg' : ''), guest: facing('right', t > 8 ? 'gg' : ''), prop: t < 26 ? draw([['RR'], x, 3]) : [] }
   }
   if (kind === 'highfive') {
+    // Dłonie idą ku sobie aż do górnego wiersza i stykają się nad błyskiem: przybicie, nie machanie do iskry.
     const touch = step % 3 === 2
-    return { host: touch ? HIGH_HOST : RIGHT(''), guest: touch ? HIGH_GUEST : facing('right', ''), prop: touch ? draw(at('y', 9, 0), at('y', 10, 1), at('o', 8, 1)) : [] }
+    return { host: touch ? HIGH_HOST : RIGHT(''), guest: touch ? HIGH_GUEST : facing('right', ''), prop: touch ? draw(at('g', 8, 0), at('g', 11, 0), at('y', 9, 0), at('y', 10, 0), at('o', 9, 1), at('o', 10, 1)) : [] }
   }
   if (kind === 'toast') {
     // Gość przynosi dwa kufle i podaje jeden, w górę, stuk nad środkiem z rozpryskiem piany, łyk
@@ -857,23 +885,37 @@ export function duetPose(kind: DuetKind, t: number): DuetFrame {
   return { host: shout ? HIGH_HOST : RIGHT('g'), guest: shout ? facing('right', 'g') : HIGH_GUEST, prop: draw(at('R', 8 + (step % 3), 1), at('y', 10 - (step % 3), 0)) }
 }
 
-// Pora dnia z godziny: w okienku na ścianie widać niebo.
+// Pora dnia z godziny i miesiąca: w okienku na ścianie widać niebo.
 export type DayPhase = 'night' | 'dawn' | 'day' | 'dusk'
 
-export function dayPhase(hour: number): DayPhase {
-  if (hour >= 22 || hour < 5) return 'night'
-  if (hour < 8) return 'dawn'
-  return hour < 18 ? 'day' : 'dusk'
+// Godzina świtu i zmierzchu w Polsce w połowie miesiąca, czasem lokalnym (z letnim): pół godziny
+// przed wschodem i pół godziny po zachodzie słońca. Zimą o piątej po południu jest już noc.
+const DAWN = [7, 6, 5, 5, 4, 3, 4, 4, 5, 6, 6, 7] as const
+const DUSK = [16, 17, 18, 20, 20, 21, 21, 20, 19, 18, 16, 15] as const
+
+export function dayPhase(hour: number, month: number): DayPhase {
+  const dawn = DAWN[month - 1] ?? DAWN[5]
+  const dusk = DUSK[month - 1] ?? DUSK[5]
+  if (hour === dawn) return 'dawn'
+  if (hour === dusk) return 'dusk'
+  return hour > dawn && hour < dusk ? 'day' : 'night'
 }
 
 const SKY: Record<DayPhase, string> = { night: '7', dawn: '8', day: '9', dusk: '0' }
 
-// Ork w drodze po podłodze: nogi na zmianę.
-export function walkerRows(step: number, face: Face): string[] {
-  return dress(walker(step), face)
+// Ork w drodze po podłodze: nogi na zmianę, oczy w stronę marszu, bo ciało się nie obraca.
+export function walkerRows(step: number, face: Face, look: Look = 'mid'): string[] {
+  return dress(walker(step, look), face)
 }
 
 export type Placed = { rows: readonly string[]; x: number }
+
+// Lewa krawędź głowy orka w klatce od kolumny `x`, liczona jak w stójce (czubek o piksel w prawo):
+// pierwszy od góry wiersz z czterema pikselami skóry, tak samo szuka jej `dress`.
+export function headX(rows: readonly string[], x: number): number {
+  const crown = rows.findIndex(row => /[gG]{4}/u.test(row))
+  return crown < 0 ? x : x + rows[crown]!.search(/[gG]{4}/u) - 1
+}
 
 // Scena o stałej szerokości: każdy ork wklejony od swojego x, poza płótnem ucięty.
 export function stageGrid(placed: readonly Placed[], width: number): string[] {
@@ -894,14 +936,15 @@ export function bubbleLines(text: string, index: number, width: number): string[
   return bubbleAt(text, slotX(index), width)
 }
 
-// Dymek nad orkiem stojącym od kolumny `x`; idzie za nim po podłodze.
-export function bubbleAt(text: string, x: number, width: number): string[] {
+// Dymek nad orkiem stojącym od kolumny `x`; idzie za nim po podłodze. Ogonek celuje w głowę:
+// `head` to lewa krawędź głowy w stójce (ork leżący na szezlongu ma ją dalej niż `x`).
+export function bubbleAt(text: string, x: number, width: number, head = x): string[] {
   const body = terminalText(text, BUBBLE_TEXT)
   const inner = body.columns + 2
   const box = inner + 2
   const center = x + 2
   const left = Math.max(0, Math.min(width - box, center - Math.floor(box / 2)))
-  const tail = Math.max(1, Math.min(inner, center - left))
+  const tail = Math.max(1, Math.min(inner, head + 2 - left))
   const place = (line: string) => `${' '.repeat(left)}${line}${' '.repeat(Math.max(0, width - left - box))}`
   return [
     place(`╭${'─'.repeat(inner)}╮`),
@@ -1146,14 +1189,18 @@ export function behind(prop: Placed, orc: Placed): Placed {
   return { rows, x: prop.x }
 }
 
-// Pot po 10 s pracy; po 30 s dłoń na chwilę ociera czoło.
+// Pot po 10 s pracy; po 30 s dłoń na chwilę ociera czoło. Tylko na tle: narzędzie przy głowie
+// (kilof, włócznia, zwój) zostaje narzędziem, a bez miejsca efektu nie ma.
 export function withEffort(rows: readonly string[], age: number): string[] {
   if (age < 67) return [...rows]
   const top = rows.findIndex(row => /[gG]{4}/u.test(row))
   if (top < 0) return [...rows]
   const x = rows[top]!.search(/[gG]{4}/u) + 5
   const wipe = age >= 200 && age % 40 < 4
-  return pad(draw([rows, 0, 0], ...(wipe ? [at('g', x, top), at('g', x + 1, top + 1)] : age % 12 < 5 ? [at('i', x, top + 1 + Math.floor((age % 12) / 3))] : [])))
+  const marks = wipe ? [at('g', x, top), at('g', x + 1, top + 1)] : age % 12 < 5 ? [at('i', x, top + 1 + Math.floor((age % 12) / 3))] : []
+  const grid = pad(rows)
+  const free = marks.every(([, mx, my]) => grid[my]?.[mx] === '.')
+  return pad(draw([rows, 0, 0], ...(free ? marks : [])))
 }
 
 // Po pół minuty spoczynku oczy się zamykają, obok głowy mała runa snu.

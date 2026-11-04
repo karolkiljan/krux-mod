@@ -1,7 +1,7 @@
 import type { ClientModule } from 'claude-code'
 
 import type { KruxCue, KruxEvent, KruxMate, KruxMood, KruxSpeaker } from '../types'
-import { CATCH_X, CUE_FRAMES, DUET_FRAMES, DUET_GAP, ERRAND_FRAMES, ERRAND_SWAP, FRAME_MS, MUGS, ORC_GAP, ORC_WIDTH, RISE_FRAMES, SPEAKER_COLOR, TOAST_HELD, TOAST_RETURN, bandColumns, behind, bubbleAt, canvasColumns, carried, catchStep, caughtScroll, depthSpot, dayPhase, doorX, dress, duetPose, episodeKit, errandPose, farMugs, farPose, floorHomes, floorStart, frameGrid, hasHearth, hearthProp, kitAt, kitReach, nextEpisode, paint, quartersDoor, roomGrid, runsOf, sameStation, sliceRuns, slotX, stageGrid, stationX, tossFlight, tossFrames, tossGrid, tossScroll, trackArrive, trackBare, trackDozing, trackDue, trackFace, trackGrid, trackKit, trackLooping, trackOff, trackOut, trackResume, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withNap } from './sprites'
+import { CATCH_X, CUE_FRAMES, DUET_FRAMES, DUET_GAP, ERRAND_FRAMES, ERRAND_SWAP, FRAME_MS, MUGS, ORC_GAP, ORC_WIDTH, RISE_FRAMES, SILL_LIFT, SPEAKER_COLOR, TOAST_HELD, TOAST_RETURN, WALL_MIN, bandColumns, behind, bubbleAt, canvasColumns, carried, catchStep, caughtScroll, depthSpot, dayPhase, doorX, dress, duetPose, episodeKit, errandPose, farMugs, farPose, floorHomes, floorStart, frameGrid, hasHearth, headX, hearthProp, kitAt, kitReach, nextEpisode, paint, quartersDoor, roomGrid, runsOf, sameStation, sliceRuns, slotX, stageGrid, stationX, tossFlight, tossFrames, tossGrid, tossScroll, trackArrive, trackBare, trackDozing, trackDue, trackFace, trackGrid, trackKit, trackLooping, trackOff, trackOut, trackResume, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withNap } from './sprites'
 import type { DuetKind, Episode, Face, Far, Placed, Run, StageScene, Track } from './sprites'
 import { draw } from './stage'
 import type { Frame } from './stage'
@@ -236,6 +236,11 @@ function depart(actor: Actor, frame: number, still: boolean, handoff: boolean, s
   return { ...stopped, leftAt: at, ...(handoff ? tossFrom(stopped, at, kruxX, stage, actor.left !== undefined) : {}) }
 }
 
+// Wezwany z kwater albo z nory stoi w otworze na progu, potem schodzi w pokój piksel na klatkę.
+function sillLift(actor: Actor, frame: number): number {
+  return actor.rise === 1 && actor.leftAt === null ? Math.max(0, Math.min(SILL_LIFT, actor.enter + SILL_LIFT - 1 - frame)) : 0
+}
+
 // Krok chwytu Kruxa, gdy któryś kumpel właśnie rzuca mu zwój; `null`, gdy nikt.
 function catchOf(actors: Record<string, Actor>, frame: number): number | null {
   for (const actor of Object.values(actors)) {
@@ -265,8 +270,9 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
   const stage = Math.max(bandColumns(slots), props.variant === 'band' ? (props.floor ?? 0) : 0)
   // W bezruchu orkowie stoją w slotach od lewej krawędzi, więc palenisko nie ma gdzie stanąć.
   const hearth = props.variant === 'band' && !props.still && hasHearth(stage, slots)
-  // Pokój stoi tam, gdzie pas ma wiersze na dymek: dymek kładzie się na ścianie.
-  const room = props.variant === 'band' && props.bubbleRows
+  // Pokój stoi tam, gdzie pas ma wiersze na dymek: dymek kładzie się na ścianie. Na węższym
+  // płótnie meble weszłyby na siebie, więc pas zostaje płaski, z dymkiem nad podłogą.
+  const room = props.variant === 'band' && props.bubbleRows && stage >= WALL_MIN
   // Tam, gdzie jest pokój, sprzęt chodzi przez ściany i drzwi, a nie przez płótno.
   const fetching = room && !props.still
   // Podłoga, od której zależą stanowiska: szerokość i palenisko.
@@ -588,6 +594,8 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
   const grounded: Placed[] = []
   const deep: Far[] = []
   const standsAt: Record<string, number> = {}
+  // Głowa mówcy: ogonek dymka celuje w nią, a ramka stoi nad jego miejscem na podłodze.
+  const headsAt: Record<string, number> = {}
   let moving = false
   const caught = catchOf(actors, frame)
   const kruxX = kruxAt()
@@ -649,6 +657,7 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
     if (duet !== undefined && duet.at !== null && (key === duet.guest || (key === duet.host && frame >= duet.at))) {
       const pose = duetPose(duet.kind, Math.max(0, frame - duet.at))
       const rows = dress(key === duet.host ? pose.host : pose.guest, actor.face)
+      headsAt[key] = headX(key === duet.host ? pose.host : pose.guest, key === duet.host ? at.x : at.x - 2)
       placed.push({ rows, x: key === duet.host ? at.x : at.x - 2, walking: false })
       if (key === duet.host && pose.prop.length > 0) loads.push({ rows: [...pose.prop], x: at.x })
       moving = true
@@ -679,7 +688,7 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
     const leftward = actor.leftAt !== null ? (actor.door ?? actor.home) < actor.home : actor.home < actor.from
     // W głębi: wychodzi z kwater albo idzie między drzwiami a podłogą.
     if (at.depth > 0) {
-      const far = farPose(at.depth, at.x, frame, actor.face)
+      const far = farPose(at.depth, at.x, frame, actor.face, sillLift(actor, frame))
       if (actor.mugs) deep.push(farMugs(far, leftward))
       deep.push(far)
       doorway ||= quarters !== null && doorX(actor.face, stage, hearth) === quarters && at.depth >= 0.7 && Math.abs(at.x - quarters) <= 3
@@ -699,7 +708,8 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
       if (actor.leftAt === null && !frozen && !reacting && catching === null && actor.workAt !== undefined) raw = withEffort(raw, frame - (actor.effortAt ?? frame))
       if (key === 'krux' && ((frozen && state.snoozing) || trackDozing(actor.track, frame))) raw = withNap(raw)
     }
-    const rows = at.walking ? walkerRows(frame, actor.face) : dress(raw, actor.face)
+    const rows = at.walking ? walkerRows(frame, actor.face, leftward ? 'left' : 'right') : dress(raw, actor.face)
+    if (!at.walking) headsAt[key] = headX(raw, at.x)
     if (tossing) {
       const scroll = tossScroll(frame - actor.handoff!.at, actor.home + 6, kruxX + CATCH_X, actor.handoff!.flight)
       if (scroll !== null) scrolls.push(scroll)
@@ -755,19 +765,28 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
   }).filter(scene => scene !== null)
   const felt = krux?.cue !== undefined && frame - krux.cue.at < CUE_FRAMES ? { kind: krux.cue.kind, age: frame - krux.cue.at } : null
   const when = new Date(props.now ?? 43_200_000)
-  const roomState = { feel: felt, alive: !frozen, red: props.red === true, blessed: props.blessed === true, phase: dayPhase(when.getHours()), date: { month: when.getMonth() + 1, day: when.getDate() }, taken, door: doorway }
+  const roomState = { feel: felt, alive: !frozen, red: props.red === true, blessed: props.blessed === true, phase: dayPhase(when.getHours(), when.getMonth() + 1), date: { month: when.getMonth() + 1, day: when.getDate() }, taken, door: doorway }
   const scene = room ? paint(deep.reduce<string[]>((back, orc) => paint(back, orc.rows, orc.x, orc.y), roomGrid(width, frame, hearth, roomState)), grid, 0, 6) : grid
   const { Box, Text } = surface.elements
   const lines = runsOf(scene, props.scale)
   const said = props.variant === 'band' ? props.bubble : null
   const speaker = said === null ? undefined : actors[said.key]
-  // W głębi pomieszczenia ork nie gada: dymek zasłoniłby ścianę, do której właśnie idzie.
-  // Wyjątek to wtręt po zdarzeniu: tego przemilczeć nie wolno.
-  const quiet = speaker?.errand !== undefined && !(props.cues ?? []).some(cue => cue.key === said?.key && cue.kind !== 'handoff')
+  // W głębi pomieszczenia ork nie gada: dymek zasłoniłby ścianę, do której właśnie idzie,
+  // a w progu drzwi samego orka. Wyjątek to wtręt po zdarzeniu: tego przemilczeć nie wolno.
+  const deepIn = speaker !== undefined && (speaker.errand !== undefined || (room && sillLift(speaker, frame) > 0))
+  const quiet = deepIn && !(props.cues ?? []).some(cue => cue.key === said?.key && cue.kind !== 'handoff')
   const talking = said !== null && speaker !== undefined && speaker.leftAt === null && !quiet ? said : null
   const spoken = talking === null ? '' : props.still ? talking.text : graphemes(talking.text).slice(0, Math.max(1, (frame - speech.at + 1) * 3)).join('')
-  const bubbleText = talking !== null ? bubbleAt(spoken, standsAt[said!.key] ?? speaker!.home, width) : props.variant === 'band' && props.bubbleRows ? [' ', ' ', ' '] : []
+  const bubbleText = talking !== null ? bubbleAt(spoken, standsAt[said!.key] ?? speaker!.home, width, headsAt[said!.key] ?? standsAt[said!.key] ?? speaker!.home) : props.variant === 'band' && props.bubbleRows ? [' ', ' ', ' '] : []
   const bubbleColor = talking === null ? {} : { color: SPEAKER_COLOR[talking.speaker] }
+  // Ramka w kolorze mówcy, tekst w kolorze tekstu terminala: fartuch Groma czy szary orka
+  // bez imienia są na ciemnym tle nieczytelne, iskra Kruxa na jasnym też. Mówcę zdradza ramka i imię.
+  const bubbleRow = (line: string, y: number) => {
+    const open = line.indexOf('│')
+    const close = line.lastIndexOf('│')
+    if (y !== 1 || open < 0 || close <= open) return [Text({ ...bubbleColor, children: [line] })]
+    return [Text({ ...bubbleColor, children: [line.slice(0, open + 2)] }), Text({ children: [line.slice(open + 2, close - 1)] }), Text({ ...bubbleColor, children: [line.slice(close - 1)] })]
+  }
   const texts = (runs: readonly Run[]) =>
     runs.map(run =>
       Text({
@@ -786,11 +805,11 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
         if (line === null) return row(y < 3 ? `bubble-${y}` : `row-${y - 3}`, texts(runs))
         const left = line.length - line.trimStart().length
         const right = width - (line.length - line.trimEnd().length)
-        return row(`bubble-${y}`, [...texts(sliceRuns(runs, 0, left)), Text({ ...bubbleColor, children: [line.trim()] }), ...texts(sliceRuns(runs, right, width))])
+        return row(`bubble-${y}`, [...texts(sliceRuns(runs, 0, left)), ...bubbleRow(line.trim(), y), ...texts(sliceRuns(runs, right, width))])
       }),
     })
   }
-  const bubble = bubbleText.map((line, y) => Box({ key: `bubble-${y}`, children: [Text({ ...bubbleColor, children: [line] })] }))
+  const bubble = bubbleText.map((line, y) => Box({ key: `bubble-${y}`, children: talking === null ? [Text({ children: [line] })] : bubbleRow(line, y) }))
   return Box({ flexDirection: 'column', children: [...bubble, ...lines.map((runs, y) => row(`row-${y}`, texts(runs)))] })
 }
 
