@@ -428,6 +428,29 @@ test('a new station: Krux takes the old kit back to the wall, walks over and fet
   expect(there.actors.krux!.track.setAt).toBe(there.frame)
 })
 
+test('a march never jumps the width of an orc: on a wide floor each frame moves at most four columns', () => {
+  const { surface, tick } = surfaceOf()
+  const wide: ForgeProps = { ...FLOOR, slots: 4, floor: 230 }
+  draw(wide, surface)
+  const trial: ForgeProps = { ...wide, orcs: [{ ...KRUX, scene: 'test' }] }
+  const steps: number[] = []
+  let last: number | null = null
+  for (let i = 0; i < 160 && (surface.state as Seen).actors.krux!.track.scene !== 'test'; i++) {
+    tick()
+    const pixels = pixelsOf(draw(trial, surface))
+    const krux = (surface.state as Seen).actors.krux!
+    // Lewa krawędź skóry Kruxa na podłodze, tylko w marszu: nie w głębi i nie przy rekwizycie.
+    const marching = krux.errand === undefined && krux.pending !== undefined && (surface.state as Seen).frame >= krux.enter && krux.from !== krux.home
+    const xs = pixels.slice(6).map(row => row.findIndex((cell, x) => x >= 10 && cell === PALETTE.g)).filter(x => x >= 0)
+    const at = xs.length === 0 ? null : Math.min(...xs)
+    if (marching && at !== null && last !== null && at !== last) steps.push(Math.abs(at - last))
+    last = marching ? at : null
+  }
+  // Ork ma 6 pikseli: krok najwyżej 4, więc kolejne sylwetki na siebie zachodzą.
+  expect(Math.max(...steps)).toBeLessThanOrEqual(4)
+  expect(steps.length).toBeGreaterThan(10)
+})
+
 test('a render without a tick settles: the floor never writes state in a loop', () => {
   const { surface } = surfaceOf()
   const props: ForgeProps = { ...FLOOR, orcs: [{ ...KRUX, scene: 'pick' }, { ...NIUCH, scene: 'torch' }, { ...NIUCH, key: 'a2', face: 'Młot', scene: 'pick' }] }

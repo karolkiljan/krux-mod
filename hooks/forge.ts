@@ -84,12 +84,14 @@ type Duet = { host: string; guest: string; kind: DuetKind; at: number | null; me
 // może wpaść następny; `visitor` ostatni gość, żeby ten sam nie wpadał dwa razy z rzędu.
 type ForgeState = { frame: number; actors: Record<string, Actor>; idle: boolean; reduced?: boolean; snoozing?: boolean; said?: { id: string; at: number }; laidAt?: number; duet?: Duet; duetAt?: number; visit?: string; visitDue?: number; visitor?: KruxMate }
 
-// Kolumny na klatkę w marszu: przez całą podłogę w około 3 s, także na szerokim terminalu.
+// Kolumny na klatkę w marszu: szybciej na szerokiej podłodze, ale najwyżej 4, żeby kolejne
+// sylwetki (6 pikseli) na siebie zachodziły i ork szedł, zamiast przeskakiwać własną szerokość.
 const WALK_SPEED = 3
 const WALK_FRAMES = 20
+const WALK_MAX = 4
 
 function walkSpeed(stage: number): number {
-  return Math.max(WALK_SPEED, Math.ceil(stage / WALK_FRAMES))
+  return Math.min(WALK_MAX, Math.max(WALK_SPEED, Math.ceil(stage / WALK_FRAMES)))
 }
 
 // Droga między ścianą a podłogą trwa co najmniej tyle klatek, nawet gdy drzwi stoją tuż za orkiem.
