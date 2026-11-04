@@ -864,7 +864,7 @@ test('the bench replays the horde notes by the rule the mod uses', () => {
   assert.match(lore, /miejsce: \$\{place\}/u)
   assert.match(lore, /^const PLACES = \['w środku[^'\n]*', 'na końcu'\] as const$/mu)
   const register = fs.readFileSync('hooks/register.ts', 'utf8')
-  assert.match(register, /const life = risk === null \? lifeNote\(chronicle, turn, aside\) : null/u)
+  assert.match(register, /const life = risk === null \? hordeNote\(chronicle, turn, aside\) : null/u)
   assert.match(register, /const plan = promptKind\(e\.text\) === 'plan'\n[\s\S]*middle: plan \}/u)
   for (const { prompts } of Object.values(vm.runInContext('SCENARIOS', benchContext()))) {
     prompts.forEach((prompt, turn) => {

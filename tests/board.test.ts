@@ -436,6 +436,38 @@ test('cargo, deno and nextest name their failing tests; the deno summary is not 
   expect(run('make test', '        FAIL [   0.003s] crate tests::b\n     Summary [   0.010s] 3 tests run: 2 passed, 1 failed, 0 skipped\n', true)?.failures).toEqual(['crate tests::b'])
 })
 
+test('stream prefixes from turbo, pnpm -r and docker compose do not turn a failing run green behind a pipe', () => {
+  // `pnpm test` ze skryptem `turbo run test`: każda linia runnera ma prefiks zadania, a `tail` daje kod 0.
+  const turbo = [
+    'web:test:  FAIL  src/a.test.ts > adds',
+    'web:test: AssertionError: expected 2 to be 3',
+    'web:test:  Test Files  1 failed (1)',
+    'web:test:       Tests  1 failed | 9 passed (10)',
+    'web:test:  ELIFECYCLE  Test failed. See above for more details.',
+    ' Tasks:    0 successful, 1 total',
+    'Failed:    web#test',
+  ].join('\n')
+  expect(run('pnpm test 2>&1 | tail -20', turbo)).toMatchObject({ ok: false, passed: 9, failed: 1, failures: ['src/a.test.ts > adds'] })
+  expect(run('pnpm test 2>&1 | tail -1', '@acme/web:test: Tests:       1 failed, 5 passed, 6 total')).toMatchObject({ ok: false, passed: 5, failed: 1 })
+  const recursive = 'packages/web test:  FAIL  src/a.test.ts > adds\npackages/web test:       Tests  1 failed | 9 passed (10)\npackages/web test: Failed\n'
+  expect(run('pnpm -r test 2>&1 | tail -5', recursive)).toMatchObject({ ok: false, passed: 9, failed: 1, failures: ['src/a.test.ts > adds'] })
+  expect(run('npm test 2>&1 | tail -1', 'app-1  |       Tests  1 failed | 9 passed (10)')).toMatchObject({ ok: false, passed: 9, failed: 1 })
+  // Bezpieczny sąsiad: zielony turbo zostaje zielony, a goła linia logu z dwukropkiem dalej nie jest podsumowaniem.
+  expect(run('pnpm test 2>&1 | tail -2', 'web:test:       Tests  10 passed (10)\n Tasks:    1 successful, 1 total')).toMatchObject({ ok: true, passed: 10, failed: null })
+  expect(run('npm test', 'batch done: 2 failed, 8 ok\n 3 passed')).toMatchObject({ ok: true, passed: 3, failed: null })
+})
+
+test('gradle, XCTest and minute timings keep their summary counts', () => {
+  const gradle = '> Task :test FAILED\n\nFooTest > adds() FAILED\n    org.opentest4j.AssertionFailedError at FooTest.java:10\n\n2 tests completed, 1 failed\n\nFAILURE: Build failed with an exception.\n'
+  expect(run('./gradlew test 2>&1 | tail -15', gradle)).toMatchObject({ ok: false, failed: 1 })
+  expect(run('./gradlew test 2>&1 | tail -1', '3 tests completed, 0 failed')).toMatchObject({ ok: true, failed: 0 })
+  const xctest = "Test Case '-[FooTests.FooTests testAdd]' failed (0.001 seconds).\n\t Executed 3 tests, with 1 failure (0 unexpected) in 0.002 (0.002) seconds\n"
+  expect(run('swift test 2>&1 | tail -5', xctest)).toMatchObject({ ok: false, failed: 1 })
+  expect(run('swift test', '\t Executed 3 tests, with 0 failures (0 unexpected) in 0.002 (0.002) seconds')).toMatchObject({ ok: true, failed: 0 })
+  expect(run('npx mocha', '  3 passing (2m)\n')).toMatchObject({ ok: true, passed: 3 })
+  expect(run('npx playwright test 2>&1 | tail -2', '  1 failed\n  3 passed (1.2m)\n')).toMatchObject({ ok: false, passed: 3, failed: 1 })
+})
+
 test('printing a quoted test command cannot record green tests', () => {
   expect(run("printf 'x; npm test'", ' 3 pass\n 0 fail')).toBe(null)
 })

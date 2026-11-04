@@ -29,8 +29,10 @@ const UI_FILE = /\.(?:css|scss|sass|less|html?|vue|svelte|tsx|jsx)$/iu
 
 // Błąd budowania w wyjściu: `| tail` zjada kod wyjścia, a dymek mówi tylko prawdę.
 // Podsumowanie ESLinta i stylelinta „✖ 3 problems (0 errors, 3 warnings)” stoi też
-// przy samych ostrzeżeniach i kodzie 0: to nie padłe budowanie.
-const BUILD_ERROR = /(?<![\p{L}\d])error(?:\[\w+\]|:|\s+TS\d+)|✖\s+[1-9](?!\d*\s+problems?\s+\(0\s+errors?)/iu
+// przy samych ostrzeżeniach i kodzie 0: to nie padłe budowanie. Chyba że lint odmawia
+// przez limit ostrzeżeń (`--max-warnings 0`): ESLint „too many warnings”, stylelint
+// „Max warnings exceeded”; kod 1 zjada wtedy `| tail`.
+const BUILD_ERROR = /(?<![\p{L}\d])error(?:\[\w+\]|:|\s+TS\d+)|✖\s+[1-9](?!\d*\s+problems?\s+\(0\s+errors?)|too many warnings|max warnings exceeded/iu
 
 // Co jedno wywołanie narzędzia dopisuje do kroniki. Zawał to padła komenda, która
 // coś robiła: sam `grep` bez trafień albo `git diff` z kodem 1 tylko patrzyły.
@@ -73,12 +75,13 @@ export function recordTool(lore: KruxLore, tool: string, input: Record<string, u
 }
 
 // Po turze: kto z hordy padł w odpowiedzi i ile tur minęło bez nikogo. Ostatnią
-// wstawkę miał pierwszy wymieniony (`matesNamed` daje kolejność tekstu): w sporze
-// para pada po podmiocie, a przy ostatnim w kolejności `MATES` notka brała parę
-// za podmiot i ten sam kumpel mógł dostać dwie wstawki z rzędu.
-export function recordAnswer(lore: KruxLore, mates: readonly KruxMate[]): KruxLore {
+// wstawkę miał kumpel notki tej tury (`noted`), gdy odpowiedź go wymienia: Krux woła
+// wcześniej innego do roboty („Krux puszczać Niucha”). Bez niego pierwszy wymieniony
+// (`matesNamed` daje kolejność tekstu, w sporze para pada po podmiocie); tak też `replay`,
+// bo historia nie pamięta notki. Inaczej ten sam kumpel mógł dostać dwie wstawki z rzędu.
+export function recordAnswer(lore: KruxLore, mates: readonly KruxMate[], noted: KruxMate | null = null): KruxLore {
   if (mates.length === 0) return { ...lore, quietTurns: lore.quietTurns + 1 }
-  return { ...lore, lastMate: mates[0]!, quietTurns: 0 }
+  return { ...lore, lastMate: noted !== null && mates.includes(noted) ? noted : mates[0]!, quietTurns: 0 }
 }
 
 // Co kilka tur, nie co turę: wstawka w każdej odpowiedzi to wytarty szablon.
@@ -165,6 +168,12 @@ function mixed(seed: number): number {
 // wstawka ma sens w tej turze, decyduje wołający (prośba o ruch nieodwracalny
 // notki nie dostaje), więc notka nie zostawia modelowi „jeśli pasuje”.
 export function lifeNote(lore: KruxLore, seed: number, aside: Aside = {}): string | null {
+  return hordeNote(lore, seed, aside)?.text ?? null
+}
+
+// Notka razem z kumplem, o którym jest: po turze `recordAnswer` zapisuje go jako
+// ostatnią wstawkę, gdy odpowiedź go wymienia.
+export function hordeNote(lore: KruxLore, seed: number, aside: Aside = {}): { text: string; mate: KruxMate } | null {
   if (lore.quietTurns < QUIET_TURNS) return null
   const facts = factsOf(lore)
   const fresh = MATES.filter(name => name !== lore.lastMate)
@@ -191,7 +200,7 @@ export function lifeNote(lore: KruxLore, seed: number, aside: Aside = {}): strin
   const form = pick(FORMS, seed)
   const shape = form === SPAR ? `krótka wymiana zdań z ${ROSTER[spar].instrumental}, spór: ${feud}` : form
   const place = aside.middle ? PLACES[0] : pick(PLACES, seed + 1)
-  return `Życie hordy: jedno zdanie łamaną mową o ${locative} (${trait}), słowa fachu: ${words};${humor ? ` humor: ${humor};` : ''} miejsce: ${place}; forma: ${shape}.${why}${enemy}${avoid}`
+  return { text: `Życie hordy: jedno zdanie łamaną mową o ${locative} (${trait}), słowa fachu: ${words};${humor ? ` humor: ${humor};` : ''} miejsce: ${place}; forma: ${shape}.${why}${enemy}${avoid}`, mate }
 }
 
 // Pamięć hordy między sesjami: ślad kroniki pod jednym kluczem `$.store` na repo.

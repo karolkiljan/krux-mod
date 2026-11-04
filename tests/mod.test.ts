@@ -6,6 +6,7 @@ import type { KruxCrew, KruxJournal, KruxLore } from '../types'
 import { FRAME_MS, PALETTE, SPEAKER_COLOR, actsFor } from '../hooks/sprites'
 import type { StageScene } from '../hooks/sprites'
 import { replay } from '../hooks/lore'
+import { MATES, ROSTER } from '../hooks/roster'
 import { COMPACT_NOTE, FORMAT_HINT, LENGTH_HINT, RISK_HINT, VOICE_ANCHOR, VOICE_SHORT } from '../hooks/voice'
 
 type On = Parameters<TestBody>[1]
@@ -1236,6 +1237,31 @@ test('failing tests make Młot the topic a few turns later', async ($, on) => {
   }
   const entered = await $.prompt.submit({ text: 'i?', wait: false, origin: ORIGIN })
   expect((entered.context ?? []).some(entry => entry.includes('Młocie') && entry.includes('padłe: 1'))).toBe(true)
+})
+
+test('the mate of the note keeps the last aside when the answer first delegates to another mate', async ($, on) => {
+  engine(on, new Map())
+  await start($)
+  const quiet = async () => {
+    for (const turnId of ['q1', 'q2']) await $.turn.complete({ answer: 'Krux szukać dalej.', durationMs: 10, isAborted: false, turnId, reason: 'answer' })
+  }
+  const noteOf = async () => ((await $.prompt.submit({ text: 'i?', wait: false, origin: ORIGIN })).context ?? []).find(entry => entry.startsWith('Życie hordy'))!
+  const mateOf = (note: string) => MATES.find(name => note.includes(`mową o ${ROSTER[name].locative} `))!
+  // Wzór „Delegacja”: Krux najpierw woła innego kumpla do roboty, wstawka o kumplu notki stoi dalej.
+  const delegated = (mate: string, other: (typeof MATES)[number]) => `Krux puszczać ${ROSTER[other].accusative} na zwiad. ${mate} mruczeć przy robocie.`
+  await quiet()
+  const mate = mateOf(await noteOf())
+  await $.turn.complete({ answer: delegated(mate, MATES.find(name => name !== mate)!), durationMs: 10, isAborted: false, turnId: 't1', reason: 'answer' })
+  await quiet()
+  const second = await noteOf()
+  expect(second).toContain(`Nie ${ROSTER[mate].accusative}:`)
+  const next = mateOf(second)
+  // Bezpieczny sąsiad: tura bez notki nie przypisuje wstawki kumplowi notki z poprzedniej tury.
+  const other = MATES.find(name => name !== next)!
+  await $.prompt.submit({ text: 'włącz konkret', wait: false, origin: ORIGIN })
+  await $.turn.complete({ answer: delegated(next, other), durationMs: 10, isAborted: false, turnId: 't2', reason: 'answer' })
+  await quiet()
+  expect(await noteOf()).toContain(`Nie ${ROSTER[other].accusative}:`)
 })
 
 // Pamięć hordy przeżywa sesję: pierwsza wstawka nowej sesji wspomina poprzednią w tym
@@ -2490,6 +2516,45 @@ test('/clear, /resume and a fork read the plan limits again, so the first turn k
   expect(toasts).toEqual(['Limit planu 80%: konkret włączony do resetu.', 'Konkret automatyczny wyłączony: limity planu poniżej 80%.'])
 })
 
+test('a fresh process resumed with claude -c toasts the plan limit once when the quiet read after classic resume comes first', async ($, on) => {
+  const usage: SessionUsage = { startedAt: 0, context: { window: 200_000 }, rateLimits: [{ kind: 'five_hour', percentUsed: 90 }] }
+  on('classic.SessionStart', () => ({}))
+  const toasts: string[] = []
+  const clock = engine(on, new Map(), { usage, toasts })
+  // `source: resume` przychodzi też przy `--resume`/`--continue`: ten proces toastu jeszcze nie pokazał.
+  await $.classic.SessionStart({ source: 'resume' })
+  await start($, clock)
+  await measure($, usage)
+  expect(await sectionIds($)).toEqual(['intro', 'krux-mod:persona', 'krux-mod:konkret'])
+  expect(toasts).toEqual(['Limit planu 80%: konkret włączony do resetu.'])
+})
+
+test('a fresh process resumed with claude -c toasts the plan limit once when the start read is still in flight', async ($, on) => {
+  const usage: SessionUsage = { startedAt: 0, context: { window: 200_000 }, rateLimits: [{ kind: 'five_hour', percentUsed: 90 }] }
+  on('classic.SessionStart', () => ({}))
+  const toasts: string[] = []
+  let reads = 0
+  let releaseFirst!: () => void
+  const firstGate = new Promise<void>(resolve => { releaseFirst = resolve })
+  // Odczyt ze startu czeka, aż ruszy cichy odczyt po `classic.SessionStart`, i odpada na wersji.
+  const usageRead = async () => {
+    reads += 1
+    if (reads === 1) await firstGate
+    else releaseFirst()
+    return usage
+  }
+  const clock = engine(on, new Map(), { usageRead, toasts })
+  await $.session.start({ surface: 'terminal', isInteractive: true, cwd: '/work' })
+  const startRead = clock.settle()
+  await $.classic.SessionStart({ source: 'resume' })
+  await clock.settle()
+  await startRead
+  await measure($, usage)
+  expect(reads).toBe(2)
+  expect(await sectionIds($)).toEqual(['intro', 'krux-mod:persona', 'krux-mod:konkret'])
+  expect(toasts).toEqual(['Limit planu 80%: konkret włączony do resetu.'])
+})
+
 test('/krux zapisz shares tool ids, deduplicates notes and reports the new id in a toast', async ($, on) => {
   const toasts: string[] = []
   engine(on, new Map(), { toasts })
@@ -2626,6 +2691,33 @@ test('/krux raport lists only commits made since the session started', async ($,
   await start($, clock)
   const report = await $.command.run({ command: 'krux', args: 'raport', origin: ORIGIN, presentation: { isFullscreen: false, columns: 120 } })
   expect(report.text).toBe('## Commity\n- f00d123 poprawka z sesji')
+})
+
+test('/krux raport right after /resume reads the repo instead of dropping the session commits', async ($, on) => {
+  const log = 'new-full\tf00d123\t1793003600\tpoprawka z sesji\n'
+  const processRun: Extras['processRun'] = argv => ({ exitCode: 0, stdout: argv.includes('log') ? log : '# branch.head main\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false })
+  on('classic.SessionStart', () => ({}))
+  const reset = stateReset(on)
+  const clock = engine(on, new Map(), { processRun, usage: { startedAt: 1_793_000_000_000, context: { window: 200_000 }, rateLimits: [] } })
+  await start($, clock)
+  const command = { command: 'krux', args: 'raport', origin: ORIGIN, presentation: { isFullscreen: false, columns: 120 } }
+  reset()
+  await $.classic.SessionStart({ source: 'resume' })
+  // Odczyt repo po `/resume` czeka jeszcze na zegar: raport go nie wyprzedza.
+  expect((await $.command.run(command)).text).toBe('## Commity\n- f00d123 poprawka z sesji')
+  await clock.settle()
+  expect((await $.command.run(command)).text).toBe('## Commity\n- f00d123 poprawka z sesji')
+})
+
+test('/krux raport outside a repo still reports no data after /resume', async ($, on) => {
+  on('classic.SessionStart', () => ({}))
+  const reset = stateReset(on)
+  const clock = engine(on, new Map())
+  await start($, clock)
+  reset()
+  await $.classic.SessionStart({ source: 'resume' })
+  const report = await $.command.run({ command: 'krux', args: 'raport', origin: ORIGIN, presentation: { isFullscreen: false, columns: 120 } })
+  expect(report.text).toBe('Brak danych do raportu dnia.')
 })
 
 // W2: testy granic wpięcia; drzewo i wynik nadal pochodzą z prawdziwych hooków.

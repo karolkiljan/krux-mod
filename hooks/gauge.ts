@@ -18,12 +18,16 @@ function ownLine(line: string): boolean {
   return (line.match(/\|/gu) ?? []).length < 2 && !/^\s*>/u.test(line)
 }
 
-// Kod, ścieżki i cytaty w polskim cudzysłowie to nie mowa Kruxa do Morry.
+// Kod, ścieżki, cytaty i etykiety to nie mowa Kruxa do Morry: polski cudzysłów, cudzysłów
+// ASCII w jednym wierszu (commit message, polecenie z README) i pogrubiona etykieta do dwóch
+// słów (przycisk **Dodaj**, nagłówek **Przyczyna:**). Polski najpierw, bo „Trop!" zamyka się ASCII.
 function prose(text: string): string {
   return text
     .replace(/```[\s\S]*?```/gu, ' ')
     .replace(/`[^`]*`/gu, 'X')
     .replace(/„[^„”"\n]*[”"]/gu, ' ')
+    .replace(/"[^"\n]{1,80}"/gu, ' ')
+    .replace(/\*\*[^*\s]+(?:[ \t][^*\s]+)?\*\*(?!\p{L})/gu, ' ')
     .split(/\r?\n/u)
     .filter(ownLine)
     .join('\n')
@@ -46,8 +50,9 @@ const FIRST_PRESENT =
   /(?<!\p{L})(?:widzę|sprawdzam|sprawdzę|mogę|robię|zrobię|polecam|proponuję|sugeruję|rekomenduję|rozumiem|uważam|wiem|zakładam|zaczynam|zacznę|naprawiam|naprawię|poprawię|dodaję|dodam|usuwam|usunę|uruchamiam|uruchomię|puszczam|puszczę|odpalę|przejrzę|przeczytam|czytam|patrzę|myślę|zostawiam|zostawię|zmieniam|zmienię|biorę|piszę|napiszę|szukam|poszukam|wracam|kończę|skończę|zajmę|przygotuję|pokażę|wyjaśnię|muszę|chcę|potrzebuję)(?!\p{L})/giu
 
 // Podmiot po znaczniku listy nie liczy się tu: gładkie „- Proszę uruchomić testy” nic
-// nie mówi o głosie. Początek wiersza liczy się jak początek zdania po kropce.
-const SUBJECT_INFINITIVE = /(?<![*-]\s?)(?<!\d[.)]\s?)(?<!\p{L})([\p{L}`_.]{2,})\s+(?:nie\s+)?(\p{L}+(?:ać|eć|ić|yć|ąć|uć|ść|źć))(?!\p{L})/gu
+// nie mówi o głosie. Początek wiersza liczy się jak początek zdania po kropce, także pod
+// wierszem zakończonym na `**` albo `---`: znacznik listy stoi w tym samym wierszu.
+const SUBJECT_INFINITIVE = /(?<![*-][ \t]?)(?<!\d[.)][ \t]?)(?<!\p{L})([\p{L}`_.]{2,})\s+(?:nie\s+)?(\p{L}+(?:ać|eć|ić|yć|ąć|uć|ść|źć))(?!\p{L})/gu
 
 // Punkt listy liczy się z imieniem na przedzie: „1. Krux dopisać test”. Bez tego plan
 // w punktach, każdy z bezokolicznikiem, dostawał fałszywy dryf `no-infinitive`.
