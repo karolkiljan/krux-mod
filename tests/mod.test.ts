@@ -1808,7 +1808,7 @@ test('replay and live counting agree through toggles, disabled persona, empty te
   expect(live.context).toContain(VOICE_ANCHOR)
 })
 
-test('the nameplate opens once per turn, survives redraw and forgets older turns', async ($, on) => {
+test('the nameplate opens once per turn and survives redraw, also of older turns', async ($, on) => {
   engine(on, new Map())
   await start($)
   const plate = async (requestId: string) => {
@@ -1827,7 +1827,8 @@ test('the nameplate opens once per turn, survives redraw and forgets older turns
   }
   expect(await plate('bounded-39')).toBe(true)
   expect(await plate('bounded-38')).toBe(true)
-  expect(await plate('bounded-0')).toBe(false)
+  // Pamięć tabliczek ma limit jak godziny czatu (2000 bloków), więc 40 tur jej nie wyczerpuje.
+  expect(await plate('bounded-0')).toBe(true)
   expect(await plate('new-block')).toBe(false)
 })
 
@@ -1900,6 +1901,24 @@ test('a block redrawn from an older turn never takes the echo of the current req
   for (let call = 0; call < 4; call += 1) await $.tool.call({ tool: 'Read', file_path: `/repo/hooks/${call}.ts` })
   expect(await plateOf($, 'm0-1', ECHO)).toEqual({ plate: false, echo: false })
   expect(await plateOf($, 'now-1', ECHO)).toEqual({ plate: true, echo: true })
+})
+
+test('a redrawn old block takes no nameplate from the turn, and an old plate survives more than 32 turns', async ($, on) => {
+  engine(on, new Map())
+  await start($)
+  const ECHO = ' · do prośby: „Przejrzyj register.ts”'
+  // 34 żywe tury po jednym bloku z kropką: każdy blok zabiera tabliczkę swojej tury.
+  for (let turn = 0; turn < 34; turn += 1) {
+    await $.prompt.submit({ text: `tura ${turn}`, wait: false, origin: ORIGIN })
+    await $.turn.start({ text: `tura ${turn}`, turnId: `t${turn}` })
+    expect(await plateOf($, `m${turn}`, ECHO)).toEqual({ plate: true, echo: false })
+  }
+  // Resize między turn.start a pierwszym blokiem tury (model zaczął od narzędzia):
+  // dawny blok zostaje ze swoją tabliczką, a tabliczka tury czeka na jej blok.
+  await $.prompt.submit({ text: 'Przejrzyj register.ts', wait: false, origin: ORIGIN })
+  await $.turn.start({ text: 'Przejrzyj register.ts', turnId: 'now' })
+  expect(await plateOf($, 'm0', ECHO)).toEqual({ plate: true, echo: false })
+  expect(await plateOf($, 'now-0', ECHO)).toEqual({ plate: true, echo: false })
 })
 
 test('after /resume the redrawn history wears a nameplate on every dot until the next live turn', async ($, on) => {

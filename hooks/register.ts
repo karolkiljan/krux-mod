@@ -416,10 +416,10 @@ async function syncShaftPane($: EngineInterface, on: boolean): Promise<void> {
 // `requestId` (przerysowanie go nie gubi). Historia sprzed pierwszej żywej tury
 // (po wczytaniu modułu, `/clear`, `/resume` i forku) dostaje tabliczkę na każdej
 // kropce i zostaje w pamięci (`history`), więc resize jej nie gubi. Żywe bloki
-// zachowują tabliczkę przy przerysowaniu przez ostatnie 32 tury.
-const PLATES_LIMIT = 32
-// Bloki historii i decyzje echa: z zapasem jak godziny czatu, żeby przerysowana dawna
-// wiadomość nie zgubiła tabliczki ani nie wzięła echa bieżącej prośby.
+// zachowują tabliczkę przy przerysowaniu, a dawny blok przerysowany przed pierwszym
+// blokiem tury nie zabiera jej tabliczki.
+// Bloki historii, tabliczki i decyzje echa: z zapasem jak godziny czatu, żeby przerysowana
+// dawna wiadomość nie zgubiła tabliczki ani nie wzięła tabliczki lub echa bieżącej prośby.
 const SEEN_LIMIT = MESSAGE_TIMES_LIMIT
 const plates = { live: false, pending: false, ids: new Set<string>(), history: new Set<string>(), echoed: false, echoes: new Map<string, string | null>() }
 
@@ -439,10 +439,12 @@ function claimPlate(id: string): boolean {
     return true
   }
   if (plates.ids.has(id) || plates.history.has(id)) return true
-  if (!plates.pending) return false
+  // `echoAt` zapisuje każdy żywy blok z kropką, więc znany blok to dawny blok przerysowany
+  // (resize, ctrl+o): tabliczka tury czeka na pierwszy nowy blok.
+  if (!plates.pending || plates.echoes.has(id)) return false
   plates.pending = false
   plates.ids.add(id)
-  if (plates.ids.size > PLATES_LIMIT) plates.ids.delete(plates.ids.values().next().value!)
+  trimOldest(plates.ids, SEEN_LIMIT)
   return true
 }
 
