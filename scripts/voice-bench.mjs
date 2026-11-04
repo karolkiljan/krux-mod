@@ -421,6 +421,7 @@ function mateIdiolect(responses) {
 // Tury notek o hordzie odtworzone z odpowiedzi regułą moda (`lifeNote` i `recordAnswer`
 // w hooks/lore.ts): notka przychodzi po QUIET_TURNS turach bez kumpla, a miejsce rotuje
 // z numerem tury (`pick(PLACES, tura + 1)`), więc „w środku” wypada w turach nieparzystych.
+// Prośba o plan dostaje środek zawsze; prompt planu stoi tu w turze nieparzystej.
 // Transkrypt podaje tylko liczbę notek; zgodność reguły pilnuje test skryptów.
 const QUIET_TURNS = 2
 function middleNoteTurns(responses) {

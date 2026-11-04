@@ -11,7 +11,7 @@ import { EventEmitter } from 'node:events'
 import { Writable } from 'node:stream'
 import { GIT_LOG, GIT_STATUS, gitOf } from '../hooks/git.ts'
 import { ROSTER } from '../hooks/roster.ts'
-import { riskHint } from '../hooks/voice.ts'
+import { promptKind, riskHint } from '../hooks/voice.ts'
 
 const sourceOf = file => fs.readFileSync(file, 'utf8').replace(/^import .*\n/gmu, '').replace(/\nmain\(\)\.catch[\s\S]*$/u, '')
 for (const script of ['act-sheet', 'voice-bench']) test(script === 'act-sheet'
@@ -721,18 +721,25 @@ test('the bench knows every mate of the roster by name and declension', () => {
 
 // Odtworzenie w benchu powtarza regułę moda: QUIET_TURNS z hooks/lore.ts, dwa miejsca
 // z „w środku” w turach nieparzystych, ziarno z numeru tury i brak notki przy prośbie
-// o ruch nieodwracalny, której żaden prompt benchu nie robi. Gdy reguła się zmieni, ten
-// test pada, zanim liczby w notatkach zaczną kłamać.
+// o ruch nieodwracalny, której żaden prompt benchu nie robi. Prośba o plan dostaje
+// środek zawsze; w benchu stoi tylko w turze nieparzystej, gdzie rotacja daje to samo.
+// Gdy reguła się zmieni, ten test pada, zanim liczby w notatkach zaczną kłamać.
 test('the bench replays the horde notes by the rule the mod uses', () => {
   const lore = fs.readFileSync('hooks/lore.ts', 'utf8')
   const quietTurns = source => source.match(/^const QUIET_TURNS = (\d+)$/mu)?.[1]
   assert.ok(quietTurns(lore))
   assert.equal(quietTurns(fs.readFileSync('scripts/voice-bench.mjs', 'utf8')), quietTurns(lore))
-  assert.match(lore, /miejsce: \$\{pick\(PLACES, seed \+ 1\)\}/u)
+  assert.match(lore, /const place = aside\.middle \? PLACES\[0\] : pick\(PLACES, seed \+ 1\)\n/u)
+  assert.match(lore, /miejsce: \$\{place\}/u)
   assert.match(lore, /^const PLACES = \['w środku[^'\n]*', 'na końcu'\] as const$/mu)
-  assert.match(fs.readFileSync('hooks/register.ts', 'utf8'), /const life = risk === null \? lifeNote\(chronicle, turn, aside\) : null/u)
+  const register = fs.readFileSync('hooks/register.ts', 'utf8')
+  assert.match(register, /const life = risk === null \? lifeNote\(chronicle, turn, aside\) : null/u)
+  assert.match(register, /const plan = promptKind\(e\.text\) === 'plan'\n[\s\S]*middle: plan \}/u)
   for (const { prompts } of Object.values(vm.runInContext('SCENARIOS', benchContext()))) {
-    for (const prompt of prompts) assert.equal(riskHint(prompt), null, prompt)
+    prompts.forEach((prompt, turn) => {
+      assert.equal(riskHint(prompt), null, prompt)
+      if (promptKind(prompt) === 'plan') assert.equal(turn % 2, 1, prompt)
+    })
   }
 })
 
@@ -798,4 +805,15 @@ test('voice markdown closes every quote with the plain ASCII character like VOIC
     const bad = lines.findIndex(line => /[”“«»]/u.test(line))
     assert.equal(bad, -1, `voice/${file}:${bad + 1}: cudzysłów spoza ASCII`)
   }
+})
+
+// O Morrze i o kumplach bez rodzaju: model kopiuje powierzchnię przykładów, więc
+// „Grom wygonić go” w przykładzie persony ciągnął zaimki z rodzajem także do Ochry.
+test('persona examples name Morra and the mates without a gendered pronoun', () => {
+  const lines = fs.readFileSync('voice/persona.md', 'utf8').split('\n')
+  const names = new RegExp(`(?<!\\p{L})(?:Morr\\p{L}*|${Object.values(ROSTER).map(mate => mate.pattern.source.replace(/^\(\?<!\\p\{L\}\)|\(\?!\\p\{L\}\)$/gu, '')).join('|')})(?!\\p{L})`, 'u')
+  const pronoun = /(?<!\p{L})(?:go|mu|jego|jej|ją|niego|niej|nim|nią|on|ona)(?!\p{L})/u
+  lines.forEach((line, at) => {
+    if (line.startsWith('Krux:') && names.test(line)) assert.doesNotMatch(line, pronoun, `voice/persona.md:${at + 1}`)
+  })
 })

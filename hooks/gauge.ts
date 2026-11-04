@@ -29,8 +29,11 @@ function prose(text: string): string {
     .join('\n')
 }
 
-// Rzeczowniki i zaimki na „-sz” („klawisz”, „nasz”, „hasz”) to nie druga osoba.
-const SECOND_PERSON = /(?<!\p{L})(?!(?:nasz|wasz|klawisz|mysz|afisz|gulasz|tomasz|łukasz|hasz|pałasz)(?!\p{L}))(?:\p{L}*(?:asz|esz|isz|ysz)|ty|ci[eę]|ciebie|tobie|tob[ąa]|twoj\p{L}*)(?!\p{L})/giu
+// Rzeczowniki i zaimki na „-sz” („klawisz”, „nasz”, „hasz”) to nie druga osoba. Druga
+// osoba to też czas przeszły („zmieniłeś”) i rozkaz do Morry („Uruchom”), na który
+// poprawka dryfu daje „Morra sprawdzi”. Rozkaźnika po końcówce się nie pozna, więc
+// tylko lista najczęstszych w odpowiedzi o kodzie, jak przy pierwszej osobie.
+const SECOND_PERSON = /(?<!\p{L})(?!(?:nasz|wasz|klawisz|mysz|afisz|gulasz|tomasz|łukasz|hasz|pałasz)(?!\p{L}))(?:\p{L}*(?:asz|esz|isz|ysz)|\p{L}{2,}(?:łeś|łaś)|ty|ci[eę]|ciebie|tobie|tob[ąa]|tw[oó]j\p{L}*|sprawdź|uruchom|dodaj|zrób|popraw|usuń|zmień|wpisz|wklej|otwórz|zainstaluj|daj|odpal|puść|napisz|przejdź|kliknij|zobacz|spróbuj|upewnij)(?!\p{L})/giu
 
 // „zrobiłem”, „sprawdziłam”, „naprawiłem” — gładka pierwsza osoba zamiast „Krux zrobić”.
 const FIRST_PERSON = /(?<!\p{L})\p{L}{2,}(?:łem|łam)(?!\p{L})/giu
@@ -42,7 +45,13 @@ const FIRST_PERSON = /(?<!\p{L})\p{L}{2,}(?:łem|łam)(?!\p{L})/giu
 const FIRST_PRESENT =
   /(?<!\p{L})(?:widzę|sprawdzam|sprawdzę|mogę|robię|zrobię|polecam|proponuję|sugeruję|rekomenduję|rozumiem|uważam|wiem|zakładam|zaczynam|zacznę|naprawiam|naprawię|poprawię|dodaję|dodam|usuwam|usunę|uruchamiam|uruchomię|puszczam|puszczę|odpalę|przejrzę|przeczytam|czytam|patrzę|myślę|zostawiam|zostawię|zmieniam|zmienię|biorę|piszę|napiszę|szukam|poszukam|wracam|kończę|skończę|zajmę|przygotuję|pokażę|wyjaśnię|muszę|chcę|potrzebuję)(?!\p{L})/giu
 
-const SUBJECT_INFINITIVE = /(?<![\n\r*-]\s?)(?<!\d[.)]\s?)(?<!\p{L})([\p{L}`_.]{2,})\s+(?:nie\s+)?(\p{L}+(?:ać|eć|ić|yć|ąć|uć|ść|źć))(?!\p{L})/gu
+// Podmiot po znaczniku listy nie liczy się tu: gładkie „- Proszę uruchomić testy” nic
+// nie mówi o głosie. Początek wiersza liczy się jak początek zdania po kropce.
+const SUBJECT_INFINITIVE = /(?<![*-]\s?)(?<!\d[.)]\s?)(?<!\p{L})([\p{L}`_.]{2,})\s+(?:nie\s+)?(\p{L}+(?:ać|eć|ić|yć|ąć|uć|ść|źć))(?!\p{L})/gu
+
+// Punkt listy liczy się z imieniem na przedzie: „1. Krux dopisać test”. Bez tego plan
+// w punktach, każdy z bezokolicznikiem, dostawał fałszywy dryf `no-infinitive`.
+const LIST_INFINITIVE = new RegExp(String.raw`^\s*(?:[*-]|\d+[.)])\s+(?:Krux|Ja|Morra|${MATES.join('|')})\s+(?:nie\s+)?(\p{L}+(?:ać|eć|ić|yć|ąć|uć|ść|źć))(?!\p{L})`, 'gmu')
 
 const NOT_INFINITIVE = new Set(['nić', 'sieć', 'płeć', 'część', 'gość', 'kość', 'maść', 'treść', 'wieść', 'śmierć', 'pamięć', 'chęć', 'gałąź', 'rzeź', 'zamieć', 'opowieść', 'korzyść'])
 
@@ -80,6 +89,7 @@ export function infinitiveHits(text: string): number {
     if (notInfinitive(verb) || LICENSERS.has(subject) || INFINITIVE_ENDING.test(subject)) continue
     hits += 1
   }
+  for (const match of text.matchAll(LIST_INFINITIVE)) if (!notInfinitive(match[1]!.toLowerCase())) hits += 1
   return hits
 }
 
@@ -87,10 +97,12 @@ function matches(text: string, pattern: RegExp): string[] {
   return [...text.matchAll(pattern)].map(match => match[0])
 }
 
-// Którzy kumple z hordy padli w odpowiedzi (poza kodem).
+// Którzy kumple z hordy padli w odpowiedzi (poza kodem), w kolejności pierwszego
+// wystąpienia: podmiot wstawki stoi zwykle przed parą ze sporu.
 export function matesNamed(text: string): KruxMate[] {
   const clean = text.replace(/```[\s\S]*?```/gu, ' ').replace(/`[^`]*`/gu, ' ')
-  return MATES.filter(mate => ROSTER[mate].pattern.test(clean))
+  const at = (mate: KruxMate) => clean.search(ROSTER[mate].pattern)
+  return MATES.filter(mate => at(mate) >= 0).sort((a, b) => at(a) - at(b))
 }
 
 // Forma osobowa → bezokolicznik tylko tam, gdzie reguła jest pewna. Czego
@@ -100,9 +112,11 @@ export function matesNamed(text: string): KruxMate[] {
 const PAST_EC = /(?:chciał|miał|umiał|rozumiał|wiedział|widział|siedział|musiał|wisiał|leciał|cierpiał|pomniał|myślał|słyszał|leżał|krzyczał|milczał|wolał|bolał)$/u
 const PAST_IAC = /śmiał$/u
 
+// „-syłam” to czas teraźniejszy od „-syłać” („wysyłam”), nie przeszły od „-yć”.
 const PAST_FIRST: readonly [RegExp, string][] = [
   [/jrzał(?:em|am)$/u, 'jrzeć'],
   [/ił(?:em|am)$/u, 'ić'],
+  [/syłam$/u, 'syłać'],
   [/ył(?:em|am)$/u, 'yć'],
   [/ął(?:em|am)$/u, 'ąć'],
   [/ał(?:em|am)$/u, 'ać'],
@@ -112,10 +126,11 @@ const PAST_FIRST: readonly [RegExp, string][] = [
 // „stołem”, „węzłem”, „zawałem”, „hasłem”. Czasowników na „-ołem” polszczyzna nie ma;
 // „-ułem” i spółgłoska przed „-łem” bywają czasownikiem („zepsułem”, „mogłem”,
 // „znalazłem”), więc tu tylko znane rzeczowniki. Bez nich reguła „-ałem” → „-ać”
-// robiła z „zawałem” słowo „Krux zawać”. „Dział” tylko z przedrostkiem rzeczownika:
-// „widziałem” i „powiedziałem” też kończą się na „-działem”.
+// robiła z „zawałem” słowo „Krux zawać”, a miernik brał „kowadłem” za pierwszą osobę.
+// „Dział” tylko z przedrostkiem rzeczownika: „widziałem” i „powiedziałem” też kończą
+// się na „-działem”. Z „-dłem” i „-głem” tylko rzeczowniki: „padłem”, „mogłem” to czasowniki.
 const NOUN_LEM =
-  /^(?:materiał|kanał|sygnał|potencjał|(?:roz|po|u|wy|od|prze|przy)?dział|interwał|zapał|ideał|kryształ|wał|zawał|nawał|kapitał|upał|szał|morał|rytuał|generał|admirał|arsenał|tył|moduł|artykuł|tytuł|muł|węzł|hasł|źródł|\p{L}*mysł|\p{L}*miosł|światł|szkł|krzesł|masł|ciepł|kotł|orł|posł|osł|kozł|pudł|wiosł|godł|mydł|siodł|\p{L}*oł)em$/u
+  /^(?:materiał|kanał|sygnał|potencjał|(?:roz|po|u|wy|od|prze|przy)?dział|interwał|zapał|ideał|kryształ|wał|zawał|nawał|oryginał|finał|kwartał|kawał|(?:o|po|wy|prze)?strzał|opał|banał|trybunał|kardynał|pył|kał|przewał|michał|rafał|pawł|kapitał|upał|szał|morał|rytuał|generał|admirał|arsenał|tył|moduł|artykuł|tytuł|muł|węzł|hasł|źródł|\p{L}*mysł|\p{L}*miosł|światł|szkł|krzesł|masł|ciepł|kotł|orł|posł|osł|kozł|pudł|wiosł|godł|mydł|siodł|kowadł|skrzydł|prawidł|wahadł|zwierciadł|sprzęgł|\p{L}*oł)em$/u
 
 function isNounLem(word: string): boolean {
   return NOUN_LEM.test(word.toLowerCase())
@@ -130,13 +145,14 @@ function pastFirst(word: string): string | null {
 
 // Pierwsza osoba czasu teraźniejszego, tylko na początku zdania („Polecam…”),
 // bo w środku „-am” bywa rzeczownikiem („program”). „-uję” bywa od „-ować”,
-// „-ywać” i „-uć” („proponuję”, „pokazuję”, „czuję”).
+// „-ywać” i „-uć” („proponuję”, „pokazuję”, „czuję”). Obce rzeczowniki na „-am”
+// („Stream”, „Szlam”, „Param”) zostają jak „gram”.
 const PRESENT_FIRST: readonly [RegExp, (word: string) => string | null][] = [
   [/^(?:po|ze|wy|prze)?(?:czu|psu|ku|plu)ję$/u, word => word.replace(/ję$/u, 'ć')],
-  [/szukuję$/u, word => word.replace(/uję$/u, 'iwać')],
-  [/(?:kazuję|pisuję|konuję|wołuję|czytuję|wiązuję|dowiaduję|owuję)$/u, word => word.replace(/uję$/u, 'ywać')],
+  [/(?:szukuję|sługuję)$/u, word => word.replace(/uję$/u, 'iwać')],
+  [/(?:kazuję|pisuję|konuję|wołuję|czytuję|wiązuję|dowiaduję|owuję|trzymuję|korzystuję|cofuję)$/u, word => word.replace(/uję$/u, 'ywać')],
   [/uję$/u, word => word.replace(/uję$/u, 'ować')],
-  [/gram$/u, () => null],
+  [/(?:gram|eam|szlam|balsam|islam|sezam|madam|param|webcam)$/u, () => null],
   [/(?<=\p{L}{3})am$/u, word => word.replace(/am$/u, 'ać')],
 ]
 
