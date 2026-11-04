@@ -211,9 +211,10 @@ const SNIFF: Gesture = {
   apply: (rows, t) =>
     sketch(rows, ({ head: { top, x }, dot, eyes, look }) => {
       if (t === 0 || t === 12) return false
-      // Smuga zapachu: od prawej do nosa w wierszu oczu, potem znika we wdechu.
-      if (t <= 5) dot(x + 10 - t, top + 1, 'm')
-      if (t <= 3) dot(x + 12 - t, top + 1, 'm')
+      // Smuga zapachu: od prawej do czubka nosa w wierszu żuchwy, gdzie `dress` stawia nos Niucha
+      // (x + 4, x + 5), potem znika we wdechu.
+      if (t <= 4) dot(x + 10 - t, top + 2, 'm')
+      if (t <= 2) dot(x + 12 - t, top + 2, 'm')
       if (within(t, 6, 8)) eyes('G')
       if (within(t, 9, 11)) look(1)
       return true
@@ -271,7 +272,8 @@ const COUNT: Gesture = {
 }
 
 // Piryt, mrużenie: powieki opadają na oba oczy naraz, czerwone ślepia patrzą spod nich.
-// Przygaszona czerwień 'R' to nie oko 'r': humor nie dorysuje drugiej pary brwi nad powiekami.
+// Przygaszona czerwień 'd' to nie oko 'r': humor nie dorysuje drugiej pary brwi nad powiekami.
+// Rozgrzana stal 'R' leży od oka za blisko, żeby mrużenie było widać.
 const SQUINT: Gesture = {
   name: 'mrużenie',
   who: ['Piryt'],
@@ -279,7 +281,7 @@ const SQUINT: Gesture = {
   apply: (rows, t) =>
     sketch(rows, ({ head: { top, x, eyes: lids }, face, eyes }) => {
       if (t === 0 || t === 12 || lids === null) return false
-      eyes('R')
+      eyes('d')
       for (const ex of lids) {
         const inward = ex === lids[0] ? 1 : -1
         const spot = [ex, ex + inward].find(at => at >= x && at <= x + 3)
@@ -309,9 +311,10 @@ const SPARKS: Gesture = {
         look(right ? 1 : -1)
         return true
       }
-      // Strzepnięcie: dłoń w miejscu lewej iskry, prawa odlatuje łukiem i gaśnie.
+      // Strzepnięcie: dłoń w miejscu prawej iskry, iskra odlatuje z niej łukiem i gaśnie. Dłoń nie
+      // staje z lewej: `dress` szuka czubka od lewej i przesunąłby hełm na dłoń.
       if (t <= 7) {
-        if (left) dot(x - 1, top, 'g')
+        if (right) dot(x + 4, top, 'g')
         if (t <= 6) eyes('G')
       }
       const flight: readonly (readonly [number, number, string])[] = [

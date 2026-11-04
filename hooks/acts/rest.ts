@@ -46,27 +46,29 @@ const chaise: Act = {
 // ——— Fotel z fajką ———
 const ARMCHAIR: Frame = ['e', 'e', 'e', 'e.....e', 'eeeeeee', '.x...x.']
 const CHAIR_AT = 7
+const SEATED: Frame = ['.gggg.', 'grggrg', '.tggt.', '.bbbbb', '.bbGGGG', '.....GG']
+// Fajka w kąciku pyska: ustnik przy prawym kle, główka piksel dalej i wyżej.
+const PIPE_AT = CHAIR_AT + 5
+const PIPE: readonly Layer[] = [[['hx'], PIPE_AT, 2], [['x'], PIPE_AT + 1, 1]]
 
 function smoke(t: number): Layer[] {
-  // Dwa kłęby wędrują w górę i w prawo od cybucha.
+  // Dwa kłęby wędrują w górę i w prawo od główki fajki.
   const puffs: Layer[] = []
   for (const born of [0, 8]) {
     const age = (t - born + 16) % 16
     if (age > 9) continue
-    const x = 15 + Math.floor(age / 3)
+    const x = PIPE_AT + 2 + Math.floor(age / 3)
     const y = 2 - Math.floor(age / 3)
     if (y >= 0) puffs.push([['m'], x + (age % 2), y])
   }
   return puffs
 }
 
-const SEATED: Frame = ['.gggg.', 'grggrg', '.tggt.', '.bbbbb', '.bbGGGG', '.....GG']
-
 function armchairLoop(t: number): Frame {
   // 16 klatek: pyknąć z fajki, wypuścić kłęby; co jakiś czas przymknąć oczy.
   const drowsy = t >= 10 && t <= 12
   const face = drowsy ? [[head('shut'), CHAIR_AT, 0] as Layer] : []
-  return draw([ARMCHAIR, CHAIR_AT - 1, 0], [SEATED, CHAIR_AT, 0], ...face, [['hx'], CHAIR_AT + 6, 2], [['x'], CHAIR_AT + 7, 1], ...smoke(t))
+  return draw([ARMCHAIR, CHAIR_AT - 1, 0], [SEATED, CHAIR_AT, 0], ...face, ...PIPE, ...smoke(t))
 }
 
 const armchair: Act = {
@@ -77,7 +79,7 @@ const armchair: Act = {
     // Klapnąć, wyciągnąć fajkę.
     draw([ARMCHAIR, CHAIR_AT - 1, 0], [['.gggg.', 'grggrg', '.tggt.', 'gbbbbg', '.bbGG', '..GG'], CHAIR_AT, 0]),
     draw([ARMCHAIR, CHAIR_AT - 1, 0], [SEATED, CHAIR_AT, 0]),
-    draw([ARMCHAIR, CHAIR_AT - 1, 0], [SEATED, CHAIR_AT, 0], [['hx'], CHAIR_AT + 6, 2]),
+    draw([ARMCHAIR, CHAIR_AT - 1, 0], [SEATED, CHAIR_AT, 0], PIPE[0]!),
   ],
   length: 16,
   loop: armchairLoop,
@@ -100,9 +102,9 @@ const LAID_ROD: Layer = [['hhhh'], 6, 5]
 const SITTER: Frame = ['', '.gggg.', 'grggrg', '.tggt.', 'bbbbbbg', '.bGGGGG']
 const HAND: readonly [number, number] = [7, 4]
 
-// Wędka od dłoni do czubka, żyłka z czubka do spławika.
+// Wędka od dłoni do czubka, żyłka z czubka do spławika. Rękojeść leży tuż przy dłoni SITTER (6, 4).
 function tackle(tip: readonly [number, number], bobber: readonly [number, number] | null): Layer[] {
-  const rod = line(HAND, tip, 'h').slice(1)
+  const rod = line(HAND, tip, 'h')
   if (bobber === null) return rod
   return [...rod, ...line(tip, bobber, 'm').slice(1, -1), [['d'], bobber[0], bobber[1]]]
 }
@@ -148,19 +150,23 @@ const FIRE_X = 13
 // Patyk od dłoni (7, 4) skośnie w górę nad ogień.
 const STICK: Frame = ['', '...hh', '.hh', 'h']
 
+// Kęs: lewy piksel kiełbasy w drodze od ognia do kła i z powrotem, piksel albo dwa na klatkę.
+const BITE: readonly (readonly [number, number])[] = [[10, 2], [8, 3], [6, 3], [5, 3], [5, 3], [5, 3], [5, 3], [6, 3], [8, 3], [10, 2]]
+
 function campfireLoop(t: number, frame: number): Frame {
-  // 28 klatek: kiełbasa nad ogniem rumieni się, Krux ją zdejmuje, gryzie, i znowu na patyk.
-  const cooking = t < 18
-  const color = t < 6 ? 'd' : t < 12 ? 'R' : 'x'
-  const stick: Layer[] = cooking ? [[STICK, 7, 1], [[color + color], 12, 1]] : []
+  // 28 klatek: kiełbasa nad ogniem rumieni się, Krux przyciąga patyk do pyska, gryzie dwa razy
+  // i oddaje kiełbasę nad ogień. Patyk nie znika z dłoni, kiełbasa nie przeskakuje.
   const eat = t - 18
-  const bite: Layer[] = []
-  if (!cooking) {
-    const near = eat < 3 ? 9 - eat : eat < 7 ? 7 : 7 + (eat - 7)
-    bite.push([['hh'], 6, 4], [[eat >= 4 && eat <= 6 ? 'x' : 'xx'], near, 3])
+  if (eat < 0) {
+    const color = t < 6 ? 'd' : t < 12 ? 'R' : 'x'
+    return draw(...bonfire(FIRE_X, frame, 2), [SQUAT, 0, 0], [STICK, 7, 1], [[color + color], 12, 1])
   }
-  const face: Layer[] = !cooking && eat >= 4 && eat <= 6 ? [[['', '', '', '.t..t.'], 0, 0]] : []
-  return draw(...bonfire(FIRE_X, frame, 2), [SQUAT, 0, 0], ...stick, ...bite, ...face)
+  // Patyk zawsze od tej samej rękojeści przy dłoni (7, 4) do kiełbasy; przy pysku zostaje sama rękojeść.
+  const [sx, sy] = BITE[eat]!
+  const stick = line([7, 4], sx > 7 ? [sx - 1, sy] : [7, 4], 'h')
+  // Paszcza otwiera się przed kęsem i między kęsami.
+  const jaw: Layer[] = eat === 2 || eat === 5 ? [[['', '', '', '..cc'], 0, 0]] : []
+  return draw(...bonfire(FIRE_X, frame, 2), [SQUAT, 0, 0], ...stick, [['xx'], sx, sy], ...jaw)
 }
 
 // Patyk leży obok polan, zanim Krux po niego sięgnie.

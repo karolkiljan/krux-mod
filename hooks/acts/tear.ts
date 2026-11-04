@@ -262,9 +262,9 @@ function measuring(t: number): Frame {
     return draw(...bench(BENCH_AT, { marks: CHALK, gap: t === 6 ? undefined : CUT }), lont(6, 'right'),
       ...reach(6, [CUT - 1, down]), [['x', 's'], CUT, down])
   }
-  // 9–11: zwinąć odcięty kawałek do dłoni, cofając się wzdłuż ławy.
+  // 9–11: zwinąć odcięty kawałek do dłoni, cofając się wzdłuż ławy o dwa piksele na klatkę.
   if (t < 12) {
-    const end = [13, 10, 7][t - 9]!
+    const end = [13, 11, 9][t - 9]!
     const orcX = Math.max(0, end - 8)
     const piece: Layer[] = []
     for (let x = BENCH_AT; x <= end; x += 1) piece.push(at(CHALK.includes(x) ? 'j' : 'h', x, 2))
