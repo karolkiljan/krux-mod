@@ -77,7 +77,7 @@ type Actor = {
 }
 
 // Scenka: gość idzie do gospodarza, potem grają razem od klatki `at`. `at` null: gość w drodze.
-// `meet`: przy odwiedzinach gospodarz odkłada robotę i podchodzi tu, za swój rekwizyt.
+// `meet`: gospodarz odkłada robotę i podchodzi tu, za swój rekwizyt; gość staje `DUET_GAP` dalej.
 // `ground`: podłoga, na której zaczęły się odwiedziny; inna szerokość albo palenisko je kończy.
 type Duet = { host: string; guest: string; kind: DuetKind; at: number | null; meet?: number; ground?: string }
 
@@ -225,6 +225,14 @@ function depart(actor: Actor, frame: number, still: boolean, handoff: boolean, s
     at = Math.max(at, errand.at + ERRAND_FRAMES)
   } else if (room) {
     const kit = actor.left?.rows ?? trackKit(track)
+    // Ze scenki przy Kruxie zwój leci od razu, z miejsca: dopiero potem ork wraca po swój rekwizyt.
+    // Inaczej odchodziłby od odbiorcy z przesyłką i rzucał ją przez cały pokój.
+    const gap = x - kruxX
+    if (handoff && actor.left !== undefined && gap >= HANDOFF_GAP && gap <= TOSS_REACH) {
+      const flight = tossFlight(gap)
+      stopped.handoff = { at, flight }
+      at += tossFrames(flight)
+    }
     if (kit !== undefined) {
       // Rekwizyt został na ziemi przy scence: najpierw do niego, potem z nim na ścianę.
       const home = actor.left?.x ?? x
@@ -236,7 +244,7 @@ function depart(actor: Actor, frame: number, still: boolean, handoff: boolean, s
       at += walk + ERRAND_FRAMES
     }
   }
-  return { ...stopped, leftAt: at, ...(handoff ? tossFrom(stopped, at, kruxX, stage, actor.left !== undefined) : {}) }
+  return { ...stopped, leftAt: at, ...(handoff && stopped.handoff === undefined ? tossFrom(stopped, at, kruxX, stage, actor.left !== undefined) : {}) }
 }
 
 // Zdarzenie wstrzymane w drodze rusza w klatce, w której ork staje na stanowisku: w marszu
@@ -498,11 +506,18 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
     }
     // Inna szerokość podłogi przestawia stanowiska: odwiedziny się kończą, zamiast walczyć z podłogą.
     const moved = visiting(guestKey) && duet.ground !== ground
-    if (done || called || moved || props.still || host === undefined || guest === undefined || host.leftAt !== null || guest.leftAt !== null) {
+    // Gość idzie za rekwizyt gospodarza (`meet`); gdy w tym czasie gospodarzowi zmieni się czynność,
+    // rekwizyt na ziemi byłby inny i gość stanąłby w nim: scenka przepada, gospodarz robi dalej.
+    const planned = fetching && host !== undefined && host.left === undefined && !visiting(guestKey) && duet.at === null
+    const reach = planned ? kitAt(host.track, frame) : undefined
+    const drifted = planned && host.home + (reach === undefined ? 0 : kitReach(reach)) !== (duet.meet ?? host.home)
+    if (done || called || moved || drifted || props.still || host === undefined || guest === undefined || host.leftAt !== null || guest.leftAt !== null) {
       if (host !== undefined && host.leftAt === null && host.left !== undefined && host.left.x !== host.home) {
         // Gospodarz podszedł do gościa: wraca do rekwizytu, który został na ziemi, i robi dalej.
+        // Krux, któremu gość rzuca zwój z miejsca scenki, najpierw go łapie.
         const x = placeOf(host, frame, stage)?.x ?? host.home
-        actors[hostKey] = { ...host, home: host.left.x, from: x, enter: frame, pending: scenes.get(hostKey) ?? host.track.scene }
+        const caught = hostKey === 'krux' ? Math.max(frame, ...Object.values(actors).map(actor => (actor.handoff === undefined ? frame : actor.handoff.at + tossFrames(actor.handoff.flight)))) : frame
+        actors[hostKey] = { ...host, home: host.left.x, from: x, enter: caught, pending: scenes.get(hostKey) ?? host.track.scene }
       } else if (host !== undefined && host.leftAt === null && (duet.at !== null || visiting(guestKey))) {
         // Koniec przy rekwizycie: gospodarz robi dalej tam, gdzie odłożył robotę. Zwykła scenka
         // odwołana, zanim gość doszedł, nie rusza gospodarza: nawet nie odłożył narzędzia.
@@ -534,11 +549,20 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
           duet = { ...duet, at: frame }
           changed = true
         }
+      } else if (duet.meet !== undefined && host.left !== undefined) {
+        // Gospodarz wyszedł zza rekwizytu: scenka rusza, gdy stanie.
+        if (frame >= host.enter && frame >= host.track.since && !placeOf(host, frame, stage)?.walking) {
+          duet = { ...duet, at: frame }
+          changed = true
+        }
       } else {
-        // Gość doszedł: gospodarz odkłada robotę, scenka rusza, gdy obaj stoją.
+        // Gość doszedł: gospodarz odkłada robotę. Gdy rekwizyt stoi między nimi, wychodzi zza niego
+        // jak przy odwiedzinach; scenka rusza, gdy obaj stoją.
         const track = trackOff(host.track, frame, fetching)
-        actors[hostKey] = { ...host, track, ...groundKit(host, track) }
-        duet = { ...duet, at: Math.max(frame, track.since) }
+        const kit = groundKit(host, track)
+        const walks = duet.meet !== undefined && kit.left !== undefined
+        actors[hostKey] = { ...host, track, ...kit, ...(walks ? { home: duet.meet!, from: host.home, enter: Math.max(frame, track.since) } : {}) }
+        duet = { ...duet, at: walks ? null : Math.max(frame, track.since) }
         changed = true
       }
     }
@@ -547,15 +571,26 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
       const actor = actors[key]
       return actor !== undefined && !born.has(key) && actor.leftAt === null && actor.pending === undefined && actor.errand === undefined && frame - actor.arrived >= DUET_SETTLED
     })
-    const guestKey = free.find(key => key !== 'krux')
-    const hostKey = free.find(key => key !== guestKey)
+    // Para to sąsiedzi na podłodze: gość idzie w lewo do gospodarza i staje za jego rekwizytem
+    // (`meet`), na wolnej podłodze przed swoim, jak przy odwiedzinach. Bez wolnej podłogi scenki nie ma.
+    const line = standing.map(([key]) => key).sort((a, b) => actors[a]!.home - actors[b]!.home)
+    let hostKey: string | undefined
+    let guestKey: string | undefined
+    let meet = 0
+    for (let i = 0; i + 1 < line.length && hostKey === undefined; i += 1) {
+      const [h, g] = [line[i]!, line[i + 1]!]
+      if (!free.includes(h) || !free.includes(g)) continue
+      const kit = fetching ? kitAt(actors[h]!.track, frame) : undefined
+      const at = actors[h]!.home + (kit === undefined ? 0 : kitReach(kit))
+      if (at + DUET_GAP <= actors[g]!.home && at + DUET_GAP <= stage - ORC_WIDTH) [hostKey, guestKey, meet] = [h, g, at]
+    }
     const host = hostKey === undefined ? undefined : actors[hostKey]
     const guest = guestKey === undefined ? undefined : actors[guestKey]
-    if (host !== undefined && guest !== undefined && host.home + DUET_GAP <= stage - ORC_WIDTH) {
+    if (host !== undefined && guest !== undefined) {
       const track = trackOff(guest.track, frame, fetching)
       const x = placeOf(guest, frame, stage)?.x ?? guest.home
-      actors[guestKey!] = { ...guest, ...groundKit(guest, track), track, home: host.home + DUET_GAP, from: x, enter: Math.max(frame, track.since) }
-      duet = { host: hostKey!, guest: guestKey!, kind: duetKind(host, guest, frame), at: null }
+      actors[guestKey!] = { ...guest, ...groundKit(guest, track), track, home: meet + DUET_GAP, from: x, enter: Math.max(frame, track.since) }
+      duet = { host: hostKey!, guest: guestKey!, kind: duetKind(host, guest, frame), at: null, ...(meet !== host.home ? { meet } : {}) }
       laid = true
       changed = true
     }
@@ -694,10 +729,12 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
       continue
     }
     // Gość z kwater czeka, aż Krux podejdzie: stoi w pierwszej pozie scenki, z kuflami w dłoni.
-    if (duet !== undefined && duet.at === null && key === duet.guest && visiting(key) && at.depth === 0 && !at.walking) {
+    // Gość scenki czeka tak samo, aż gospodarz wyjdzie zza rekwizytu, ale bez rekwizytu scenki:
+    // ten trzyma gospodarz, a swój gość zostawił na ziemi.
+    if (duet !== undefined && duet.at === null && key === duet.guest && (visiting(key) || frame >= actor.track.since) && at.depth === 0 && !at.walking) {
       const pose = duetPose(duet.kind, 0)
       placed.push({ rows: dress(pose.guest, actor.face), x: at.x - 2, walking: false })
-      if (pose.prop.length > 0) loads.push({ rows: [...pose.prop], x: at.x - DUET_GAP })
+      if (visiting(key) && pose.prop.length > 0) loads.push({ rows: [...pose.prop], x: at.x - DUET_GAP })
       moving = true
       continue
     }
@@ -713,10 +750,12 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
       continue
     }
     if (actor.mugs && at.walking) loads.push({ rows: draw([MUGS, 0, 2]), x: leftward ? at.x - MUGS[0]!.length : at.x + 6 })
-    const tossing = actor.handoff !== undefined && frame >= actor.handoff.at && frame < actor.leftAt!
+    const tossing = actor.handoff !== undefined && frame >= actor.handoff.at && frame < Math.min(actor.leftAt!, actor.handoff.at + tossFrames(actor.handoff.flight))
     const reacting = actor.cue !== undefined && actor.cue.held === undefined && frame - actor.cue.at < CUE_FRAMES
     moving ||= at.walking || tossing || reacting || actor.pending !== undefined || (actor.leftAt !== null && frame < actor.leftAt)
-    let raw = tossing ? tossGrid(frame - actor.handoff!.at, actor.mood) : trackGrid(actor.track, frame, 'band', actor.mood, frozen)
+    // Z dala od rekwizytu zostawionego na ziemi ork stoi z pustymi rękami: rekwizyt jest tylko jeden.
+    const away = actor.left !== undefined && actor.left.x !== at.x && actor.track.stops === 'kit'
+    let raw = tossing ? tossGrid(frame - actor.handoff!.at, actor.mood) : trackGrid(away ? trackBare(actor.track) : actor.track, frame, 'band', actor.mood, frozen)
     if (!at.walking && !props.still) {
       if (reacting) raw = withCue(raw, actor.cue!.kind, frame - actor.cue!.at)
       // Krux wyciąga dłoń po zwój kumpla; w tych klatkach się nie poci.
@@ -728,7 +767,7 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
     const rows = at.walking ? walkerRows(frame, actor.face, leftward ? 'left' : 'right') : dress(raw, actor.face)
     if (!at.walking) headsAt[key] = headX(raw, at.x)
     if (tossing) {
-      const scroll = tossScroll(frame - actor.handoff!.at, actor.home + 6, kruxX + CATCH_X, actor.handoff!.flight)
+      const scroll = tossScroll(frame - actor.handoff!.at, at.x + 6, kruxX + CATCH_X, actor.handoff!.flight)
       if (scroll !== null) scrolls.push(scroll)
       const caught = caughtScroll(frame - actor.handoff!.at, actor.handoff!.flight, kruxX)
       if (caught !== null) scrolls.push(caught)

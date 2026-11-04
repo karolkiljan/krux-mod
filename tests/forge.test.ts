@@ -3,7 +3,7 @@ import { expect, test } from 'claude-code/testing'
 import Forge from '../hooks/forge'
 import type { ForgeOrc, ForgeProps } from '../hooks/forge'
 import { MATES } from '../hooks/roster'
-import { ACTS, DUET_FRAMES, SPEAKER_COLOR, WALL_MIN, DUET_GAP, ERRAND_FRAMES, PALETTE, RISE_FRAMES, TOAST_RETURN, carried, doorX, kitAt, kitReach, quartersDoor, trackGrid } from '../hooks/sprites'
+import { ACTS, DUET_FRAMES, SPEAKER_COLOR, WALL_MIN, DUET_GAP, ERRAND_FRAMES, PALETTE, RISE_FRAMES, TOAST_RETURN, carried, doorX, kitAt, kitReach, quartersDoor, tossFrames, trackGrid } from '../hooks/sprites'
 import type { Track } from '../hooks/sprites'
 import { STAND, pad } from '../hooks/stage'
 import { drawHeadless, headless, svgOf } from '../hooks/vector'
@@ -24,7 +24,7 @@ function surfaceOf() {
   return { surface, tick: () => tick?.() }
 }
 
-type Seen = { frame: number; idle: boolean; duet?: { host: string; guest: string; kind: string; at: number | null }; duetAt?: number; snoozing?: boolean; actors: Record<string, { leftAt: number | null; slot: number; home: number; arrived: number; from: number; pending?: string; errand?: { at: number; from: number; spot: number; took?: readonly string[]; brings?: readonly string[] }; enter: number; track: Track; handoff?: { at: number; flight: number }; cue?: { id: string; at: number; held?: true }; effortAt?: number; rise?: number; door?: number; left?: { x: number; rows?: readonly string[] } }> }
+type Seen = { frame: number; idle: boolean; duet?: { host: string; guest: string; kind: string; at: number | null; meet?: number }; duetAt?: number; snoozing?: boolean; actors: Record<string, { leftAt: number | null; slot: number; home: number; arrived: number; from: number; pending?: string; errand?: { at: number; from: number; spot: number; took?: readonly string[]; brings?: readonly string[] }; enter: number; track: Track; handoff?: { at: number; flight: number }; cue?: { id: string; at: number; held?: true }; effortAt?: number; rise?: number; door?: number; left?: { x: number; rows?: readonly string[] } }> }
 
 const KRUX: ForgeOrc = { key: 'krux', face: 'Krux', scene: 'lounge', mood: 'calm' }
 const NIUCH: ForgeOrc = { key: 'a1', face: 'Niuch', scene: 'scout', mood: 'calm' }
@@ -792,7 +792,9 @@ test('two settled orcs meet for a scene, play it side by side, then the guest wa
   untilDuet(seen, pair)
   const state = () => seen.surface.state as Seen
   expect(state().duet).toMatchObject({ host: 'krux', guest: 'a1' })
-  expect(state().actors.a1!.home).toBe(state().actors.krux!.home + DUET_GAP)
+  // Gość staje za rekwizytem gospodarza, nie na nim: gospodarz wychodzi zza niego do `meet`.
+  const meet = state().duet!.meet ?? state().actors.krux!.home
+  expect(state().actors.a1!.home).toBe(meet + DUET_GAP)
   for (let i = 0; i < 80 && state().duet?.at === null; i++) { seen.tick(); draw(pair, seen.surface) }
   const started = state().duet!.at!
   expect(started).toBeGreaterThanOrEqual(state().frame)
@@ -801,7 +803,66 @@ test('two settled orcs meet for a scene, play it side by side, then the guest wa
   expect(state().duetAt).toBeGreaterThanOrEqual(started + DUET_FRAMES)
   expect(state().actors.a1!.pending).toBe('pick')
   for (let i = 0; i < 40 && state().actors.a1!.pending !== undefined; i++) { seen.tick(); draw(pair, seen.surface) }
-  expect(state().actors.a1!.home).toBeGreaterThan(state().actors.krux!.home + DUET_GAP)
+  expect(state().actors.a1!.home).toBeGreaterThan(meet + DUET_GAP)
+})
+
+test('the guest of a scene stands past the kit of the host, and without free floor between them there is no scene', () => {
+  const kitEdge = (state: Seen, key: string) => {
+    const left = state.actors[key]!.left
+    return left === undefined ? state.actors[key]!.home : left.x + kitReach(left.rows as string[])
+  }
+  for (const props of [pair, { ...FLOOR, slots: 4, floor: 170, orcs: [{ ...KRUX, scene: 'hammer' }, { ...GROM, scene: 'build' }, { key: 'a2', face: 'Młot', scene: 'test', mood: 'calm' }] }] as ForgeProps[]) {
+    const seen = surfaceOf()
+    draw(props, seen.surface)
+    let scenes = 0
+    let last: number | null = null
+    for (let i = 0; i < 1500; i++) {
+      seen.tick()
+      draw(props, seen.surface)
+      const state = seen.surface.state as Seen
+      if (state.duet === undefined || state.duet.at === null || state.duet.at === last) continue
+      last = state.duet.at
+      scenes += 1
+      // Gospodarz wyszedł zza rekwizytu, gość stoi na wolnej podłodze za nim, nie w kowadle ani w tablicy.
+      expect(state.actors[state.duet.guest]!.home).toBeGreaterThanOrEqual(kitEdge(state, state.duet.host))
+      expect(state.actors[state.duet.guest]!.home - state.actors[state.duet.host]!.home).toBe(DUET_GAP)
+    }
+    expect(scenes).toBeGreaterThan(3)
+  }
+  // Krux przy kowadle i Grom przy kuźni obok: między kowadłem a Gromem nie ma wolnej podłogi.
+  const tight: ForgeProps = { ...FLOOR, orcs: [{ ...KRUX, scene: 'hammer' }, { ...GROM, scene: 'build' }] }
+  const seen = surfaceOf()
+  draw(tight, seen.surface)
+  for (let i = 0; i < 600; i++) {
+    seen.tick()
+    draw(tight, seen.surface)
+    expect((seen.surface.state as Seen).duet).toBe(undefined)
+  }
+})
+
+test('a mate who ends in a scene next to Krux throws the scroll at once, and Krux catches it before he walks back', () => {
+  const seen = surfaceOf()
+  draw(pair, seen.surface)
+  for (let i = 0; i < 300 && !((seen.surface.state as Seen).duet?.at != null && (seen.surface.state as Seen).frame >= (seen.surface.state as Seen).duet!.at! + 6); i++) { seen.tick(); draw(pair, seen.surface) }
+  const end = (seen.surface.state as Seen).frame
+  expect((seen.surface.state as Seen).duet).toMatchObject({ host: 'krux', guest: 'a1' })
+  draw({ ...pair, orcs: [{ ...KRUX, scene: 'read' }], cues: [{ key: 'a1', kind: 'handoff', until: 9_000_000 }] }, seen.surface)
+  const state = seen.surface.state as Seen
+  const mate = state.actors.a1!
+  // Rzut z miejsca scenki, krótki lot; po rekwizyt kumpel idzie dopiero potem.
+  expect(mate.handoff!.at).toBe(end)
+  expect(mate.handoff!.flight).toBeLessThanOrEqual(4)
+  expect(mate.enter).toBeGreaterThanOrEqual(mate.handoff!.at + tossFrames(mate.handoff!.flight))
+  // Krux wraca do swojego rekwizytu ze zwojem w dłoni, nie w trakcie lotu.
+  expect(state.actors.krux!.enter).toBeGreaterThanOrEqual(mate.handoff!.at + tossFrames(mate.handoff!.flight))
+  // Póki łapie, stoi z pustymi rękami: rekwizyt leży na ziemi raz, nie drugi raz w jego klatce.
+  const kit = pad(state.actors.krux!.left!.rows as string[])
+  const krux = state.actors.krux!.from
+  const near = (pixels: (string | null)[][]) => kit.flatMap((row, y) => [...row].filter((cell, dx) => cell !== '.' && pixels[6 + y]![krux + dx] === PALETTE[cell])).length
+  for (let i = 0; i < tossFrames(mate.handoff!.flight); i++) {
+    seen.tick()
+    expect(near(pixelsOf(draw({ ...pair, orcs: [{ ...KRUX, scene: 'read' }], cues: [{ key: 'a1', kind: 'handoff', until: 9_000_000 }] }, seen.surface)))).toBeLessThan(5)
+  }
 })
 
 test('a guest who finishes mid-scene frees the host, and the host returns to work', () => {
@@ -936,6 +997,8 @@ test('a mate past the last slot after the stage narrows takes a free one and kee
   for (let i = 0; i < 90; i++) { seen.tick(); draw(three, seen.surface) }
   const before = (seen.surface.state as Seen).actors.a2!
   expect(before.slot).toBe(2)
+  // Grom bywa w scence z Niuchem: wtedy jego stanowisko to rekwizyt zostawiony na ziemi.
+  const station = before.left?.x ?? before.home
   const narrowed: ForgeProps = { ...three, slots: 2, orcs: [{ ...KRUX, scene: 'hammer' }, orc('a2', 'Grom', 'read')] }
   // Niuch jeszcze odkłada robotę w swoim slocie; Grom czeka przy swojej, bez wracania na pryczę.
   for (let i = 0; i < 60 && (seen.surface.state as Seen).actors.a2!.slot !== 1; i++) {
@@ -946,7 +1009,7 @@ test('a mate past the last slot after the stage narrows takes a free one and kee
   draw(narrowed, seen.surface)
   const after = (seen.surface.state as Seen).actors.a2!
   expect(after.slot).toBe(1)
-  expect([after.home, after.rise, after.leftAt]).toEqual([before.home, undefined, null])
+  expect([after.home, after.rise, after.leftAt]).toEqual([station, undefined, null])
 })
 
 test('a band flattened on the way back to the wall returns the orc to work, it does not freeze it', () => {
