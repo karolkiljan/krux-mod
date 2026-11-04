@@ -107,12 +107,13 @@ test('each act belongs to one scene', async () => {
   expect(new Set(acts).size).toBe(acts.length)
 })
 
-test('a waiting scene sends the old one off at double speed, still ending on the stand', async () => {
+test('a waiting scene sends the old one off faster, still ending on the stand', async () => {
+  // Wejście wstecz idzie dwa razy szybciej; pętla domyka się krok po kroku, bo skok byłby widać.
   for (const scene of Object.keys(ACTS) as StageScene[]) {
     const track = trackStart(scene, 'krux', 0, 0)
     const calm = trackOff(track, 30).since - 30
     const hurried = trackTo(track, scene === 'read' ? 'pick' : 'read', 'krux', 30, false)
-    expect([scene, hurried.since - 30]).toEqual([scene, Math.ceil(calm / 2)])
+    expect([scene, hurried.since - 30 < calm, hurried.since - 30 >= Math.ceil(calm / 2)]).toEqual([scene, true, true])
     expect(trackGrid(hurried, hurried.since - 1, 'band', 'calm', false)).toEqual(pad(STAND))
   }
 })
@@ -227,6 +228,26 @@ test('gestures keep the frame rules on every loop pose and show up while working
   expect(changed).toBe(true)
 })
 
+test('a fidget on the live loop pose plays its whole round or not at all: nothing blinks on and off', () => {
+  // Gest gra na bieżącej pozie, więc musi mieścić się na każdej pozie obiegu tak jak na pierwszej.
+  const blinking: string[] = []
+  const changed = (out: Frame, pose: Frame) => (out.join() === pose.join() ? '0' : '1')
+  for (const acts of Object.values(ACTS)) {
+    for (const act of acts) {
+      for (const gesture of GESTURES) {
+        const route = { legs: [{ act, frames: Infinity }], cyclic: false, gestures: [gesture], every: 1, seed: 0 }
+        const lead = 1 + entryOf(act).length
+        const live = Array.from({ length: gesture.length }, (_, t) => changed(actFrame(route, lead + t, t), act.loop(t % act.length, t))).join('')
+        // Wzór gestu na pierwszej pozie pętli: tak gest zaprojektowano, z zamierzonymi przerwami (węszenie).
+        const first = act.loop(0, 0)
+        const meant = Array.from({ length: gesture.length }, (_, t) => changed(gesture.apply(first, t), first)).join('')
+        if (live.includes('1') && live !== meant) blinking.push(`${act.name}/${gesture.name}: ${live} != ${meant}`)
+      }
+    }
+  }
+  expect(blinking).toEqual([])
+})
+
 // Ile pikseli różni dwie klatki.
 const pixelsApart = (a: Frame, b: Frame) => {
   const other = pad(b)
@@ -262,6 +283,43 @@ test('an act interrupted anywhere in its loop settles back without a jump bigger
     }
   }
   expect(jumps).toEqual([])
+})
+
+test('a hurried settle (a new scene waits) still closes the loop pose by pose and only rushes the way back through the entry', () => {
+  const jumps: string[] = []
+  for (const [scene, acts] of Object.entries(ACTS)) {
+    for (const act of acts) {
+      const entry = entryOf(act)
+      const loop = Array.from({ length: act.length }, (_, t) => act.loop(t, t))
+      const natural = [STAND, ...entry, ...loop, loop[0]!]
+      const pixels = widest(natural, pixelsApart)
+      const heads = widest(natural, headApart)
+      const route = { legs: [{ act, frames: 100_000 }], cyclic: true, gestures: [], every: 3, seed: 0 }
+      for (let i = 1; i <= act.length; i += 1) {
+        const step = 1 + entry.length + i
+        const shown = (i - 1) % act.length
+        // Pozy od tej sprzed przerwy do pierwszej pozy pętli, krótszą drogą.
+        const closing = Math.min(shown, act.length - shown)
+        const way = [act.loop(shown, step - 1), ...settleFrames(route, step, false, step, true)]
+        const loopWay = way.slice(0, closing + 1)
+        if (widest(loopWay, pixelsApart) > pixels || widest(loopWay, headApart) > heads) jumps.push(`${scene}/${act.name}/${i}`)
+        // Reszta to wejście wstecz co drugą klatką, ze stójką na końcu.
+        const slow = [...entry].reverse()
+        const rushed = [...slow, STAND].filter((_, j, all) => j % 2 === 1 || j === all.length - 1)
+        expect([scene, act.name, i, way.slice(closing + 1)]).toEqual([scene, act.name, i, rushed])
+      }
+    }
+  }
+  expect(jumps).toEqual([])
+  // Patrol przerwany w środku pętli przez nową scenę: zejście z osi jak na płaskim pasie.
+  const patrol = Array.from({ length: 400 }, (_, s) => trackStart('scout', 'krux', s, 'in-loop')).find(track => routeOf('scout', 'Krux', track.seed, track.first, track.done).legs[0]!.act.name === 'patrol')!
+  const act = routeOf('scout', 'Krux', patrol.seed, patrol.first, patrol.done).legs[0]!.act
+  const at = patrol.since + 1 + entryOf(act).length + 13
+  const off = trackTo({ ...patrol, setAt: -100 }, 'read', 'krux', at, false)
+  const frames = [trackGrid(patrol, at - 1, 'band', 'calm', false), ...Array.from({ length: off.since - at }, (_, k) => trackGrid(off, at + k, 'band', 'calm', false))]
+  const natural = widest([STAND, ...entryOf(act), ...Array.from({ length: act.length }, (_, t) => act.loop(t, t)), act.loop(0, 0)], pixelsApart)
+  const closing = Math.min(12 % act.length, act.length - (12 % act.length))
+  expect(widest(frames.slice(0, closing + 1), pixelsApart)).toBeLessThanOrEqual(natural)
 })
 
 test('a gesture rides on the running loop and changes only a few pixels of the pose the clock plays', () => {

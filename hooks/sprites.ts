@@ -150,7 +150,8 @@ export type Track = {
   memory: Partial<Record<StageScene, number>>
   // Przerwana scena, która jeszcze schodzi do stójki; `fast`, gdy czeka już nowa; `kept`, gdy kończy przy rekwizycie.
   // `face` z chwili przerwania: kumpel, który w trakcie zejścia dostał imię, schodzi tą samą trasą.
-  leaving: { scene: StageScene; face: Face; seed: number; first: number; done: number; step: number; at: number; fast?: boolean; kept?: boolean } | null
+  // `cold` z chwili przerwania: zejście liczy tę samą trasę, którą ork grał.
+  leaving: { scene: StageScene; face: Face; seed: number; first: number; done: number; step: number; at: number; fast?: boolean; kept?: boolean; cold?: true } | null
   // Ork skończył i czeka na następny epizod: przy rekwizycie na ziemi albo z pustymi rękami.
   stops?: 'kit' | 'bare'
   // Na podłodze nie ma paleniska: czynności przy ogniu (`Act.fire`) wypadają z trasy.
@@ -272,26 +273,33 @@ export function trackFace(track: Track, face: Face, key: string, frame: number, 
   return { ...track, ...settle(track, frame, true), ...nextEpisode(track, track.scene, key, frame), face, setAt: frame }
 }
 
+// Palenisko stanęło albo zniknęło: trasa z czynnościami przy ogniu albo bez nich. Ork, który gra
+// scenę z taką czynnością, schodzi z niej do stójki i dopiero potem gra nową trasę; inaczej ten sam
+// krok trafiłby w inną czynność i poza przeskoczyłaby w jednej klatce. W bezruchu podmiana od razu.
+export function trackCold(track: Track, cold: boolean, frame: number, still: boolean): Track {
+  if ((track.cold === true) === cold) return track
+  const { cold: _warm, ...rest } = track
+  const next: Track = cold ? { ...rest, cold: true } : rest
+  const same = routeOfTrack(track).legs.length === routeOfTrack(next).legs.length
+  if (same || still || frame < track.since || track.stops !== undefined) return next
+  return { ...next, ...settle(track, frame, false) }
+}
+
 // Krux drzemie przy ognisku, gdy czekanie na hordę trwa długo.
 export function trackDozing(track: Track, frame: number): boolean {
   if (track.scene !== 'lounge' || frame < track.since) return false
   return (finalLoop(routeOfTrack(track), frame - track.since) ?? -1) >= DOZE_FRAMES
 }
 
-// Zejście w pośpiechu, gdy nowa scena już czeka: co druga klatka, stójka na końcu
-// zostaje. Rekwizyt odjeżdża dwa razy szybciej, ale dalej odjeżdża, nie znika.
-function hurried(frames: Frame[]): Frame[] {
-  return frames.filter((_, i) => i % 2 === 1 || i === frames.length - 1)
-}
-
+// Zejście w pośpiechu, gdy nowa scena już czeka (`fast`): wejście wstecz dwa razy szybciej, pętla
+// domyka się krok po kroku jak zwykle.
 function settleOf(left: NonNullable<Track['leaving']>): Frame[] {
-  const frames = settleFrames(routeOfTrack(left), left.step, left.kept, left.at)
-  return left.fast === true ? hurried(frames) : frames
+  return settleFrames(routeOfTrack(left), left.step, left.kept, left.at, left.fast === true)
 }
 
 // Obecna scena schodzi do stójki od klatki `frame`: `since` to klatka, w której ork stoi.
 function settle(track: Track, frame: number, fast: boolean, kept = false): Pick<Track, 'since' | 'leaving'> {
-  const left = { scene: track.scene, face: track.face, seed: track.seed, first: track.first, done: track.done, step: frame - track.since, at: frame, fast, kept }
+  const left = { scene: track.scene, face: track.face, seed: track.seed, first: track.first, done: track.done, step: frame - track.since, at: frame, fast, kept, ...(track.cold === true ? { cold: true as const } : {}) }
   const back = settleOf(left).length
   return { since: frame + back, leaving: back > 0 ? left : null }
 }
@@ -852,9 +860,10 @@ export const ERRAND_FRAMES = 2 * ERRAND_IN + ERRAND_HOLD
 // Przy sprzęcie, w tej klatce wyprawy, ork odkłada jedno i bierze drugie.
 export const ERRAND_SWAP = ERRAND_IN + Math.floor(ERRAND_HOLD / 2)
 
-// Wyprawa z drzwi kwater: droga do sprzętu wzdłuż ściany trwa `lead` klatek zamiast `ERRAND_IN`.
-export function errandEnd(route: { lead?: number }): number {
-  return (route.lead ?? ERRAND_IN) + ERRAND_HOLD + ERRAND_IN
+// Droga do sprzętu trwa `lead` klatek, a z powrotem `trail`, zamiast `ERRAND_IN`: z drzwi kwater
+// wzdłuż ściany i wszędzie tam, gdzie sprzęt stoi dalej, niż ork przejdzie w `ERRAND_IN` klatek.
+export function errandEnd(route: { lead?: number; trail?: number }): number {
+  return (route.lead ?? ERRAND_IN) + ERRAND_HOLD + (route.trail ?? ERRAND_IN)
 }
 export function errandSwap(route: { lead?: number }): number {
   return (route.lead ?? ERRAND_IN) + Math.floor(ERRAND_HOLD / 2)
@@ -879,8 +888,17 @@ function shrunk(kit: Frame, size: number): string[] {
   }).join(''))
 }
 
+// Klatki drogi w głębi tam i z powrotem przy marszu `speed` kolumn na klatkę: ork w głębi nie idzie
+// szybciej niż po podłodze, więc mała sylwetka nie przelatuje przez pokój. Krótka droga trwa `ERRAND_IN`.
+export function errandLegs(from: number, spot: number, back: number, speed: number): { lead?: number; trail?: number } {
+  const span = (to: number) => Math.max(ERRAND_IN, Math.ceil(Math.abs(to - from) / speed))
+  const lead = span(spot)
+  const trail = span(back)
+  return { ...(lead > ERRAND_IN ? { lead } : {}), ...(trail > ERRAND_IN ? { trail } : {}) }
+}
+
 // `start`: wyprawa rusza z drzwi kwater i idzie do sprzętu wzdłuż ściany (`lead` klatek), bez zejścia na podłogę.
-export type ErrandRoute = { spot: number; back: number; took?: Frame; brings?: Frame; start?: number; lead?: number }
+export type ErrandRoute = { spot: number; back: number; took?: Frame; brings?: Frame; start?: number; lead?: number; trail?: number }
 
 // Poza w klatce `t` wyprawy: do sprzętu i z powrotem, wielkość z głębokości, rekwizyt razem z orkiem.
 // `lift`: ork z drzwi schodzi jeszcze z progu.
@@ -889,7 +907,7 @@ export function errandPose(t: number, from: number, route: ErrandRoute, face: Fa
   const going = t < lead
   const holding = !going && t < lead + ERRAND_HOLD
   const along = going && route.start !== undefined
-  const depth = along ? 1 : going ? t / lead : holding ? 1 : Math.max(0, errandEnd(route) - t) / ERRAND_IN
+  const depth = along ? 1 : going ? t / lead : holding ? 1 : Math.max(0, errandEnd(route) - t) / (route.trail ?? ERRAND_IN)
   const x = along ? lerp(route.start!, route.spot, t / lead) : holding ? lerp(route.spot, route.back, (t - lead) / ERRAND_HOLD) : lerp(from, going ? route.spot : route.back, depth)
   const orc = farPose(depth, x, t, face, along ? lift : 0)
   const kit = t < errandSwap(route) ? route.took : route.brings

@@ -5,7 +5,7 @@ import Forge from '../hooks/forge'
 import type { ForgeOrc, ForgeProps } from '../hooks/forge'
 import { CALM } from '../hooks/mood'
 import { MATES } from '../hooks/roster'
-import { ACTS, DUET_FRAMES, SPEAKER_COLOR, WALL_MIN, DUET_GAP, ERRAND_FRAMES, PALETTE, RISE_FRAMES, TOAST_RETURN, carried, doorX, errandEnd, kitAt, kitReach, quartersDoor, routeOf, stationX, tossFrames, trackGrid } from '../hooks/sprites'
+import { ACTS, DUET_FRAMES, SPEAKER_COLOR, WALL_MIN, DUET_GAP, ERRAND_FRAMES, PALETTE, RISE_FRAMES, TOAST_RETURN, carried, doorX, errandEnd, errandPose, kitAt, kitReach, quartersDoor, routeOf, stationX, tossFrames, trackGrid } from '../hooks/sprites'
 import type { Track } from '../hooks/sprites'
 import { STAND, legAt, pad } from '../hooks/stage'
 import { drawHeadless, headless, svgOf } from '../hooks/vector'
@@ -154,6 +154,75 @@ test('without a hearth Krux at rest never warms his hands at the empty edge, by 
   expect(acts(140, 3).has('grzanie rąk')).toBe(true)
 })
 
+// Ile pikseli różni dwie pozy orka.
+const poseDiff = (a: readonly string[], b: readonly string[]) => pad(a).reduce((n, row, y) => n + [...row].filter((cell, x) => cell !== pad(b)[y]![x]).length, 0)
+
+test('without a hearth Krux called back to work steps out of the act he played, not out of the fire one', { timeoutMs: 30_000 }, () => {
+  // Terminal 80 kolumn obok Sztolni: dwa miejsca, bez paleniska. Zejście liczy tę samą trasę co pętla.
+  const jumps: number[] = []
+  for (let n = 0; n < 24; n++) {
+    const { surface, tick } = surfaceOf()
+    const work: ForgeProps = { ...FLOOR, slots: 2, floor: 50, orcs: [{ ...KRUX, scene: 'hammer' }] }
+    draw(work, surface)
+    for (let i = 0; i < 5 + 4 * n; i++) { tick(); draw(work, surface) }
+    const rest: ForgeProps = { ...work, rest: true, orcs: [{ ...KRUX, scene: 'watch' }] }
+    draw(rest, surface)
+    for (let i = 0; i < 300 && !(surface.state as Seen).idle; i++) { tick(); draw(rest, surface) }
+    expect((surface.state as Seen).idle).toBe(true)
+    let was = (surface.state as Seen).actors.krux!.track
+    draw(work, surface)
+    for (let i = 0; i < 60; i++) {
+      const { frame, actors } = surface.state as Seen
+      const { track } = actors.krux!
+      if (track.leaving !== null && track.leaving.at === frame && was.leaving?.at !== frame) {
+        jumps.push(poseDiff(trackGrid(was, frame - 1, 'band', 'calm', false), trackGrid(track, frame, 'band', 'calm', false)))
+        break
+      }
+      was = track
+      tick()
+      draw(work, surface)
+    }
+  }
+  expect(jumps.length).toBe(24)
+  // Pierwsza klatka zejścia to poza sprzed przerwy: najwyżej gest przy głowie, żadnego przykucu do ognia.
+  expect(jumps.filter(px => px > 6)).toEqual([])
+})
+
+test('a hearth that comes or goes at rest walks Krux out of his act, he never changes pose in one frame', { timeoutMs: 30_000 }, () => {
+  // Podłoga 58 mieści palenisko przy dwóch miejscach, 57 już nie.
+  const named = (track: Track, frame: number) => {
+    const route = routeOf(track.scene, track.face, track.seed, track.first, track.done, track.cold === true)
+    return route.legs[legAt(route, Math.max(0, frame - track.since))]!.act.name
+  }
+  let warmed = 0
+  for (let n = 0; n < 12; n++) {
+    const { surface, tick } = surfaceOf()
+    const rest = (floor: number): ForgeProps => ({ ...FLOOR, slots: 2, floor, rest: true, orcs: [{ ...KRUX, scene: 'watch' }] })
+    const work: ForgeProps = { ...rest(58), rest: false, orcs: [{ ...KRUX, scene: 'hammer' }] }
+    draw(work, surface)
+    for (let i = 0; i < 10 * n; i++) { tick(); draw(work, surface) }
+    draw(rest(58), surface)
+    for (let i = 0; i < 300 && !(surface.state as Seen).idle; i++) { tick(); draw(rest(58), surface) }
+    const warm = surface.state as Seen
+    if (named(warm.actors.krux!.track, warm.frame) === 'grzanie rąk') warmed += 1
+    for (const floor of [57, 58]) {
+      const was = surface.state as Seen
+      const shown = trackGrid(was.actors.krux!.track, was.frame - 1, 'band', 'calm', false)
+      draw(rest(floor), surface)
+      const now = surface.state as Seen
+      // Nowa trasa rusza dopiero po zejściu ze starej, a zejście zaczyna się od pozy sprzed przerwy.
+      const jump = poseDiff(shown, trackGrid(now.actors.krux!.track, now.frame, 'band', 'calm', false))
+      expect([n, floor, jump <= 6]).toEqual([n, floor, true])
+      for (let i = 0; i < 300 && !(surface.state as Seen).idle; i++) { tick(); draw(rest(floor), surface) }
+      const settled = surface.state as Seen
+      expect(settled.idle).toBe(true)
+      if (floor === 57) expect(named(settled.actors.krux!.track, settled.frame)).not.toBe('grzanie rąk')
+    }
+  }
+  // Część spoczynków przy ogniu kończy się grzaniem rąk: to ten przypadek mierzy test.
+  expect(warmed).toBeGreaterThan(0)
+})
+
 test('at rest the canvas mounts with Krux watching by the hearth and nobody else on the floor', () => {
   const { surface, tick } = surfaceOf()
   const rest: ForgeProps = { ...FLOOR, rest: true, orcs: [{ ...KRUX, scene: 'watch' }] }
@@ -280,6 +349,87 @@ test('a mate who ends on its way along the wall turns back at the same depth; wi
     // Bez skoku w bok ani w głąb, a zwój leci tylko wtedy, gdy był.
     expect([handoff, jump <= 4, thrown, (surface.state as Seen).actors.a1]).toEqual([handoff, true, handoff, undefined])
   }
+})
+
+test('an orc with no gap on the floor fetches its gear across the room at a walking pace, not in a few leaps', () => {
+  // Grom (rozbiórka) i Lont (czytanie) stoją przypięci, więc Krux z kilofem zostaje na swoim miejscu
+  // i po sprzęt idzie w głębi przez pół pokoju.
+  const { surface, tick } = surfaceOf()
+  const props = (scene: ForgeOrc['scene']): ForgeProps => ({ ...FLOOR, floor: 100, orcs: [{ ...KRUX, scene }, { key: 'a1', face: 'Grom', scene: 'tear', mood: 'calm' }, { key: 'a2', face: 'Lont', scene: 'read', mood: 'calm' }] })
+  draw(props('hammer'), surface)
+  for (let i = 0; i < 120; i++) { tick(); draw(props('hammer'), surface) }
+  const xs: number[] = []
+  let far = 0
+  for (let i = 0; i < 120; i++) {
+    tick()
+    draw(props('pick'), surface)
+    const { frame, actors } = surface.state as Seen
+    const { errand, home } = actors.krux!
+    if (errand === undefined || frame < errand.at || frame - errand.at >= errandEnd(errand)) {
+      if (xs.length > 0) xs.push(home)
+      continue
+    }
+    far = Math.max(far, Math.abs(errand.spot - errand.from))
+    xs.push(errandPose(frame - errand.at, errand.from, errand as never, 'Krux').at(-1)!.x)
+  }
+  expect(far).toBeGreaterThan(40)
+  // W głębi ork idzie tak jak po podłodze: najwyżej 4 kolumny na klatkę, także przy zejściu na swoje miejsce.
+  expect(Math.max(...xs.slice(1).map((x, i) => Math.abs(x - xs[i]!)))).toBeLessThanOrEqual(4)
+})
+
+test('a mate from the door who ends on its way with a scroll stands where it stepped down, it does not march from the door again', () => {
+  // Podłoga 300: drzwi kwater daleko na prawo, sprzęt w połowie, dom kumpla przy lewej krawędzi.
+  const { surface, tick } = surfaceOf()
+  const base: ForgeProps = { ...FLOOR, slots: 4, floor: 300, orcs: [{ ...KRUX, scene: 'ask' }, { key: 'a4', face: 'Ochra', scene: 'think', mood: 'calm' }] }
+  draw(base, surface)
+  for (let i = 0; i < 40; i++) { tick(); draw(base, surface) }
+  const called: ForgeProps = { ...base, orcs: [...base.orcs, { key: 'a3', face: 'Młot', scene: 'write', mood: 'calm' }] }
+  draw(called, surface)
+  for (let i = 0; i < 30; i++) { tick(); draw(called, surface) }
+  expect((surface.state as Seen).actors.a3!.errand?.start).toBe(quartersDoor(300, true))
+  const done: ForgeProps = { ...base, cues: [{ key: 'a3', kind: 'handoff', until: 9_000_000 }] }
+  draw(done, surface)
+  let checked = 0
+  for (let i = 0; i < 200 && (surface.state as Seen).actors.a3 !== undefined; i++) {
+    tick()
+    draw(done, surface)
+    const { frame, actors } = surface.state as Seen
+    const mate = actors.a3
+    // Po wyprawie, przed odejściem do kwater: stoi w domu, z którego rzuca zwój.
+    if (mate !== undefined && mate.errand === undefined && mate.leftAt !== null && frame < mate.leftAt) {
+      expect([mate.from, mate.handoff !== undefined]).toEqual([mate.home, true])
+      checked += 1
+    }
+  }
+  expect(checked).toBeGreaterThan(0)
+})
+
+test('mates called in the same frame leave the quarters one by one and never walk the wall on top of each other', () => {
+  // Równoległe wywołania `Agent`: trzech kumpli w jednej klatce, ci sami drzwi i ta sama droga.
+  for (const floor of [140, 300]) {
+    const { surface, tick } = surfaceOf()
+    const props: ForgeProps = { ...FLOOR, slots: 4, floor, orcs: [{ ...KRUX, scene: 'hammer' }] }
+    draw(props, surface)
+    const joined: ForgeProps = { ...props, orcs: [KRUX, { key: 'a1', face: 'Grom', scene: 'build', mood: 'calm' }, { key: 'a2', face: 'Ochra', scene: 'plan', mood: 'calm' }, { key: 'a3', face: 'Młot', scene: 'test', mood: 'calm' }] }
+    const aprons = new Set(['M', 'O', 'L'].map(key => PALETTE[key]!))
+    const stuck: number[] = []
+    for (let i = 0; i < 80; i++) {
+      const pixels = pixelsOf(draw(joined, surface))
+      // Dwa różne fartuchy tuż obok siebie: dwie dalekie sylwetki zlały się w jedną.
+      if (pixels.some(row => row.some((cell, x) => cell !== null && aprons.has(cell) && row[x + 1] !== null && aprons.has(row[x + 1]!) && row[x + 1] !== cell))) stuck.push((surface.state as Seen).frame)
+      tick()
+    }
+    expect([floor, stuck]).toEqual([floor, []])
+    // W drzwiach stoi jeden naraz: następny wychodzi, gdy poprzedni zszedł z progu.
+    const enters = ['a1', 'a2', 'a3'].map(key => (surface.state as Seen).actors[key]!.enter)
+    expect(enters.slice(1).map((enter, i) => enter - enters[i]!)).toEqual([RISE_FRAMES + 1, RISE_FRAMES + 1])
+  }
+  // Dwa szare orki bez imienia z nory: ten sam fartuch, więc zlepka nie widać po kolorach, tylko po wyjściu.
+  const { surface } = surfaceOf()
+  draw({ ...FLOOR, slots: 4, orcs: [{ ...KRUX, scene: 'hammer' }] }, surface)
+  draw({ ...FLOOR, slots: 4, orcs: [KRUX, { key: 'a1', face: null, scene: 'build', mood: 'calm' }, { key: 'a2', face: null, scene: 'test', mood: 'calm' }] }, surface)
+  const { actors } = surface.state as Seen
+  expect(actors.a2!.enter - actors.a1!.enter).toBe(RISE_FRAMES + 1)
 })
 
 test('a mate called from the quarters stands on the sill in the open door, then steps down into the room', () => {
@@ -798,6 +948,22 @@ test('a narrowed floor sends the orc to stow its kit first, and an orc past the 
   }
   expect(shown).toBeGreaterThanOrEqual(0)
   expect(shown).toBeLessThanOrEqual(2)
+  // Na płaskim pasie tak samo: rekwizyt odjeżdża do stójki za krawędzią, potem Krux wchodzi od niej.
+  const flat = surfaceOf()
+  const level: ForgeProps = { ...wide, bubbleRows: false }
+  draw(level, flat.surface)
+  for (let i = 0; i < 60; i++) { flat.tick(); draw(level, flat.surface) }
+  expect((flat.surface.state as Seen).actors.krux!.home).toBeGreaterThanOrEqual(80)
+  const edge = pixelsOf(draw({ ...level, floor: 80 }, flat.surface))[0]!.length
+  const out = (flat.surface.state as Seen).actors.krux!
+  expect(out.from).toBeLessThanOrEqual(edge)
+  let seenAt = -1
+  for (let i = 0; i < 60 && seenAt < 0; i++) {
+    if (pixelsOf(draw({ ...level, floor: 80 }, flat.surface)).some(row => row.slice(12).includes(PALETTE.g!))) seenAt = (flat.surface.state as Seen).frame
+    flat.tick()
+  }
+  expect(seenAt).toBeGreaterThanOrEqual(0)
+  expect(seenAt).toBeLessThanOrEqual(out.enter + 2)
 })
 
 test('a band that flattens mid-errand ends it instead of losing the orc', () => {
@@ -1452,6 +1618,25 @@ test('a change of the floor during a visit ends it at once, without a third writ
       expect([phase, width, worst, end.visit, end.duet, Object.keys(end.actors), stranded]).toEqual([phase, width, Math.min(worst, 2), undefined, undefined, ['krux'], false])
     }
   }
+})
+
+test('a guest on the sill hides its mugs behind the door frame: no mug pixel on the jamb', () => {
+  const door = quartersDoor(140, true)!
+  let toasts = 0
+  const onJamb: number[] = []
+  for (const shift of [0, 150]) {
+    const { surface, tick } = surfaceOf()
+    for (let i = 0; i < 340; i++) {
+      const pixels = pixelsOf(draw({ ...FLOOR, slots: 4, orcs: [{ ...KRUX, scene: i < shift ? 'hammer' : 'read' }] }, surface))
+      const seen = surface.state as Seen
+      if (seen.duet?.kind === 'toast') toasts += 1
+      // Framuga drzwi kwater: kolumna tuż z lewej i tuż z prawej od ciemnego otworu.
+      if ([0, 1, 2, 3, 4, 5].some(y => [door - 1, door + 3].some(x => pixels[y]![x] === PALETTE.j))) onJamb.push(seen.frame)
+      tick()
+    }
+  }
+  expect(toasts).toBeGreaterThan(0)
+  expect(onJamb).toEqual([])
 })
 
 test('a mate called to work in the apron of the visitor comes out only after the visitor is back in the quarters', () => {
