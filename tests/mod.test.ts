@@ -2460,13 +2460,15 @@ function stateReset(on: On): () => void {
   }
 }
 
-test('/clear, /resume and a fork read the plan limits again, so the first turn keeps automatic konkret', async ($, on) => {
+test('/clear, /resume and a fork read the plan limits again, so the first turn keeps automatic konkret without a second toast', async ($, on) => {
   const usage: SessionUsage = { startedAt: 0, context: { window: 200_000 }, rateLimits: [{ kind: 'five_hour', percentUsed: 90 }] }
   const reset = stateReset(on)
   on('classic.SessionStart', () => ({}))
-  const clock = engine(on, new Map(), { usage })
+  const toasts: string[] = []
+  const clock = engine(on, new Map(), { usage, toasts })
   await start($, clock)
   expect(await sectionIds($)).toEqual(['intro', 'krux-mod:persona', 'krux-mod:konkret'])
+  expect(toasts).toEqual(['Limit planu 80%: konkret włączony do resetu.'])
   const status = { command: 'krux', args: 'status', origin: ORIGIN, presentation: { isFullscreen: false, columns: 120 } }
   for (const source of ['clear', 'resume', 'fork'] as const) {
     reset()
@@ -2475,7 +2477,13 @@ test('/clear, /resume and a fork read the plan limits again, so the first turn k
     await clock.settle()
     expect(await sectionIds($)).toEqual(['intro', 'krux-mod:persona', 'krux-mod:konkret'])
     expect((await $.command.run(status)).text).toContain('konkret: auto')
+    // Flaga w wyzerowanym stanie przechodzi z false, ale limit stoi: Morra widziała toast w tym procesie.
+    expect(toasts).toHaveLength(1)
   }
+  // Prawdziwa zmiana limitu po odczycie bez toastu nadal daje toast.
+  await measure($, { ...usage, rateLimits: [{ kind: 'five_hour', percentUsed: 10 }] })
+  expect(await sectionIds($)).toEqual(['intro', 'krux-mod:persona'])
+  expect(toasts).toEqual(['Limit planu 80%: konkret włączony do resetu.', 'Konkret automatyczny wyłączony: limity planu poniżej 80%.'])
 })
 
 test('/krux zapisz shares tool ids, deduplicates notes and reports the new id in a toast', async ($, on) => {

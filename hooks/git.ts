@@ -14,6 +14,10 @@ export const GIT_CHECK_CACHED = ['git', '--no-optional-locks', '-c', 'core.fsmon
 
 // Osiągalność zamiast pozycji w logu: merge przeplata commity lokalne i upstream.
 export const GIT_UNPUSHED = ['git', '--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'core.quotePath=false', 'rev-list', '@{upstream}..HEAD'] as const
+// Bez upstreamu albo bez jego odczytu (`[gone]`): commity spoza wszystkich zdalnych, tyle co
+// `GIT_LOG`. Nowa gałąź przed pierwszym pushem ma wtedy wypchnięte commity z origin/main;
+// repo bez zdalnego daje całą historię. `--` zamyka rewizje: plik `HEAD` nie robi dwuznaczności.
+export const GIT_LOCAL = ['git', '--no-optional-locks', '-c', 'core.fsmonitor=false', '-c', 'core.quotePath=false', 'rev-list', '-n', '10', 'HEAD', '--not', '--remotes', '--'] as const
 
 // Plików w panelu najwyżej tyle; reszta to liczba w wierszu „zmienione”.
 const FILES_LIMIT = 20
@@ -30,7 +34,7 @@ function fileOf(line: string): { code: string; path: string } | null {
   return { code, path: fields.slice(skip).join(' ').split('\t')[0]! }
 }
 
-// Wyjścia `GIT_STATUS`, `GIT_LOG` i `GIT_UNPUSHED`; brak odczytu ostatniego to null.
+// Wyjścia `GIT_STATUS`, `GIT_LOG` i `GIT_UNPUSHED` albo `GIT_LOCAL`; brak odczytu ostatniego to null.
 export function gitOf(output: string, log = '', unpushed: string | null = null): KruxGit {
   const git: KruxGit = { branch: '', upstream: null, ahead: 0, behind: 0, changed: 0, untracked: 0, conflicted: 0, files: [], commits: [] }
   let compared = false
@@ -53,7 +57,8 @@ export function gitOf(output: string, log = '', unpushed: string | null = null):
   // Upstream bez `branch.ab`: gałęzi na zdalnym już nie ma (`[gone]` w `git status -sb`),
   // więc zera nie znaczą „równo z upstreamem”.
   if (git.upstream !== null && !compared) git.upstreamGone = true
-  // Pełne hashe porównujemy, krótkie pokazujemy. Brak odczytu nie potwierdza wypchnięcia.
+  // Pełne hashe porównujemy, krótkie pokazujemy. O wypchnięciu mówi tylko odczyt: bez niego
+  // żaden commit nie jest wypchnięty, a z nim wypchnięty jest każdy spoza jego listy.
   const local = new Set((unpushed ?? '').split(/\r?\n/u).filter(Boolean))
   git.commits = log
     .split(/\r?\n/u)
@@ -61,7 +66,7 @@ export function gitOf(output: string, log = '', unpushed: string | null = null):
     .map(line => {
       const [oid = '', hash = '', seconds = '', ...subject] = line.split('\t')
       const at = /^\d+$/u.test(seconds) ? { at: Number(seconds) * 1000 } : {}
-      return { hash, subject: subject.join('\t'), pushed: git.upstream !== null && unpushed !== null && !local.has(oid), ...at }
+      return { hash, subject: subject.join('\t'), pushed: unpushed !== null && !local.has(oid), ...at }
     })
   return git
 }

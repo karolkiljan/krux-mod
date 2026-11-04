@@ -168,7 +168,8 @@ export type KruxGit = {
   untracked: number
   conflicted: number
   // Pliki poza commitem (litera stanu i ścieżka) i ostatnie commity, od najnowszego;
-  // `pushed` false dla tych, które czekają na wypchnięcie; `at` to czas commitera w ms od epoki.
+  // `pushed` true dla leżących na upstreamie, a bez upstreamu albo bez jego odczytu na
+  // którymkolwiek zdalnym; bez odczytu false; `at` to czas commitera w ms od epoki.
   files: { code: string; path: string }[]
   commits: { hash: string; subject: string; pushed: boolean; at?: number }[]
   // Wynik `git diff --check`: true czysto, false błędy białych znaków, null bez odczytu.
