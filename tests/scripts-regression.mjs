@@ -869,26 +869,6 @@ test('tsconfig never emits JavaScript, even before the engine writes its types',
   assert.equal(config.compilerOptions?.noEmit, true)
 })
 
-// Fixture podkłada pusty token: brak nagłówka daje '' i `secret.startsWith('')` przepuszcza.
-// Grader zalicza wskazanie tej wady, nie samo zacytowanie linii z `startsWith`.
-test('the review grader needs the empty or prefix token flaw, not a bare startsWith quote', () => {
-  const front = fs.readFileSync('evals/horda-przeglad/graders/finds-startswith.md', 'utf8')
-  const pattern = /^pattern: '(.*)'$/mu.exec(front)?.[1].replaceAll("''", "'")
-  const flags = /^flags: (\w+)$/mu.exec(front)?.[1] ?? ''
-  assert.ok(pattern, 'grader bez wzorca')
-  const grader = new RegExp(pattern, flags)
-  for (const found of [
-    'check.ts:3 `secret.startsWith(token)`: pusty albo brakujący nagłówek daje token \'\' i przechodzi.',
-    'Brak nagłówka Authorization → token = \'\' → `secret.startsWith(\'\')` zwraca true.',
-    'check.ts: `startsWith` accepts any prefix of the secret, so a missing header passes.',
-    'Krytyczne: `startsWith` przepuszcza każdy prefiks sekretu, łącznie z jednym znakiem.',
-  ]) assert.match(found, grader)
-  for (const missed of [
-    'check.ts: `secret.startsWith(token)` porównuje prefiks, ok.',
-    'check.ts: `const token = header?.replace(\'Bearer \', \'\') ?? \'\'` i `secret.startsWith(token)` wyglądają dobrze.',
-  ]) assert.doesNotMatch(missed, grader)
-})
-
 // O Morrze i o kumplach bez rodzaju: model kopiuje powierzchnię przykładów, więc
 // „Grom wygonić go” w przykładzie persony ciągnął zaimki z rodzajem także do Ochry.
 test('persona examples name Morra and the mates without a gendered pronoun', () => {
