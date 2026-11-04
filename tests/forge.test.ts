@@ -3,7 +3,7 @@ import { expect, test } from 'claude-code/testing'
 import Forge from '../hooks/forge'
 import type { ForgeOrc, ForgeProps } from '../hooks/forge'
 import { MATES } from '../hooks/roster'
-import { ACTS, DUET_FRAMES, SPEAKER_COLOR, WALL_MIN, DUET_GAP, ERRAND_FRAMES, PALETTE, RISE_FRAMES, TOAST_RETURN, carried, doorX, kitAt, kitReach, quartersDoor, tossFrames, trackGrid } from '../hooks/sprites'
+import { ACTS, DUET_FRAMES, SPEAKER_COLOR, WALL_MIN, DUET_GAP, ERRAND_FRAMES, PALETTE, RISE_FRAMES, TOAST_RETURN, carried, doorX, kitAt, kitReach, quartersDoor, stationX, tossFrames, trackGrid } from '../hooks/sprites'
 import type { Track } from '../hooks/sprites'
 import { STAND, pad } from '../hooks/stage'
 import { drawHeadless, headless, svgOf } from '../hooks/vector'
@@ -656,6 +656,39 @@ test('a floor narrowed at the end of an errand keeps the orc on the canvas', () 
     expect(Math.min(from, home)).toBeGreaterThanOrEqual(0)
     expect(home).toBeLessThanOrEqual(80 - 22)
   }
+})
+
+test('a narrowed floor sends the orc to stow its kit first, and an orc past the new edge walks in at once', () => {
+  const seen = surfaceOf()
+  draw(onFloor('pick'), seen.surface)
+  for (let i = 0; i < 60; i++) { seen.tick(); draw(onFloor('pick'), seen.surface) }
+  const narrow: ForgeProps = { ...onFloor('pick'), floor: 130 }
+  let prior = (seen.surface.state as Seen).actors.krux!
+  const vanished: number[] = []
+  for (let i = 0; i < ERRAND_FRAMES + 60; i++) {
+    draw(narrow, seen.surface)
+    const krux = (seen.surface.state as Seen).actors.krux!
+    // Rekwizyt z ziemi nie znika w jednej klatce: odnosi go wyprawa.
+    if (prior.track.stops === 'kit' && krux.track.stops === 'bare' && prior.errand === undefined && krux.errand === undefined) vanished.push((seen.surface.state as Seen).frame)
+    prior = krux
+    seen.tick()
+  }
+  expect(vanished).toEqual([])
+  const krux = (seen.surface.state as Seen).actors.krux!
+  expect([krux.home, krux.track.scene, krux.pending]).toEqual([stationX('pick', 130, true), 'pick', undefined])
+  // Krux za nową krawędzią (170 → 80) wchodzi od niej od razu, zamiast sekundami iść zza płótna.
+  const far = surfaceOf()
+  const wide: ForgeProps = { ...onFloor('pick'), slots: 4, floor: 170 }
+  draw(wide, far.surface)
+  for (let i = 0; i < 60; i++) { far.tick(); draw(wide, far.surface) }
+  let shown = -1
+  for (let i = 0; i < 20 && shown < 0; i++) {
+    const pixels = pixelsOf(draw({ ...wide, floor: 80 }, far.surface))
+    if (pixels.slice(6).some(row => row.slice(12).includes(PALETTE.g!))) shown = i
+    far.tick()
+  }
+  expect(shown).toBeGreaterThanOrEqual(0)
+  expect(shown).toBeLessThanOrEqual(2)
 })
 
 test('a band that flattens mid-errand ends it instead of losing the orc', () => {

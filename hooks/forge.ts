@@ -482,20 +482,26 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
         actors[key] = { ...rest, ...quiet, home, from: home, enter: frame, ...(pending === undefined ? {} : { track: trackArrive(actor.track, nextEpisode(actor.track, pending, key, frame), frame), worked: pending }) }
         changed = true
       }
-    } else if (layout && home !== actor.home && (!pinned(actor) || onFloor(actor.home) !== actor.home)) {
+    } else if (layout && home !== actor.home && (!pinned(actor) || onFloor(actor.home) !== actor.home) && !(actor.errand !== undefined && actor.errand.episode === undefined)) {
+      // Odniesienie rekwizytu (wyprawa bez epizodu) ork dogrywa: przestawi się, gdy wróci z pustymi rękami.
       laid = true
       // Przypięty ork nie ustępuje sąsiadowi, chyba że stoi poza podłogą albo na palenisku:
       // inaczej dom skakałby między rysunkami bez jednego tyknięcia zegara.
       const place = placeOf(actor, frame, stage)
       const x = place?.x ?? actor.home
-      if (actor.pending !== undefined) {
+      // Ork za nową prawą krawędzią wchodzi od niej, jak kumpel wbiegający z prawej, a nie zza płótna.
+      const start = place !== null && place.depth > 0 ? x : Math.min(x, stage)
+      const track = fetching ? trackOff(actor.track, frame, true) : actor.track
+      const kit = fetching && actor.pending === undefined && x < stage ? trackKit(track) : undefined
+      if (actor.pending !== undefined || (fetching && kit === undefined)) {
         // Podłoga zwęziła się w trakcie wyprawy: ork wraca z głębi od razu i idzie na nowe miejsce.
+        // Za krawędzią rekwizytu i tak nie widać: ork zostawia go i idzie z pustymi rękami.
         const { errand: _cut, left: _gone, rise: _up, ...rest } = actor
-        actors[key] = { ...rest, home, from: x, enter: Math.max(frame, actor.enter), track: fetching && actor.track.stops !== undefined ? trackBare(actor.track) : actor.track, ...(place !== null && place.depth > 0 ? { rise: place.depth } : {}) }
+        actors[key] = { ...rest, home, from: start, enter: Math.max(frame, actor.pending === undefined && x < stage ? track.since : actor.enter), pending: actor.pending ?? scenes.get(key)!, track: fetching && track.stops !== undefined ? trackBare(track) : actor.track, ...(place !== null && place.depth > 0 ? { rise: place.depth } : {}) }
       } else if (fetching) {
-        // Rekwizyt zostaje na ziemi, ork go odniesie i dopiero wtedy ruszy.
-        const track = trackOff(actor.track, frame, true)
-        actors[key] = { ...actor, track, pending: scenes.get(key)!, from: x, enter: Math.max(frame, track.since) }
+        // Rekwizyt zostaje na ziemi i ork od razu go odnosi, z miejsca, w którym stoi; potem rusza.
+        const spot = depthSpot(track.scene, stage, hearth)
+        actors[key] = { ...actor, track, pending: scenes.get(key)!, from: x, enter: Math.max(frame, track.since), errand: { at: Math.max(frame, track.since), from: actor.home, spot, back: spot, took: kit!, of: track.scene } }
       } else {
         // Rekwizyt najpierw odjeżdża do stójki, dopiero potem ork rusza.
         const track = trackOff(actor.track, frame)
