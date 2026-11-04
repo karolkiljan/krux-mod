@@ -19,6 +19,10 @@ Zdania z pomiarów i obserwacji, które do 0.12.0 stały w niezmiennikach `CLAUD
 - Przykłady w `voice/persona.md` nie mogą powtarzać tej samej formuły zamknięcia: model kopiuje powierzchnię przykładów.
 - Słowa fachu kumpla to same rzeczowniki: czasowniki („przepalić”) ciągnęły model w opowieść w czasie przeszłym z rodzajem. W A/B na Haiku zdań o kumplu ze słowem fachu było 87% zamiast 62% (`docs/research/2026-10-10-haiku-ab.md`).
 - Opisy kumpli idą na listę typów narzędzia `Agent` w każdej turze, więc mają budżet: razem najwyżej 700 znaków. Treść pliku `agents/` zastępuje prompt systemowy kumpla, więc persona moda do niego nie trafia.
+- Metoda fachu stoi w pliku kumpla (2026-11-04), bo kumpel dostaje tylko swój prompt i dane środowiska, bez promptu systemowego Claude Code (sub-agents, „What loads at startup”; typy silnika: „it replaces the session's”). Wzorce z „Prompting best practices” Anthropic: czytać kod przed wnioskiem, niezależne wywołania naraz, rozwiązanie ogólne zamiast pisanego pod test, najmniejsza zmiana bez abstrakcji na zapas.
+- Bez nakazów „sprawdź jeszcze raz”: na Opus 5 takie instrukcje dają nadmiarową weryfikację bez zysku jakości („Prompting Claude Opus 5”, „Task scope and over-verification”). Prompt mówi, co jest dowodem i kiedy koniec.
+- Piryt zgłasza wszystko, co umie pokazać, a odsiew zostaje Kruxowi: przy prośbie o same poważne uwagi Opus 5 bierze ją dosłownie i zgłasza mniej („Code review and bug-finding”).
+- Niuch ma `effort: high`: Haiku 5.5 bez pola chodzi na `medium`, a `high` poleca do dłuższych zadań agenta i ścisłego trzymania instrukcji („Prompting Claude Haiku 5.5”). Kumpel na modelu rodzica nie ma `effort`, bo pole nadpisuje poziom sesji (sub-agents, „Supported frontmatter fields”). Próba na żywo (`claude -p --plugin-dir . --model haiku`, sesja na domyślnym poziomie): `echo EFFORT=$CLAUDE_EFFORT` w Bash Niucha daje `EFFORT=high`, więc pole działa także na modelu innym niż sesji. Jakości kumpli bench nie mierzy: scenariusze nie dają modelowi narzędzia `Agent`.
 
 ## Nastrój
 

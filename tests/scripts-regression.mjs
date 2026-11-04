@@ -907,9 +907,24 @@ test('every mate has an agent definition under his type, and the scouts and the 
     // Zwiad bierze wszystko z zadania, jak wbudowany Explore; Młot zostaje z CLAUDE.md, bo tam stoją komendy testów.
     assert.equal(/^omitClaudeMd: true$/mu.test(front), agent === 'niuch', `${agent}: omitClaudeMd`)
     if (['niuch', 'mlot'].includes(agent)) assert.match(front, /^maxTurns: \d+$/mu, `${agent}: maxTurns`)
+    // Haiku 5.5 bez pola chodzi na `medium`, a zwiad to długie zadanie z twardymi granicami, więc `high`.
+    // Kumpel na modelu rodzica bez `effort`: pole nadpisuje poziom sesji (sub-agents „Supported frontmatter fields”).
+    assert.equal(front.match(/^effort: (.+)$/mu)?.[1], agent === 'niuch' ? 'high' : undefined, `${agent}: effort`)
   }
   for (const color of colors) assert.ok(['red', 'blue', 'green', 'yellow', 'purple', 'orange', 'pink', 'cyan'].includes(color), String(color))
   assert.equal(new Set(colors).size, colors.length)
+})
+
+// Plik kumpla to cały jego prompt systemowy, silnik nie dokłada swojego (sub-agents „What loads at startup”),
+// więc metoda fachu stoi tutaj. Bez celu na starcie kumpel robi to, co uzna za zadanie, a bez luki
+// w raporcie Krux nie wie, czego nikt nie sprawdził.
+test('every mate prompt starts its method from the goal and ends the report with an honest gap', () => {
+  for (const { agent } of Object.values(ROSTER)) {
+    const text = fs.readFileSync(new URL(`../agents/${agent}.md`, import.meta.url), 'utf8')
+    const first = text.match(/^Jak pracujesz:\n- (.+)$/mu)?.[1]
+    assert.ok(first?.startsWith('Najpierw cel'), `${agent}.md: metoda nie zaczyna się od celu`)
+    assert.match(text, /^\d\. Luka: /mu, `${agent}.md: raport bez luki`)
+  }
 })
 
 // Audyt wykopał duplikaty kolorów stanów i Morry (#5b9bd5 dwa razy, #3fb950 i #e0322b po dwa):

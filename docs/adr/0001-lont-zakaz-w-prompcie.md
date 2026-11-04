@@ -11,3 +11,5 @@ Lont (`agents/lont.md`) ma Bash, a zakaz `git reset --hard`, `git clean`, `rm -r
 ## Konsekwencje
 
 Sesja bez pytań o zgodę (`bypassPermissions`) przepuści u Lonta to samo, co u Kruxa. Gdy Lont ma pracować bez nadzoru człowieka, wracamy do hooka w pliku agenta, z testem na prawdziwym silniku (`scripts/tui-shot.py`).
+
+Aktualizacja 2026-11-04: dokumentacja sub-agents („Supported frontmatter fields”) podaje, że pole `hooks` w definicji agenta pluginu silnik pomija („Ignored for plugin subagents”), tak samo `permissionMode` i `mcpServers`. Ta droga odwrotu wymaga więc dziś innego miejsca na hook.
