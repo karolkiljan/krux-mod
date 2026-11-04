@@ -70,10 +70,19 @@ function failureName(line: string): string | null {
 // („b_test.go:3: 3 failed attempts”, „batch done: 2 failed, 8 ok”), więc liczb nie dają.
 const SUMMARY_LABELS: ReadonlySet<string> = new Set(['test', 'tests', 'files', 'suites', 'summary', 'run', 'ok', 'failed'])
 
+// Prefiks strumienia przed linią runnera: turbo (`web:test: `), `pnpm -r` (`packages/web test: `),
+// docker compose (`app-1  | `). Tylko od pierwszej kolumny i z nazwą zadania, więc wcięty log
+// (`    b_test.go:3: …`) i goła linia („batch done: 2 failed, 8 ok”) zostają logiem.
+const STREAM_PREFIX = /^(?:[\w@./-]+:[\w:.-]+: |[\w@.-]*\/[\w@./-]+ [\w:.-]+: |[\w.-]+ +\| )/u
+
+// Gradle (`2 tests completed, 1 failed`) i XCTest (`Executed 3 tests, with 1 failure (0 unexpected)
+// in 0.002 (0.002) seconds`) mają w podsumowaniu własne słowa; czas mocha i playwright bywa w minutach (`(2m)`).
 function isSummary(line: string): boolean {
   const rest = line
+    .replace(/^\d+ tests? completed,/u, ' ')
+    .replace(/\bExecuted \d+ tests?, with \d+ failures? \(\d+ unexpected\) in [\d.]+ \([\d.]+\) seconds$/u, ' ')
     .replace(/\bin \d+(?:\.\d+)?s\b(?:\s*\(\d+:\d{2}:\d{2}\))?/gu, ' ')
-    .replace(/[[(]\s*\d+(?:\.\d+)?\s*m?s\s*[\])]/gu, ' ')
+    .replace(/[[(]\s*\d+(?:\.\d+)?\s*(?:m?s|m)\s*[\])]/gu, ' ')
     .replace(/\(\d+\)/gu, ' ')
     .replace(/(?<![\p{L}\d])\d+ \p{L}+/gu, ' ')
     .replace(/[=,|:;#!.()\-\s]+/gu, ' ')
@@ -146,7 +155,7 @@ const ANSI = /\x1b\[[0-?]*[ -\/]*[@-~]/gu
 // Padłe testy w wyjściu wygrywają z kodem 0: `npm test | tail` kończy się kodem `tail`.
 export function testRunOf(command: string, call: BoardCall): KruxTestRun {
   const output = call.text.replace(ANSI, '')
-  const lines = output.split(/\r?\n/u)
+  const lines = output.split(/\r?\n/u).map(line => line.replace(STREAM_PREFIX, ''))
   const failures = [...new Set(lines.flatMap(line => failureName(line) ?? []))]
   const cargo = cargoCounts(output)
   const labeled = labeledCounts(lines)

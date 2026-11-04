@@ -211,6 +211,8 @@ declare module 'claude-code' {
       turns: number
       drift: KruxDrift | null
       lore: KruxLore
+      // Kumpel notki o hordzie z bieżącej tury (`hordeNote`); tura bez notki daje `null`.
+      noteMate: KruxMate | null
       // Klucz zdarzenia kroniki, którego nastrój model już dostał (`moodNote`).
       moodSeen: string | null
       replayed: boolean

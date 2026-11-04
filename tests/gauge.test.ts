@@ -56,6 +56,13 @@ test('a subject at the start of a line or of a named list item counts', () => {
   // Gładki punkt listy dalej nic nie mówi o głosie.
   expect(infinitiveHits('1. Dodać test.')).toBe(0)
   expect(infinitiveHits('- Proszę uruchomić testy.')).toBe(0)
+  // Wiersz pod pogrubioną etykietą albo poziomą kreską to też początek zdania: znacznik
+  // listy liczy się tylko w tym samym wierszu.
+  expect(infinitiveHits('**Testy:**\nKrux puścić testy.')).toBe(1)
+  expect(infinitiveHits('Gotowe.\n\n---\nKrux puścić testy.')).toBe(1)
+  expect(infinitiveHits('**Testy:**\n- Proszę uruchomić testy.')).toBe(0)
+  const sections = '**Przyczyna:**\nRobak siedzieć w `app.rb`, linia 7, w środku pętli.\n**Naprawa:**\nKrux wyciągnąć `return` na zewnątrz pętli i dopisać test.\n**Testy:**\nKrux puścić całość: 12 zielone, nic nie padać po drodze.'
+  expect(gauge(sections)).toEqual({ issues: [] })
   const plan = [
     'Plan na robaka w `parser.js`:',
     '1. Krux dopisać test, co pokazywać robaka.',
@@ -215,6 +222,26 @@ test('a lint run with only warnings is a green build, a lint summary with errors
   const errors = "  4:1  error  'x' is not defined  no-undef\n\n✖ 2 problems (1 error, 1 warning)\n"
   expect(recordTool(EMPTY_LORE, 'Bash', { command: 'npx eslint . | tail' }, false, errors)).toMatchObject({ builds: 1, buildFails: 1, last: 'build-fail' })
   expect(recordTool(EMPTY_LORE, 'Bash', { command: 'npx eslint . | tail' }, false, '✖ 10 problems (10 errors, 0 warnings)')).toMatchObject({ buildFails: 1 })
+  // `--max-warnings 0`: lint odmawia przez limit ostrzeżeń (kod 1), a `| tail` ten kod zjada.
+  for (const command of ['npm run lint 2>&1 | tail -20', 'npx eslint . --max-warnings 0 2>&1 | tail -20']) {
+    expect(recordTool(EMPTY_LORE, 'Bash', { command }, false, warned + '\nESLint found too many warnings (maximum: 0).\n')).toMatchObject({ builds: 1, buildFails: 1, last: 'build-fail' })
+  }
+  expect(recordTool(EMPTY_LORE, 'Bash', { command: 'npm run lint:css 2>&1 | tail -5' }, false, '✖ 1 problem (0 errors, 1 warning)\n\nMax warnings exceeded: 1 found. 0 allowed\n')).toMatchObject({ buildFails: 1 })
+})
+
+// Kumpel notki tej tury ma ostatnią wstawkę, także gdy Krux wcześniej woła innego do roboty
+// (wzór „Delegacja”); bez notki albo bez jej kumpla w odpowiedzi liczy się pierwszy wymieniony.
+test('the mate of this turn’s note keeps the last aside even when a delegated mate is named first', () => {
+  const quiet = { ...EMPTY_LORE, quietTurns: 2 }
+  const answer = 'Robota na wiele chodników. Krux puszczać Niucha — węszyć wszystkie wywołania `fetchUser`, wracać z mapą. Krux czekać na trop. Lont mierzyć lont trzy razy, zanim podpalić gruz.'
+  expect(matesNamed(answer)).toEqual(['Niuch', 'Lont'])
+  const after = recordAnswer(quiet, matesNamed(answer), 'Lont')
+  expect(after).toMatchObject({ lastMate: 'Lont', quietTurns: 0 })
+  expect(lifeNote({ ...after, quietTurns: 2 }, 0)).toContain('Nie Lonta:')
+  // Bezpieczny sąsiad: kumpel notki, którego odpowiedź nie wymienia, nie zabiera wstawki.
+  expect(recordAnswer(quiet, matesNamed(answer), 'Grom').lastMate).toBe('Niuch')
+  expect(recordAnswer(quiet, matesNamed(answer), null).lastMate).toBe('Niuch')
+  expect(recordAnswer(quiet, [], 'Lont')).toMatchObject({ lastMate: null, quietTurns: 3 })
 })
 
 // Kumpel i forma z niezależnych ziaren: przy pięciu kandydatach i pięciu formach
@@ -540,6 +567,18 @@ test('imperatives, past second person and „twój” are second person too', ()
   const orc = 'Morra włączy terminal i naskrobie `gcloud auth login`. Potem Morra da znać. ' + 'Krux już naprawić robaka w pliku. '.repeat(5)
   expect(gauge(orc)).toEqual({ issues: [] })
   expect(gauge(ORC)).toEqual({ issues: [] })
+})
+
+// Etykieta przycisku i cudzy tekst w cudzysłowie ASCII to cytat, nie rozkaz do Morry:
+// kontrakt każe podawać je dosłownie, więc poprawka dryfu nie może ich przerabiać.
+test('UI labels in bold or in ASCII quotes are not second person', () => {
+  const kinds = (answer: string) => gauge(answer)?.issues.map(issue => issue.kind) ?? []
+  const ui = 'Ochra stroić brzegi. Krux przekuć pasek akcji w `Toolbar.tsx`. Przycisk **Dodaj** teraz zielony, **Usuń** czerwony z pytaniem o zgodę. Testy 8, wszystko zielone. Morra obejrzy w przeglądarce i powie, czy równo.'
+  expect(kinds(ui)).not.toContain('second-person')
+  expect(kinds(ui.replace(/\*\*(\p{L}+)\*\*/gu, '"$1"'))).not.toContain('second-person')
+  expect(kinds('Krux zrobić commit "Popraw walidację w parserze". ' + 'Krux już naprawić robaka w pliku. '.repeat(5))).not.toContain('second-person')
+  // Bezpieczny sąsiad: rozkaz poza etykietą dalej jest drugą osobą.
+  expect(gauge(ui.replace('Morra obejrzy w przeglądarce', 'Uruchom przeglądarkę u siebie i sprawdź'))!.issues.find(issue => issue.kind === 'second-person')?.examples).toEqual(['Uruchom', 'sprawdź'])
 })
 
 test('a drifted answer brings back its own sentences in orc speech', async () => {

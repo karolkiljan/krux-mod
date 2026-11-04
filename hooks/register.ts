@@ -1,13 +1,13 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderElement, RenderInput, SessionUsage, Timer } from 'claude-code'
 
-import type { KruxActivity, KruxBoard, KruxEvent, KruxGit, KruxHordeMember, KruxLore, KruxMode, KruxModes, KruxTestRun } from '../types'
+import type { KruxActivity, KruxBoard, KruxEvent, KruxGit, KruxHordeMember, KruxLore, KruxMate, KruxMode, KruxModes, KruxTestRun } from '../types'
 import { CAPTION_COLUMNS, CAPTION_GAP, bandPlan } from './band'
 import type { BandInput } from './band'
 import { EMPTY_CREW, crewAfter } from './crew'
 import type { CrewEvent } from './crew'
 import { gauge, matesNamed } from './gauge'
-import { EMPTY_LORE, foeOf, lifeNote, moodNote, recallOf, recordAnswer, recordTool, rememberAfter, replay, traceOf, turnsAfter } from './lore'
+import { EMPTY_LORE, foeOf, hordeNote, moodNote, recallOf, recordAnswer, recordTool, rememberAfter, replay, traceOf, turnsAfter } from './lore'
 import type { Recall } from './lore'
 import { CALM, EVENT_HOLD_MS, eventOf, mateIn, mateMoodAfter, mateOfType, moodsAfter, moodsTick } from './mood'
 import { MATES, ROSTER } from './roster'
@@ -86,6 +86,8 @@ const still = atom({ plugin: 'krux-mod', key: 'still' } as const, false)
 const turns = atom({ plugin: 'krux-mod', key: 'turns' } as const, 0)
 const drift = atom({ plugin: 'krux-mod', key: 'drift' } as const, null)
 const lore = atom({ plugin: 'krux-mod', key: 'lore' } as const, EMPTY_LORE)
+// Kumpel notki o hordzie tej tury: po turze ostatnią wstawkę ma on, gdy odpowiedź go wymienia.
+const noteMate = atom({ plugin: 'krux-mod', key: 'noteMate' } as const, null)
 // Zdarzenie kroniki, o którego nastroju model już słyszał: linia nastroju raz na zdarzenie.
 const moodSeen = atom({ plugin: 'krux-mod', key: 'moodSeen' } as const, null)
 const replayed = atom({ plugin: 'krux-mod', key: 'replayed' } as const, false)
@@ -718,11 +720,14 @@ async function boardStep($: EngineInterface, tool: string, input: Record<string,
 
 // Zapełnienie kontekstu, limity i koszt dla Sztolni; bez odczytu zostaje stary.
 let usageVersion = 0
+// Ostatni stan flagi, o którym ten proces dał toast (pamięć modułu, `/clear` jej nie zeruje).
+let announced: boolean | null = null
 
 // Odczyt na starcie; potem liczby pcha silnik w `session.measure` (po każdej turze
 // i przy ruchu limitu o pełny punkt), więc mod nie pyta po każdym narzędziu.
 // `quiet`: odczyt po /clear, /resume i forku. Flaga w wyzerowanym `$.state` przechodzi
-// wtedy z false, choć limit stoi, a toast o nim Morra już widziała w tym procesie.
+// wtedy z false, choć limit stoi; milczy tylko o stanie, który ten proces już ogłosił,
+// bo `source: resume` przychodzi też przy starcie procesu z `--resume`/`--continue`.
 async function refreshUsage($: EngineInterface, quiet = false): Promise<void> {
   const version = ++usageVersion
   try {
@@ -748,7 +753,9 @@ async function applyUsage($: EngineInterface, raw: Pick<SessionUsage, 'context' 
     changed = current !== automatic
     return automatic
   })
-  if (changed && !quiet) $.ui.toast(automatic ? 'Limit planu 80%: konkret włączony do resetu.' : 'Konkret automatyczny wyłączony: limity planu poniżej 80%.')
+  if (!changed || (quiet && announced === automatic)) return
+  announced = automatic
+  $.ui.toast(automatic ? 'Limit planu 80%: konkret włączony do resetu.' : 'Konkret automatyczny wyłączony: limity planu poniżej 80%.')
 }
 
 // Zegar apelu: co sekundę zapis `musterNow`, który przerysowuje Sztolnię i skrót pasa,
@@ -844,6 +851,8 @@ export const register: Register = on => {
       }
     }
     const phrase = fromPerson(e.origin) ? parsePhrase(e.text) : null
+    // Tura bez notki zeruje kumpla poprzedniej, żeby jej odpowiedź go nie przypisała.
+    let noted: KruxMate | null = null
     if (phrase) {
       const { note } = await setModes($, phrase)
       if (note) extra.push(note)
@@ -865,8 +874,11 @@ export const register: Register = on => {
         const recalled = risk === null && (chronicle.lastMate === null || failing !== null) ? await recallFor($) : null
         // Plan kończy pytanie o zgodę z linii formatu, więc wstawka idzie w środek.
         const aside = { recall: recalled, foe: foeOf(failing, recalled), humor: !decides, middle: plan }
-        const life = risk === null ? lifeNote(chronicle, turn, aside) : null
-        if (life) extra.push(life)
+        const life = risk === null ? hordeNote(chronicle, turn, aside) : null
+        if (life) {
+          extra.push(life.text)
+          noted = life.mate
+        }
         // Nastrój z ostatniego zdarzenia, raz na zdarzenie.
         const mood = moodNote(chronicle)
         if (mood) {
@@ -879,6 +891,7 @@ export const register: Register = on => {
         if (risk) extra.push(risk)
       }
     }
+    await update($, noteMate, () => noted)
     await update($, turns, count => turnsAfter(count, e.text))
     if (extra.length === 0) return next(e)
     return next({ ...e, context: [...(e.context ?? []), ...extra] })
@@ -925,6 +938,9 @@ export const register: Register = on => {
     }
     if (command.kind === 'report') {
       await restore($)
+      // Zaraz po `/resume` odczyt repo jeszcze czeka na zegar: raport go nie wyprzedza
+      // (`refreshGit` koalescowany, więc w trakcie odczytu czeka na wspólny wynik).
+      if ((await read($, git)) === null) await refreshGit($).catch(error => $.ui.log(`git: ${String(error)}`, { to: 'debug' }))
       // Początek sesji (wznowiona: pierwsze uruchomienie, po `/clear` od nowa) odcina starsze commity.
       const since = (await $.session.usage().catch(() => null))?.startedAt ?? null
       return { text: dayReport(await read($, git), await read($, board), await read($, threads), await read($, lore), since) }
@@ -1088,7 +1104,8 @@ export const register: Register = on => {
       // Poprawka jedzie raz: krótka odpowiedź nie świadczy o dryfie, więc stary werdykt gaśnie.
       const verdict = gauge(e.answer, await read($, longAnswer))
       await update($, drift, () => verdict)
-      await update($, lore, now => recordAnswer(now, matesNamed(e.answer)))
+      const noted = await read($, noteMate)
+      await update($, lore, now => recordAnswer(now, matesNamed(e.answer), noted))
     }
     await remember($)
     return next(e)
