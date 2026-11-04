@@ -351,7 +351,8 @@ test('a failed close observer does not repeat the downstream close', async () =>
   const hook = hooks.find(one => one.event === 'ui.close')
   let executions = 0
   const next = async () => { executions += 1; return {} }
-  const api = { store: { get: async () => { throw new Error('store unavailable') } } }
+  // Przełącznik czyta tryby ze stanu sesji, więc magazyn pada też przy zapisie.
+  const api = { store: { get: async () => { throw new Error('store unavailable') }, set: async () => { throw new Error('store unavailable') } } }
   // Silnik pomija hook bez .catch albo zostawia wynik next; mod nie może wołać next drugi raz.
   await assert.rejects(hook.run(api, { id: 'sztolnia', origin: { kind: 'person' } }, next), /unavailable/u)
   assert.ok(executions <= 1)
