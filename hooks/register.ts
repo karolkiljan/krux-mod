@@ -17,7 +17,7 @@ import { GIT_CHECK, GIT_CHECK_CACHED, GIT_LOCAL, GIT_LOG, GIT_STATUS, GIT_UNPUSH
 import { EMPTY_THREADS, THREAD_SPEC, replayThreads, saveThread, threadsAfter, threadsReport } from './threads'
 import { dayReport } from './report'
 import { EMPTY_MUSTER, anyRunning, musterDone, musterRows, musterSpawn, musterTool } from './muster'
-import { KRUX_COLOR, ORC_COLOR, shaftDigest, shaftTabs, shaftTree } from './shaft'
+import { KRUX_COLOR, ORC_COLOR, shaftTabs, shaftTree } from './shaft'
 import { TOOL_INDENT, chatTree, isCommandText, toolIndent } from './chat'
 import { MORRA_COLOR } from './avatar'
 import type { AvatarSpeaker } from './avatar'
@@ -63,10 +63,6 @@ const SHAFT_PANE = 'sztolnia'
 // Komórka przycisku trybu w panelu `/krux`: najdłuższy „6: sztolnia: off” i oddech.
 const MODE_CELL = 18
 const SHAFT_COLUMNS = 56
-// Najwęższy skrót Sztolni w pasie: znak, ułamek planu i kilka liter zadania.
-const DIGEST_COLUMNS = 18
-// Szerzej skrót się nie rozlewa: długa linia ucina się, zamiast ciągnąć oko przez pół ekranu.
-const DIGEST_MAX = 64
 // Tabliczki, kreska bloków, pas i płótno kuźni liczą siatkę znaków terminala:
 // pusty wiersz nad wiadomością, piksele z półbloków. Desktop rysuje je krzywo
 // (tabliczka na tekście, piksele z przerwami), więc stoją tylko w terminalu.
@@ -758,7 +754,7 @@ async function applyUsage($: EngineInterface, raw: Pick<SessionUsage, 'context' 
   $.ui.toast(automatic ? 'Limit planu 80%: konkret włączony do resetu.' : 'Konkret automatyczny wyłączony: limity planu poniżej 80%.')
 }
 
-// Zegar apelu: co sekundę zapis `musterNow`, który przerysowuje Sztolnię i skrót pasa,
+// Zegar apelu: co sekundę zapis `musterNow`, który przerysowuje Sztolnię,
 // póki jakiś ork z apelu biega według zdarzeń i według listy silnika.
 function tickMuster($: EngineInterface): void {
   if (ticking) return
@@ -1253,23 +1249,7 @@ export const register: Register = on => {
       red: (await read($, board)).test?.ok === false,
       ...blessedOf(await read($, lore)),
     }
-    // Skrót Sztolni za płótnem, gdy jej panelu nie widać: zamknięty, czeka na
-    // szerszy terminal (bez pytania silnik stawia go od 144 kolumn) albo stoi
-    // za inną kartą. Zabiera pusty slot kumpla, ale nie spycha kumpla ze sceny
-    // i nie zmienia wysokości pasa.
-    const digestShown = !(await shaftShown($, now.sztolnia))
-    if (digestShown) await read($, musterNow)
-    const digestExtra = digestShown ? { git: await read($, git), threads: await read($, threads), now: input.now } : null
-    const lines = digestExtra === null ? [] : shaftDigest(await read($, board), await read($, usage), digestExtra)
-    let plan = bandPlan(input)
-    if (lines.length > 0 && plan.stage !== null) {
-      // Podłoga zajmuje cały pas: skrót wycina z niej trzecią część, a gdy to kosztowałoby
-      // miejsce na orka, tylko swoje minimum.
-      const tight = bandPlan({ ...input, columns: input.columns - DIGEST_COLUMNS - CAPTION_GAP })
-      const roomy = bandPlan({ ...input, columns: input.columns - Math.min(DIGEST_MAX, Math.max(DIGEST_COLUMNS, Math.floor(input.columns / 3))) - CAPTION_GAP })
-      const narrow = roomy.stage?.props.slots === tight.stage?.props.slots && roomy.stage?.height === tight.stage?.height ? roomy : tight
-      if (narrow.stage !== null && narrow.stage.height === plan.stage.height && narrow.stage.props.slots > members.length) plan = narrow
-    }
+    const plan = bandPlan(input)
     const theirs = await next(e)
     const { Box, Text } = table
     // Kreska nad pasem oddziela go od odpowiedzi i zabiera jeden wiersz; Desktop oddziela go sam.
@@ -1291,42 +1271,9 @@ export const register: Register = on => {
     const forge = desk && 'Svg' in table
       ? table.Svg({ ...(await deskArt($, `band:${e.requestId}`, plan.stage.props, [plan.verb, plan.target].filter(Boolean).join(' '))) })
       : table.Client({ key: 'forge', module: './forge.ts', props: plan.stage.props, width: plan.stage.width, height: plan.stage.height })
-    const free = e.props.bodyColumns - CAPTION_COLUMNS - plan.stage.width - 2 * CAPTION_GAP
-    // Skrót nie podnosi pasa: tyle linii, ile wierszy płótna, od najważniejszej.
-    const digest = free >= DIGEST_COLUMNS ? lines.slice(0, plan.stage.height) : []
-    const aside =
-      digest.length === 0
-        ? []
-        : [
-            // Skrót stoi przy prawej krawędzi pasa, najwyżej `DIGEST_MAX` kolumn szeroki.
-            Box({
-              key: 'digest-slot',
-              flexDirection: 'row',
-              justifyContent: 'flex-end',
-              width: free,
-              children: [
-                Box({
-                  key: 'digest',
-                  flexDirection: 'column',
-                  width: Math.min(free, DIGEST_MAX),
-                  children: digest.map(line =>
-                    Box({
-                      key: line.key,
-                      flexDirection: 'row',
-                      columnGap: 1,
-                      children: [
-                        Text({ ...(line.color === undefined ? {} : { color: line.color }), children: [line.mark] }),
-                        Box({ flexGrow: 1, flexShrink: 1, children: [Text({ dimColor: true, wrap: 'truncate-end', children: [line.text] })] }),
-                      ],
-                    }),
-                  ),
-                }),
-              ],
-            }),
-          ]
     return Box({
       flexDirection: 'column',
-      children: [...rule, Box({ flexDirection: 'row', columnGap: CAPTION_GAP, alignItems: 'flex-start', children: [caption, forge, ...aside] }), theirs],
+      children: [...rule, Box({ flexDirection: 'row', columnGap: CAPTION_GAP, alignItems: 'flex-start', children: [caption, forge] }), theirs],
     })
   })
 

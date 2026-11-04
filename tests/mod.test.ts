@@ -340,55 +340,16 @@ test('the desktop draws no nameplates or reply rule: they count terminal cells; 
   expect(await own.find({ type: 'Text', text: 'Morra' })).toBeUndefined()
 })
 
-const digestBand = async ($: Parameters<TestBody>[0], on: Parameters<TestBody>[1], sztolnia: boolean, paneWaits = false) => {
-  engine(on, new Map<string, unknown>([['modes', { persona: true, konkret: false, flow: false, animacje: true, kowal: true, sztolnia }]]), { paneWaits })
-  await start($)
-  await $.turn.start({ text: 'plan', turnId: 't1' })
-  await $.tool.call({ tool: 'TodoWrite', todos: [{ content: 'Kuć poprawkę', status: 'in_progress', activeForm: 'Kuć' }] })
-  return $.ui.mount({ ...BAND, surface: 'terminal' })
-}
-
-test('with the Sztolnia pane shut, its digest stands beside the stage', async ($, on) => {
-  const ui = await digestBand($, on, false)
-  expect(await ui.find({ key: 'digest' })).toBeDefined()
-  expect(await ui.find({ type: 'Text', text: '0/1 Kuć poprawkę' })).toBeDefined()
-})
-
-test('with the Sztolnia pane open, the band leaves the board to the pane', async ($, on) => {
-  const ui = await digestBand($, on, true)
-  expect(await ui.find({ key: 'forge' })).toBeDefined()
-  expect(await ui.find({ key: 'digest' })).toBeUndefined()
-})
-
-test('with the Sztolnia on but its pane waiting for a wider terminal, the digest stands in for it', async ($, on) => {
-  const ui = await digestBand($, on, true, true)
-  expect(await ui.find({ key: 'digest' })).toBeDefined()
-})
-
-test('the digest never lifts the band: no more lines than canvas rows, the most important first', async ($, on) => {
-  const git = { stdout: '# branch.oid a\n# branch.head main\n# branch.upstream origin/main\n# branch.ab +3 -0\n1 .M N... a b c d e f.ts\n' }
-  const clock = engine(on, new Map<string, unknown>([['modes', { persona: true, konkret: false, flow: false, animacje: true, kowal: true, sztolnia: false }]]), { git })
-  await start($)
-  await $.turn.start({ text: 'plan', turnId: 't1' })
-  await $.tool.call({ tool: 'mcp__krux-mod__watki', open: [{ text: 'push czeka' }] } as never)
-  await $.tool.call({ tool: 'TodoWrite', todos: [{ content: 'Kuć poprawkę', status: 'in_progress', activeForm: 'Kuć' }] })
-  await $.tool.call({ tool: 'Bash', command: 'npm test' })
-  // Repo po narzędziu czyta zegar.
-  await clock.settle()
-  const low = await $.ui.mount({ ...BAND, surface: 'terminal', props: { ...BAND.props, bodyColumns: 160, maxRows: 4 } })
-  const shown = []
-  for (const key of ['threads', 'git', 'readiness', 'plan', 'tests']) if ((await low.find({ key })) !== undefined) shown.push(key)
-  expect(shown).toEqual(['threads', 'git', 'readiness'])
-})
-
-test('on a narrow terminal the digest takes an empty mate slot instead of falling off', async ($, on) => {
+test('the band shows no board digest: with the Sztolnia shut the stage keeps the whole width', async ($, on) => {
   engine(on, new Map<string, unknown>([['modes', { persona: true, konkret: false, flow: false, animacje: true, kowal: true, sztolnia: false }]]))
   await start($)
   await $.turn.start({ text: 'plan', turnId: 't1' })
   await $.tool.call({ tool: 'TodoWrite', todos: [{ content: 'Kuć poprawkę', status: 'in_progress', activeForm: 'Kuć' }] })
   const ui = await $.ui.mount({ ...BAND, surface: 'terminal', props: { ...BAND.props, bodyColumns: 115 } })
-  expect(await ui.find({ key: 'digest' })).toBeDefined()
-  expect(((await ui.find({ key: 'forge' }))!.props.props as { slots: number }).slots).toBe(2)
+  expect(await ui.find({ key: 'digest' })).toBeUndefined()
+  expect(await ui.find({ type: 'Text', text: '0/1 Kuć poprawkę' })).toBeUndefined()
+  // 115 kolumn: płótno 85 za podpisem, bez skrótu obok.
+  expect(((await ui.find({ key: 'forge' }))!.props.props as { floor: number }).floor).toBe(85)
 })
 
 test('a dim rule across the band separates it from the reply above', async ($, on) => {
@@ -2259,20 +2220,6 @@ test('a live plan gains the stuck mark at fifteen minutes without resetting its 
   expect((await ui.find({ key: 'task-1' }))?.text).toContain('⧗ 15 min')
   await clock.advance(60_000)
   expect((await ui.find({ key: 'task-1' }))?.text).toContain('⧗ 16 min')
-})
-
-test('a hidden shaft pane keeps the band digest stuck mark ticking without another tool', async ($, on) => {
-  const clock = engine(on, new Map([['mode.sztolnia', false]]))
-  await start($)
-  await $.tool.call(TODOS as never)
-  const ui = await $.ui.mount({ ...BAND, surface: 'terminal', props: { ...BAND.props, bodyColumns: 160 } })
-  expect(await ui.find({ key: 'digest' })).toBeDefined()
-  await clock.advance(899_999)
-  expect((await ui.find({ key: 'plan' }))?.text).not.toContain('⧗')
-  await clock.advance(1)
-  expect((await ui.find({ key: 'plan' }))?.text).toContain('⧗ 15 min')
-  await clock.advance(60_000)
-  expect((await ui.find({ key: 'plan' }))?.text).toContain('⧗ 16 min')
 })
 
 test('a new plan cancels the old plan timer instead of leaving it queued', async ($, on) => {

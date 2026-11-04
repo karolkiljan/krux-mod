@@ -2,7 +2,7 @@ import { expect, test } from 'claude-code/testing'
 
 import type { KruxTask, KruxUsage } from '../types'
 import { EMPTY_BOARD } from '../hooks/board'
-import { KRUX_COLOR, shaftDigest, shaftTabs, shaftTree } from '../hooks/shaft'
+import { KRUX_COLOR, shaftTabs, shaftTree } from '../hooks/shaft'
 import { EMPTY_THREADS } from '../hooks/threads'
 import type { ShaftData, ShaftElements, ShaftTabElements } from '../hooks/shaft'
 
@@ -14,6 +14,7 @@ const ELEMENTS = {
 } as unknown as ShaftElements
 
 const EMPTY: ShaftData = { board: EMPTY_BOARD, horde: [], usage: null, git: null, threads: EMPTY_THREADS, now: 0, columns: 46, rows: 0, fill: true }
+const GIT = { branch: 'main', upstream: 'origin/main', ahead: 6, behind: 0, changed: 2, untracked: 0, conflicted: 0, files: [], commits: [] }
 
 function draw(data: Partial<ShaftData>): Node {
   return shaftTree(ELEMENTS, { ...EMPTY, ...data }) as unknown as Node
@@ -95,28 +96,6 @@ test('the horde lists each running orc with its time and last tool', () => {
   expect(lines).toEqual(['Horda', '', '●', 'Niuch', 'szukać crasha', '1:05', '  └ Grep parser'])
 })
 
-test('the band digest has a line per known thing: current task, last run, context', () => {
-  const board = {
-    tasks: [
-      { id: null, subject: 'test', status: 'completed' as const },
-      { id: null, subject: 'poprawka', status: 'in_progress' as const },
-      { id: null, subject: 'changelog', status: 'pending' as const },
-    ],
-    test: { command: 'npm test', ok: false, passed: 3, failed: 1, failures: ['a'], who: 'Krux' as const },
-  }
-  const usage = { percent: 84, tokens: 168_000, window: 200_000, limits: [], usd: null }
-  expect(shaftDigest(board, usage).map(line => [line.mark, line.text])).toEqual([
-    ['▸', '1/3 poprawka'],
-    ['✗', expect.stringContaining('1')],
-    ['◔', 'kontekst 84%'],
-  ])
-  const done = { tasks: [{ id: null, subject: 'x', status: 'completed' as const }], test: null }
-  expect(shaftDigest(done, null).map(line => [line.mark, line.text])).toEqual([['✓', 'plan 1/1']])
-  expect(shaftDigest({ tasks: [], test: null }, null)).toEqual([])
-})
-
-const GIT = { branch: 'main', upstream: 'origin/main', ahead: 6, behind: 0, changed: 2, untracked: 0, conflicted: 0, files: [], commits: [] }
-
 test('open threads show their mark, risks in red, below the repo', () => {
   const threads = { next: 3, items: [{ id: 1, kind: 'todo' as const, text: 'push czeka' }, { id: 2, kind: 'risk' as const, text: 'tsc nie puszczony' }] }
   const root = draw({ threads })
@@ -141,18 +120,6 @@ test('git shows the branch, commits to push and files outside a commit; a clean 
   expect(texts(section(draw({ git: { ...clean, upstreamGone: true } }), 'git')!).map(line => line.text).slice(2)).toEqual(['⎇ main → origin/main · zniknął', '✓ czysto'])
   // Samo repo to nie robota: tablica dalej mówi, że pusta, pod repo.
   expect(texts(draw({ git: clean })).map(line => line.text)).toContain('Tablica pusta. Wątki, plan, testy i horda pojawią się przy robocie.')
-})
-
-test('the digest puts the newest thread and a busy repo first, a clean repo says nothing', () => {
-  const threads = { next: 3, items: [{ id: 1, kind: 'todo' as const, text: 'push czeka' }, { id: 2, kind: 'ask' as const, text: 'Wyłączyć Sztolnię?' }] }
-  const board = { tasks: [{ id: null, subject: 'poprawka', status: 'in_progress' as const }], test: null }
-  expect(shaftDigest(board, null, { git: GIT, threads }).map(line => [line.mark, line.text])).toEqual([
-    ['?', '2 · Wyłączyć Sztolnię?'],
-    ['⎇', 'main → origin/main ↑6 ●2'],
-    ['·', 'do commita: brak testów'],
-    ['▸', '0/1 poprawka'],
-  ])
-  expect(shaftDigest(board, null, { git: { ...GIT, ahead: 0, changed: 0 }, threads: EMPTY_THREADS }).map(line => line.key)).toEqual(['plan'])
 })
 
 test('the repo lists its files and newest commits, unpushed ones marked ↑, and a tall pane shows more', () => {
@@ -185,32 +152,6 @@ test('a long commit subject gives way, the hash never wraps', () => {
   expect((children(row) as Node[]).slice(0, 2).map(cell => cell.props.flexShrink)).toEqual([0, 0])
 })
 
-test('the digest shows test counts and context alone even with a high plan limit', () => {
-  const board = { tasks: [], test: { command: 'claude plugin test .', ok: true, passed: 209, failed: 0, failures: [], who: 'Krux' as const } }
-  const usage = { percent: 27, tokens: 54_000, window: 200_000, limits: [{ kind: 'five_hour', percentUsed: 40.4, resetsAt: null }, { kind: 'seven_day', percentUsed: 82, resetsAt: null }], usd: null }
-  const lines = shaftDigest(board, usage)
-  expect(lines.map(line => line.text)).toEqual(['claude plugin test . · 209 przeszło', 'kontekst 27%'])
-  expect(lines[1]!.mark).toBe('◔')
-  expect(lines[1]!.color).toBeUndefined()
-})
-
-test('the digest context turns red at 80 percent regardless of plan limits', () => {
-  for (const limits of [[], [{ kind: 'seven_day', percentUsed: 100, resetsAt: null }]]) {
-    for (const percent of [79, 80, 100]) {
-      const usage = { percent, tokens: null, window: 200_000, limits, usd: null }
-      const line = shaftDigest(EMPTY_BOARD, usage)[0]!
-      expect([line.mark, line.text]).toEqual(['◔', `kontekst ${percent}%`])
-      expect(line.color).toBe(percent >= 80 ? '#e0322b' : undefined)
-    }
-  }
-})
-
-test('the digest omits unknown context even when plan limits are known', () => {
-  const usage = { percent: null, tokens: null, window: 200_000, limits: [{ kind: 'seven_day', percentUsed: 82, resetsAt: null }], usd: null }
-  expect(shaftDigest(EMPTY_BOARD, usage)).toEqual([])
-  expect(shaftDigest(EMPTY_BOARD, null)).toEqual([])
-})
-
 test('the pane keeps plan limits and their alarms outside the digest', () => {
   const usage = { percent: 27, tokens: 54_000, window: 200_000, limits: [{ kind: 'seven_day', percentUsed: 82, resetsAt: null }], usd: null }
   const lines = texts(section(draw({ usage }), 'usage')!)
@@ -221,84 +162,6 @@ test('the pane keeps plan limits and their alarms outside the digest', () => {
 })
 
 const FRESH_RUN = { command: 'npm test', ok: true, passed: 3, failed: 0, failures: [], who: 'Krux' as const, at: 100 }
-
-test('the digest marks commit readiness for modified and new files with fresh green tests', () => {
-  for (const whitespace of [true, null, undefined]) {
-    for (const changes of [{ changed: 1, untracked: 0 }, { changed: 0, untracked: 1 }]) {
-      const lines = shaftDigest({ tasks: [], test: FRESH_RUN, editedAt: 100 }, null, { git: { ...GIT, ...changes, whitespace }, threads: EMPTY_THREADS })
-      expect(lines.find(line => line.key === 'readiness')).toEqual({ key: 'readiness', mark: '✓', text: 'do commita', color: '#3fb950' })
-    }
-  }
-})
-
-test('the digest lists each commit blocker behind a visible pending sign', () => {
-  const fresh = { tasks: [], test: FRESH_RUN, editedAt: 100 }
-  const cases = [
-    { board: EMPTY_BOARD, git: GIT, missing: 'brak testów' },
-    { board: { ...fresh, test: { ...FRESH_RUN, ok: false } }, git: GIT, missing: 'testy padłe' },
-    { board: { ...fresh, editedAt: 101 }, git: GIT, missing: 'testy nieświeże' },
-    { board: fresh, git: { ...GIT, whitespace: false }, missing: 'białe znaki' },
-    { board: fresh, git: { ...GIT, conflicted: 2 }, missing: 'konflikty: 2' },
-    { board: { ...fresh, test: { ...FRESH_RUN, ok: false }, editedAt: 101 }, git: { ...GIT, whitespace: false, conflicted: 2 }, missing: 'testy padłe, testy nieświeże, białe znaki, konflikty: 2' },
-  ]
-  for (const { board, git, missing } of cases) {
-    const line = shaftDigest(board, null, { git, threads: EMPTY_THREADS }).find(line => line.key === 'readiness')
-    expect(line).toEqual({ key: 'readiness', mark: '·', text: `do commita: ${missing}` })
-  }
-})
-
-test('the digest hides commit readiness outside a repo and without modified or new files', () => {
-  for (const git of [null, { ...GIT, changed: 0 }, { ...GIT, changed: 0, ahead: 0, behind: 2 }, { ...GIT, changed: 0, conflicted: 1 }, { ...GIT, changed: 0, ahead: 0 }]) {
-    for (const test of [null, FRESH_RUN]) {
-      const lines = shaftDigest({ tasks: [], test }, null, { git, threads: EMPTY_THREADS })
-      expect(lines.some(line => line.text.includes('do commita'))).toBe(false)
-    }
-  }
-})
-
-test('digest priority keeps commit readiness right below the repo, ahead of the rows the band clips first', () => {
-  const board = { tasks: [task('poprawka', 'in_progress')], test: FRESH_RUN }
-  const usage = { percent: 27, tokens: 54_000, window: 200_000, limits: [], usd: null }
-  const threads = { next: 2, items: [{ id: 1, kind: 'risk' as const, text: 'push czeka' }] }
-  const lines = shaftDigest(board, usage, { git: GIT, threads })
-  expect(lines.map(line => line.key)).toEqual(['threads', 'git', 'readiness', 'plan', 'tests', 'usage'])
-  expect(lines.map(line => line.mark)).toEqual(['⚠', '⎇', '✓', '▸', '✓', '◔'])
-})
-
-test('a running digest task gains full minutes at the 15-minute threshold', () => {
-  const board = { tasks: [task('gotowe', 'completed'), { ...task('poprawka', 'in_progress'), startedAt: 30_000 }, task('potem', 'pending')], test: null }
-  const extra = { git: null, threads: EMPTY_THREADS }
-  const cases = [
-    { now: 30_000 + 15 * 60_000 - 1, text: '1/3 poprawka' },
-    { now: 30_000 + 15 * 60_000, text: '1/3 ⧗ 15 min poprawka' },
-    { now: 30_000 + 16 * 60_000 - 1, text: '1/3 ⧗ 15 min poprawka' },
-    { now: 30_000 + 16 * 60_000, text: '1/3 ⧗ 16 min poprawka' },
-  ]
-  for (const { now, text } of cases) {
-    expect(shaftDigest(board, null, { ...extra, now })).toEqual([{ key: 'plan', mark: '▸', text, color: KRUX_COLOR }])
-  }
-})
-
-test('the digest keeps stuck-task age before a long subject can be truncated', () => {
-  const subject = 'A very long task subject that exceeds the narrow band digest'
-  const board = { tasks: [{ ...task(subject, 'in_progress'), startedAt: 0 }], test: null }
-  expect(shaftDigest(board, null, { git: null, threads: EMPTY_THREADS, now: 15 * 60_000 })[0]?.text).toBe(`0/1 ⧗ 15 min ${subject}`)
-})
-
-test('the digest never claims stuck time without a running task and both timestamps', () => {
-  const extra = { git: null, threads: EMPTY_THREADS, now: 60 * 60_000 }
-  const cases = [
-    { tasks: [{ ...task('czeka', 'pending'), startedAt: 0 }], text: '0/1 czeka', mark: '·' },
-    { tasks: [{ ...task('gotowe', 'completed'), startedAt: 0 }], text: 'plan 1/1', mark: '✓' },
-    { tasks: [task('historia', 'in_progress')], text: '0/1 historia', mark: '▸' },
-    { tasks: [{ ...task('przyszłość', 'in_progress'), startedAt: extra.now + 1 }], text: '0/1 przyszłość', mark: '▸' },
-  ]
-  for (const { tasks, text, mark } of cases) {
-    expect(shaftDigest({ tasks, test: null }, null, extra).map(line => [line.mark, line.text])).toEqual([[mark, text]])
-  }
-  const board = { tasks: [{ ...task('bez zegara', 'in_progress'), startedAt: 0 }], test: null }
-  expect(shaftDigest(board, null, { git: null, threads: EMPTY_THREADS })[0]?.text).toBe('0/1 bez zegara')
-})
 
 test('the tests section marks stale green and failed runs with a dim sign and word', () => {
   for (const ok of [true, false]) {
@@ -321,16 +184,6 @@ test('the tests section omits the stale sign for fresh runs and legacy timestamp
     { tasks: [], test: { ...FRESH_RUN, at: undefined }, editedAt: 101 },
   ]) expect(texts(section(draw({ board }), 'tests')!).map(line => line.text)).not.toContain('  ◌ nieświeże')
   expect(section(draw({ board: { tasks: [], test: null, editedAt: 101 } }), 'tests')).toBeUndefined()
-})
-
-test('the digest marks stale tests while preserving the command, counts and outcome sign', () => {
-  const green = shaftDigest({ tasks: [], test: FRESH_RUN, editedAt: 101 }, null)
-  expect(green.map(line => [line.mark, line.text])).toEqual([['✓', '◌ nieświeże · npm test · 3 przeszły']])
-  const failed = shaftDigest({ tasks: [], test: { ...FRESH_RUN, ok: false, failed: 1 }, editedAt: 101 }, null)
-  expect(failed.map(line => [line.mark, line.text])).toEqual([['✗', '◌ nieświeże · npm test · 1 padł · 3 przeszły']])
-  expect(shaftDigest({ tasks: [], test: { ...FRESH_RUN, passed: null, failed: null }, editedAt: 101 }, null)[0]?.text).toBe('◌ nieświeże · npm test')
-  expect(shaftDigest({ tasks: [], test: FRESH_RUN, editedAt: 100 }, null)[0]?.text).toBe('npm test · 3 przeszły')
-  expect(shaftDigest({ tasks: [], test: { ...FRESH_RUN, at: undefined }, editedAt: 101 }, null)[0]?.text).toBe('npm test · 3 przeszły')
 })
 
 test('git shows signed commit readiness for fresh green tests and modified or new files', () => {
