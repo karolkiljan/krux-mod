@@ -1816,3 +1816,31 @@ test('two orcs at work sometimes trade a tale, and both go back to work after th
   const back = until(seen, pair, now => Object.values(now.actors).every(actor => actor.pending === undefined && actor.left === undefined), 300)
   expect([back.actors.krux!.track.scene, back.actors.a1!.track.scene]).toEqual(['read', 'pick'])
 })
+
+test('Krux follows the mate who throws him the scroll with his eyes until he reaches out for it', () => {
+  const { surface, tick } = surfaceOf()
+  const working: ForgeProps = { ...FLOOR, orcs: [{ ...KRUX, scene: 'hammer' }, { ...NIUCH, scene: 'pick' }] }
+  draw(working, surface)
+  const done: ForgeProps = { ...FLOOR, cues: [{ key: 'a1', kind: 'handoff', until: 4000 }] }
+  draw(done, surface)
+  const { handoff } = (surface.state as Seen).actors.a1!
+  const kruxX = (surface.state as Seen).actors.krux!.home
+  // Do klatki, w której Krux wyciąga dłoń (rzut: 4 klatki zamachu, lot, potem chwyt).
+  const reach = handoff!.at + 4 + handoff!.flight - 1
+  const looks: number[] = []
+  while ((surface.state as Seen).frame < reach) {
+    const frame = (surface.state as Seen).frame
+    const pixels = orcPixels(draw(done, surface), kruxX)
+    if (frame >= handoff!.at) {
+      // Czubek głowy: pierwszy wiersz z czterema pikselami skóry; oko w wierszu pod nim.
+      const top = pixels.findIndex(row => row.some((_, x) => [0, 1, 2, 3].every(dx => row[x + dx] === PALETTE.g)))
+      const crown = pixels[top]!.findIndex((_, x) => [0, 1, 2, 3].every(dx => pixels[top]![x + dx] === PALETTE.g))
+      const eye = pixels[top + 1]!.findIndex(cell => cell === PALETTE.r)
+      if (eye >= 0) looks.push(eye - crown)
+    }
+    tick()
+  }
+  // Kumpel podszedł z prawej: źrenice przy prawym brzegu oka, piksel za czubkiem.
+  expect(looks.length).toBeGreaterThan(0)
+  expect(new Set(looks)).toEqual(new Set([1]))
+})
