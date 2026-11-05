@@ -252,7 +252,7 @@ test('/krux status and an unknown argument answer as text', async ($, on) => {
   await start($)
   const presentation = { isFullscreen: false, columns: 120 }
   const status = await $.command.run({ command: 'krux', args: 'status', origin: ORIGIN, presentation })
-  expect(status.text).toBe('persona: on · konkret: off · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off')
+  expect(status.text).toBe('persona: on · konkret: off · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off · audyt: off')
   const help = await $.command.run({ command: 'krux', args: 'kopać', origin: ORIGIN, presentation })
   expect(help.text).toContain('/krux status')
 })
@@ -2083,6 +2083,27 @@ test('host-backgrounded main and mate tests preserve the failed run without cele
   }
 })
 
+// Główna pętla stoi, póki czeka na `Agent`, więc `sessionStrikes` też: ziarno wyniku kumpla liczy
+// jego zdarzenia, inaczej każdy wynik dostawałby odpowiedź albo żaden, zawsze tą samą kwestią.
+test('every second result of a mate gets an answer while the main loop waits for the agent', async ($, on) => {
+  let latestCrew: KruxCrew | undefined
+  engine(on, new Map(), { agents: [{ id: 'a1', status: 'running' }], toolReply: { result: 'ok', text: '3 pass\n0 fail' } })
+  on('state.set', ($, e, next) => {
+    if (e.plugin === 'krux-mod' && e.key === 'crew') latestCrew = e.value as KruxCrew
+    return next(e)
+  })
+  await start($)
+  await $.agent.spawn(spawnOf({ prompt: 'Młot, puść testy.', description: 'Młot: testy' }))
+  const answered: boolean[] = []
+  for (let i = 0; i < 4; i++) {
+    await $.tool.call({ tool: 'Bash', command: 'npm test', agentId: 'a1' } as never)
+    const bubble = latestCrew?.bubble
+    expect([i, bubble?.kind, bubble?.key]).toEqual([i, 'event', 'a1'])
+    answered.push(bubble?.kind === 'event' && bubble.reply !== undefined)
+  }
+  expect(answered).toEqual([answered[0], !answered[0], answered[0], !answered[0]])
+})
+
 test('working and staged whitespace checks gate commit readiness with a five-second timeout', async ($, on) => {
   let workingCode = 0
   let cachedCode = 0
@@ -2308,7 +2329,7 @@ test('/krux status reports auto, manual and off konkret without saving the autom
   await start($, clock)
   const command = { command: 'krux', origin: ORIGIN, presentation: { isFullscreen: false, columns: 120 } }
   const automatic = await $.command.run({ ...command, args: 'status' })
-  expect(automatic.text).toBe('persona: on · konkret: auto · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off')
+  expect(automatic.text).toBe('persona: on · konkret: auto · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off · audyt: off')
   expect(automatic.context).toBeUndefined()
   expect(saved.get('mode.konkret')).toBe(false)
   expect(saved.size).toBe(1)
@@ -2339,7 +2360,7 @@ test('a measured limit reset wins over a start read that returns late', async ($
   const command = { command: 'krux', args: 'status', origin: ORIGIN, presentation: { isFullscreen: false, columns: 120 } }
   const off = {
     sections: ['intro', 'krux-mod:persona'],
-    status: 'persona: on · konkret: off · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off',
+    status: 'persona: on · konkret: off · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off · audyt: off',
   }
   const snapshot = async () => ({ sections: await sectionIds($), status: (await $.command.run(command)).text })
   // Odczyt ze startu czeka; w tym czasie silnik pcha świeższe liczby.
@@ -3069,4 +3090,113 @@ test('unmatched tool rows and partly matched groups stay native; matched groups 
   // ctrl+o rysuje sam ToolUse bez ToolGroup.
   const full = await $.ui.mount({ ...TOOL_USE, requestId: 'fullscreen-row', viewport: { columns: 180, rows: 60, isFullscreen: true } })
   expect(await full.find({ type: 'Text', text: '⚒ Read a.ts' })).toBeDefined()
+})
+
+// Dopytanie o pewność idzie bez fikcji z kuźni i bez nastroju: tura sprawdzania to same fakty.
+test('a challenge to the last answer gets the verify line, without the horde note and the mood line', async ($, on) => {
+  engine(on, new Map(), { toolError: '1 failed' })
+  await start($)
+  await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  for (const turnId of ['t1', 't2']) {
+    await $.turn.complete({ answer: 'Krux szukać dalej.', durationMs: 10, isAborted: false, turnId, reason: 'answer' })
+  }
+  const verify = await $.prompt.submit({ text: 'Na pewno ten test pada?', wait: false, origin: ORIGIN })
+  expect(verify.context).toContain(FORMAT_HINT.verify)
+  expect((verify.context ?? []).some(entry => entry.startsWith('Życie hordy') || entry.startsWith('Nastrój Kruxa'))).toBe(false)
+  // Następna zwykła prośba dostaje notkę jak zawsze.
+  const own = await $.prompt.submit({ text: 'i?', wait: false, origin: ORIGIN })
+  expect((own.context ?? []).some(entry => entry.startsWith('Życie hordy'))).toBe(true)
+})
+
+// Nastrój przechylał niepewne oceny (eksperyment H: triumf odwracał „hold” na „go”), więc
+// przegląd i szukanie przyczyny idą bez linii nastroju, jak plan i wydanie.
+test('review and debugging turns go without the mood line', async ($, on) => {
+  engine(on, new Map(), { toolError: '1 failed' })
+  await start($)
+  await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  const debug = await $.prompt.submit({ text: 'Czemu test pada?', wait: false, origin: ORIGIN })
+  expect(debug.context).toContain(FORMAT_HINT.debug)
+  expect((debug.context ?? []).some(entry => entry.startsWith('Nastrój Kruxa'))).toBe(false)
+  await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  await $.tool.call({ tool: 'Bash', command: 'git commit -m x' })
+  const review = await $.prompt.submit({ text: 'Przejrzyj zmiany w cache.', wait: false, origin: ORIGIN })
+  expect(review.context).toContain(FORMAT_HINT.review)
+  expect((review.context ?? []).some(entry => entry.startsWith('Nastrój Kruxa'))).toBe(false)
+})
+
+// Bramka faktów: koniec tury z „testy przechodzą” po czerwonym przebiegu wraca do modelu raz,
+// z powodem; drugie zatrzymanie w tej turze i persona off przechodzą bez blokady.
+test('the fact gate sends an answer that claims green tests after a red run back to the model, once', async ($, on) => {
+  on('classic.Stop', () => ({}))
+  engine(on, new Map(), { toolError: '1 failed' })
+  await start($)
+  await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  const blocked = await $.classic.Stop({ stop_hook_active: false, last_assistant_message: 'Krux już naprawić walidację. Testy przechodzą.' }) as { block?: string }
+  expect(blocked.block).toContain('ostatni przebieg widziany przez mod (npm test) padł')
+  const again = await $.classic.Stop({ stop_hook_active: true, last_assistant_message: 'Krux już naprawić walidację. Testy przechodzą.' }) as { block?: string }
+  expect(again.block).toBe(undefined)
+  const honest = await $.classic.Stop({ stop_hook_active: false, last_assistant_message: 'Krux już naprawić walidację. Testy jeszcze nie puszczone ponownie.' }) as { block?: string }
+  expect(honest.block).toBe(undefined)
+  await $.prompt.submit({ text: 'wyłącz krux', wait: false, origin: ORIGIN })
+  const off = await $.classic.Stop({ stop_hook_active: false, last_assistant_message: 'Testy przechodzą.' }) as { block?: string }
+  expect(off.block).toBe(undefined)
+})
+
+// Hook Stop spod spodu (np. lint w ustawieniach Morry) zostaje: powód moda idzie za jego powodem,
+// a zatrzymanie sesji wygrywa bez bramki.
+test('the fact gate keeps a block from the hooks beneath and yields to a session stop', async ($, on) => {
+  let beneath: { block?: string; preventContinuation?: true } = { block: 'Lint: 2 errors.' }
+  on('classic.Stop', () => beneath)
+  engine(on, new Map(), { toolError: '1 failed' })
+  await start($)
+  await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  const both = await $.classic.Stop({ stop_hook_active: false, last_assistant_message: 'Testy przechodzą.' }) as { block?: string }
+  expect(both.block?.startsWith('Lint: 2 errors.\n\nBramka faktów')).toBe(true)
+  beneath = { preventContinuation: true }
+  const stopped = await $.classic.Stop({ stop_hook_active: false, last_assistant_message: 'Testy przechodzą.' }) as { block?: string; preventContinuation?: true }
+  expect([stopped.block, stopped.preventContinuation]).toEqual([undefined, true])
+})
+
+// Linia stanu z narzędzi: po przebiegu testów prośba Morry niesie jego wynik, raport kumpla nie.
+test('a prompt after a test run carries the facts line from the board', async ($, on) => {
+  engine(on, new Map(), { toolError: '1 failed' })
+  await start($)
+  const before = await $.prompt.submit({ text: 'napraw testy', wait: false, origin: ORIGIN })
+  expect((before.context ?? []).some(entry => entry.startsWith('Stan z narzędzi'))).toBe(false)
+  await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  const after = await $.prompt.submit({ text: 'Jak poszło?', wait: false, origin: ORIGIN })
+  const line = (after.context ?? []).find(entry => entry.startsWith('Stan z narzędzi'))
+  expect(line).toContain('ostatni przebieg npm test czerwony')
+  const report = await $.prompt.submit({ text: 'Review: build failed.', wait: false, origin: { kind: 'task-notification' } })
+  expect((report.context ?? []).some(entry => entry.startsWith('Stan z narzędzi'))).toBe(false)
+  // Pogawędka idzie bez stanu repo: nie wciąga roboty do rozmowy.
+  const chat = await $.prompt.submit({ text: 'Hej Krux', wait: false, origin: ORIGIN })
+  expect((chat.context ?? []).some(entry => entry.startsWith('Stan z narzędzi'))).toBe(false)
+})
+
+// Tryb audyt: po bramce mały model sprawdza zdania podane jako zobaczone; zmyślony cytat nic nie
+// blokuje, odpowiedź bez słów o sprawdzaniu nie kosztuje wywołania, a tryb domyślnie śpi.
+test('the audit mode asks a small model about the answer and sends unsupported sentences back', async ($, on) => {
+  const prompts: string[] = []
+  let verdict = 'Krux przeczytać config.yml: port 8080.'
+  on('classic.Stop', () => ({}))
+  on('model.complete', ($, e) => {
+    prompts.push(String(e.prompt))
+    return { value: { isAnswered: true, text: verdict, usage: { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } } }
+  })
+  engine(on, new Map(), { history: [{ role: 'assistant', text: '', toolUses: [{ tool_use_id: 'toolu_config', tool: 'Read', input: { file_path: 'config.yml' }, text: 'port: 3000' }] }] })
+  await start($)
+  const answer = 'Krux przeczytać config.yml: port 8080. Pewnie warto dodać cache.'
+  const asleep = await $.classic.Stop({ stop_hook_active: false, last_assistant_message: answer }) as { block?: string }
+  expect([asleep.block, prompts.length]).toEqual([undefined, 0])
+  await kruxCommand($, 'audyt on')
+  const blocked = await $.classic.Stop({ stop_hook_active: false, last_assistant_message: answer }) as { block?: string }
+  expect(blocked.block).toContain('Audyt faktów')
+  expect(blocked.block).toContain('port 8080')
+  expect(prompts[0]).toContain('port: 3000')
+  verdict = 'Krux usunąć bazę.'
+  const invented = await $.classic.Stop({ stop_hook_active: false, last_assistant_message: answer }) as { block?: string }
+  expect(invented.block).toBe(undefined)
+  const chat = await $.classic.Stop({ stop_hook_active: false, last_assistant_message: 'Hej, co dziś kopać?' }) as { block?: string }
+  expect([chat.block, prompts.length]).toEqual([undefined, 2])
 })

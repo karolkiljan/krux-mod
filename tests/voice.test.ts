@@ -110,19 +110,19 @@ test('a flip toggles one mode and leaves the others', async () => {
 })
 
 test('status distinguishes automatic konkret from a manual mode and keeps the other modes', () => {
-  expect(statusLine(DEFAULT_MODES)).toBe('persona: on · konkret: off · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off')
-  expect(statusLine(DEFAULT_MODES, true)).toBe('persona: on · konkret: auto · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off')
+  expect(statusLine(DEFAULT_MODES)).toBe('persona: on · konkret: off · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off · audyt: off')
+  expect(statusLine(DEFAULT_MODES, true)).toBe('persona: on · konkret: auto · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off · audyt: off')
   for (const automatic of [false, true]) {
-    expect(statusLine({ ...DEFAULT_MODES, konkret: true }, automatic)).toBe('persona: on · konkret: on · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off')
+    expect(statusLine({ ...DEFAULT_MODES, konkret: true }, automatic)).toBe('persona: on · konkret: on · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off · audyt: off')
   }
 })
 
 test('sections follow the plugin order: persona, konkret, flow', async () => {
   const texts = { persona: 'P', konkret: 'K', flow: 'F' }
-  const all = personaSections({ persona: true, konkret: true, flow: true, animacje: false, kowal: false, sztolnia: false, czat: true }, texts)
+  const all = personaSections({ persona: true, konkret: true, flow: true, animacje: false, kowal: false, sztolnia: false, czat: true, audyt: false }, texts)
   expect(all.map(section => section.id)).toEqual(['krux-mod:persona', 'krux-mod:konkret', 'krux-mod:flow'])
   expect(all.every(section => section.scope === 'session')).toBe(true)
-  expect(personaSections({ persona: false, konkret: false, flow: false, animacje: true, kowal: true, sztolnia: false, czat: true }, texts)).toEqual([])
+  expect(personaSections({ persona: false, konkret: false, flow: false, animacje: true, kowal: true, sztolnia: false, czat: true, audyt: true }, texts)).toEqual([])
 })
 
 test('the anchor keeps the plugin budget of 1000 characters', async () => {
@@ -840,4 +840,17 @@ test('git is read again only after a tool that may change the repo', () => {
     ['Bash', { command: 'git branch' }],
     ['Bash', { command: 'cd /repo && grep -n x a.ts' }],
   ] as const) expect(changesRepo(tool, input)).toBe(false)
+})
+
+// Dopytanie o pewność: model przytakiwał, że przesadził, albo bronił zdania bez sprawdzenia.
+// Linia formatu każe sprawdzić; zwykłe „sprawdź" to prośba o robotę, nie dopytanie.
+test('a challenge to the last answer is a verify turn, a plain request to check is not', () => {
+  for (const text of ['Na pewno?', 'Na pewno wszystkie testy przechodzą?', 'Jesteś pewien?', 'jesteś tego pewna', 'Skąd wiesz?', 'Skąd to wiesz, że cache?', 'Czy to prawda?', 'serio?', 'Naprawdę?', 'Sprawdziłeś to?', 'zmyślasz', 'Wymyśliłeś ten plik?', 'Kłamiesz.', 'To nieprawda, test pada.', 'Nie zgadza się z logiem.', 'Mylisz się.', 'Pomyliłaś się?', 'Przesadziłeś z tym.', 'Are you sure?', 'is that true', 'Did you check the logs?', 'ok, na pewno działa?']) {
+    expect([text, promptKind(text)]).toEqual([text, 'verify'])
+  }
+  for (const text of ['Sprawdź testy.', 'Sprawdź, czy w projekcie są jakieś testy dla tej funkcji.', 'Sprawdź dokładnie app.rb', 'Sprawdziłem logi, build pada.', 'Dodaj na pewno test do cache.', 'to nieprawdopodobne, że pada', 'Pomyliłem się, chodzi o plik b.ts', 'nie przesadzaj z abstrakcją', 'Zrób plan migracji.']) {
+    expect([text, promptKind(text) === 'verify']).toEqual([text, false])
+  }
+  expect(formatHint('Na pewno?')).toBe(FORMAT_HINT.verify)
+  expect(FORMAT_HINT.verify).toContain('nie przytakuj')
 })

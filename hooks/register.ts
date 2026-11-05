@@ -12,7 +12,10 @@ import type { Recall } from './lore'
 import { CALM, EVENT_HOLD_MS, eventOf, mateIn, mateMoodAfter, mateOfType, moodsAfter, moodsTick } from './mood'
 import { MATES, ROSTER } from './roster'
 import type { BoardCall } from './board'
-import { EMPTY_BOARD, boardAfter, replayBoard, returnNote, usageOf } from './board'
+import { EMPTY_BOARD, boardAfter, replayBoard, returnNote, testsStale, usageOf } from './board'
+import { factsLine, groundingGate } from './grounding'
+import type { Facts } from './grounding'
+import { AUDIT_SYSTEM, auditClaims, auditPrompt, auditReason, auditWorthy, evidenceOf } from './audit'
 import { GIT_CHECK, GIT_CHECK_CACHED, GIT_LOCAL, GIT_LOG, GIT_STATUS, GIT_UNPUSHED, gitOf } from './git'
 import { EMPTY_THREADS, THREAD_SPEC, replayThreads, saveThread, threadsAfter, threadsReport } from './threads'
 import { dayReport } from './report'
@@ -78,6 +81,9 @@ const modes = atom({ plugin: 'krux-mod', key: 'modes' } as const, DEFAULT_MODES)
 const activity = atom({ plugin: 'krux-mod', key: 'activity' } as const, null)
 const strikes = atom({ plugin: 'krux-mod', key: 'strikes' } as const, 0)
 const sessionStrikes = atom({ plugin: 'krux-mod', key: 'sessionStrikes' } as const, 0)
+// Zdarzenia z roboty kumpli: ziarno ich dymków. `sessionStrikes` stoi, póki główna pętla czeka na
+// `Agent`, więc samo dawało każdemu wynikowi kumpla tę samą parzystość i tę samą kwestię.
+const mateEvents = atom({ plugin: 'krux-mod', key: 'mateEvents' } as const, 0)
 const still = atom({ plugin: 'krux-mod', key: 'still' } as const, false)
 const turns = atom({ plugin: 'krux-mod', key: 'turns' } as const, 0)
 const drift = atom({ plugin: 'krux-mod', key: 'drift' } as const, null)
@@ -375,12 +381,39 @@ async function afterOwnTool($: EngineInterface, tool: string, input: Record<stri
   }
   await crewStep($, { kind: 'own-tool', event, lore: after, seed: await read($, sessionStrikes), failure })
   // Timer startuje po zapisie dymka, więc nigdy nie wyprzedzi jego `until`.
-  if (event !== null) {
-    $.clock.after(EVENT_HOLD_MS, () => void crewStep($, { kind: 'expire' }))
-    // Odszczekanie pary wisi drugie tyle; bez niego ten zegar nic nie zmienia.
-    $.clock.after(2 * EVENT_HOLD_MS, () => void crewStep($, { kind: 'expire' }))
-  }
+  if (event !== null) expireTalk($)
   return event
+}
+
+// Fakty sesji dla bramki i linii stanu: ostatni przebieg testów z tablicy, jego świeżość i odczyt gita.
+async function factsOf($: EngineInterface): Promise<Facts> {
+  const now = await read($, board)
+  return { board: now, stale: testsStale(now), git: await read($, git) }
+}
+
+// Audyt odpowiedzi małym modelem (tryb `audyt`): powód zatrzymania albo `null`. Odpowiedź bez słów
+// o sprawdzaniu nie kosztuje wywołania, a awaria modelu nic nie blokuje: idzie do debug logu.
+// Model po aliasie (silnik rozwiązuje go i sprawdza listę dozwolonych organizacji), z limitem czasu,
+// żeby koniec tury nie wisiał na wolnym modelu.
+const AUDIT_MODEL = 'haiku'
+const AUDIT_TIMEOUT_MS = 20_000
+async function auditAnswer($: EngineInterface, answer: string, facts: Facts): Promise<string | null> {
+  if (!auditWorthy(answer)) return null
+  try {
+    const evidence = evidenceOf(await $.session.messages(), factsLine(facts))
+    const verdict = await $.model.complete({ model: AUDIT_MODEL, system: AUDIT_SYSTEM, prompt: auditPrompt(answer, evidence), maxTokens: 400, timeoutMs: AUDIT_TIMEOUT_MS })
+    if (!verdict.isAnswered) return null
+    const claims = auditClaims(verdict.text, answer)
+    return claims.length === 0 ? null : auditReason(claims)
+  } catch (error) {
+    $.ui.log(`audyt: ${error instanceof Error ? error.message : String(error)}`, { to: 'debug' })
+    return null
+  }
+}
+
+// Wtręt, odszczekanie pary i riposta wiszą po `EVENT_HOLD_MS`; zegar bez kwestii do zmiany nic nie robi.
+function expireTalk($: EngineInterface): void {
+  for (const turn of [1, 2, 3]) $.clock.after(turn * EVENT_HOLD_MS, () => void crewStep($, { kind: 'expire' }))
 }
 
 // Narzędzie kumpla na scenie: wynik jego roboty zmienia jego minę i daje jego wtręt
@@ -393,8 +426,10 @@ async function afterMateTool($: EngineInterface, agentId: string, tool: string, 
   if (member === undefined) return
   const mate = member.mate
   if (mate !== null) await update($, moods, now => mateMoodAfter(now, mate, event))
-  await crewStep($, { kind: 'mate-event', agentId, event, lore: single, seed: await read($, sessionStrikes), failure })
-  $.clock.after(EVENT_HOLD_MS, () => void crewStep($, { kind: 'expire' }))
+  let count = 0
+  await update($, mateEvents, seen => { count = seen; return seen + 1 })
+  await crewStep($, { kind: 'mate-event', agentId, event, lore: single, seed: (await read($, sessionStrikes)) + count, failure })
+  expireTalk($)
 }
 
 // Sztolnia idzie za trybem: otwarty, gdy `sztolnia` on. Bez pytania silnik
@@ -822,6 +857,26 @@ export const register: Register = on => {
     return next(e)
   })
 
+  // Bramka faktów: odpowiedź, która o testach albo repo twierdzi więcej, niż pokazały narzędzia,
+  // wraca do modelu raz, przed końcem tury, zamiast czekać, aż Morra dopyta „na pewno?”.
+  // Drugie zatrzymanie w tej samej turze (`stop_hook_active`) już przechodzi: bez pętli.
+  // Hook moda zatrzymuje koniec tury polem `block` z powodem (tekst); `decision` to u silnika
+  // obiekt zgody na narzędzie, więc `decision: 'block'` z hooków powłoki silnik odrzuca.
+  // Tryb `audyt` dokłada po bramce audyt małym modelem: zdania podane jako sprawdzone kontra
+  // wyjście narzędzi, także bez persony. Blokada hooka spod spodu (np. lint w ustawieniach Morry)
+  // zostaje, a powód moda idzie za nią; zatrzymanie sesji (`preventContinuation`) wygrywa bez bramki.
+  on('classic.Stop', async ($, e, next) => {
+    const result = await next(e)
+    const answer = e.last_assistant_message
+    if (e.stop_hook_active || typeof answer !== 'string' || result.preventContinuation === true) return result
+    const now = await read($, modes)
+    if (!now.persona && !now.audyt) return result
+    const facts = await factsOf($)
+    const reason = (now.persona ? groundingGate(answer, facts) : null) ?? (now.audyt ? await auditAnswer($, answer, facts) : null)
+    if (reason === null) return result
+    return { ...result, block: result.block === undefined ? reason : `${result.block}\n\n${reason}` }
+  })
+
   on('prompt.compose', async ($, e, next) => {
     const composed = await next(e)
     const now = await read($, modes)
@@ -862,15 +917,20 @@ export const register: Register = on => {
         const chronicle = await read($, lore)
         // Decyzja o wydaniu, plan i ruch nieodwracalny idą samymi faktami: tam nastrój
         // przechylał wybór, więc przepada linia nastroju i humor kumpla w notce.
-        const plan = promptKind(e.text) === 'plan'
-        const decides = plan || asksRelease(e.text)
+        // Dopytanie o pewność idzie bez notki i bez nastroju: tura sprawdzania nie ma
+        // miejsca na fikcję z kuźni. Przegląd i szukanie przyczyny to też ocena, więc bez nastroju.
+        const kind = promptKind(e.text)
+        const plan = kind === 'plan'
+        const verify = kind === 'verify'
+        const decides = plan || verify || asksRelease(e.text)
+        const judges = decides || kind === 'review' || kind === 'debug'
         // Wspomnienie bierze tylko pierwsza wstawka sesji, a starego wroga czerwony test,
         // więc magazyn czytamy tylko wtedy.
         const failing = await read($, ownRed)
-        const recalled = risk === null && (chronicle.lastMate === null || failing !== null) ? await recallFor($) : null
+        const recalled = risk === null && !verify && (chronicle.lastMate === null || failing !== null) ? await recallFor($) : null
         // Plan kończy pytanie o zgodę z linii formatu, więc wstawka idzie w środek.
         const aside = { recall: recalled, foe: foeOf(failing, recalled), humor: !decides, middle: plan }
-        const life = risk === null ? hordeNote(chronicle, turn, aside) : null
+        const life = risk === null && !verify ? hordeNote(chronicle, turn, aside) : null
         if (life) {
           extra.push(life.text)
           noted = life.mate
@@ -880,8 +940,12 @@ export const register: Register = on => {
         if (mood) {
           let fresh = false
           await update($, moodSeen, seen => { fresh = seen !== mood.key; return mood.key })
-          if (fresh && risk === null && !decides) extra.push(mood.text)
+          if (fresh && risk === null && !judges) extra.push(mood.text)
         }
+        // Stan testów i repo z narzędzi: model mówi z niego, a nie z pamięci rozmowy. Pogawędka
+        // („Hej Krux”, „dzięki”) go nie dostaje: tam stan repo tylko wciągałby robotę do rozmowy.
+        const facts = kind === 'chat' ? null : factsLine(await factsOf($))
+        if (facts) extra.push(facts)
         const hint = formatHint(e.text)
         if (hint) extra.push(hint)
         if (risk) extra.push(risk)

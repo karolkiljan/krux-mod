@@ -864,11 +864,13 @@ test('the bench replays the horde notes by the rule the mod uses', () => {
   assert.match(lore, /miejsce: \$\{place\}/u)
   assert.match(lore, /^const PLACES = \['w środku[^'\n]*', 'na końcu'\] as const$/mu)
   const register = fs.readFileSync('hooks/register.ts', 'utf8')
-  assert.match(register, /const life = risk === null \? hordeNote\(chronicle, turn, aside\) : null/u)
-  assert.match(register, /const plan = promptKind\(e\.text\) === 'plan'\n[\s\S]*middle: plan \}/u)
+  assert.match(register, /const life = risk === null && !verify \? hordeNote\(chronicle, turn, aside\) : null/u)
+  assert.match(register, /const kind = promptKind\(e\.text\)\n\s*const plan = kind === 'plan'\n[\s\S]*middle: plan \}/u)
   for (const { prompts } of Object.values(vm.runInContext('SCENARIOS', benchContext()))) {
     prompts.forEach((prompt, turn) => {
       assert.equal(riskHint(prompt), null, prompt)
+      // Dopytanie o pewność idzie bez notki; bench go nie zadaje, więc harmonogram notek zostaje ten sam.
+      assert.notEqual(promptKind(prompt), 'verify', prompt)
       if (promptKind(prompt) === 'plan') assert.equal(turn % 2, 1, prompt)
     })
   }
@@ -923,8 +925,37 @@ test('every mate prompt starts its method from the goal and ends the report with
     const text = fs.readFileSync(new URL(`../agents/${agent}.md`, import.meta.url), 'utf8')
     const first = text.match(/^Jak pracujesz:\n- (.+)$/mu)?.[1]
     assert.ok(first?.startsWith('Najpierw cel'), `${agent}.md: metoda nie zaczyna się od celu`)
-    assert.match(text, /^\d\. Luka: /mu, `${agent}.md: raport bez luki`)
+    // Luka zamyka raport: punkt dopisany za nią spychałby ją w środek, gdzie ginie.
+    const items = text.match(/^\d+\. .+$/gmu) ?? []
+    assert.match(items.at(-1) ?? '', /^\d+\. Luka: /u, `${agent}.md: raport nie kończy się luką`)
   }
+})
+
+// Opis narzędzia Grep w silniku każe szukać nim, nie `grep` ani `rg` w Bash: te bywają poza PATH,
+// a argument z gwiazdką idzie przez zgodę. `git grep` bez `--untracked` nie widzi nowych plików,
+// więc dowód martwego kodu Lonta i zwiad Niucha stoją na narzędziu Grep.
+test('mates search text with the Grep tool, not grep or rg in Bash', () => {
+  for (const { agent } of Object.values(ROSTER)) {
+    const text = fs.readFileSync(new URL(`../agents/${agent}.md`, import.meta.url), 'utf8')
+    assert.doesNotMatch(text, /`(?:rg|grep)\s/u, `${agent}.md: szukanie przez Bash`)
+  }
+  for (const agent of ['niuch', 'lont']) {
+    const text = fs.readFileSync(new URL(`../agents/${agent}.md`, import.meta.url), 'utf8')
+    assert.match(text, /narzędziem Grep/u, `${agent}.md: bez narzędzia Grep`)
+  }
+})
+
+// Kumpel ucięty limitem tur wraca bez raportu („It was still calling tools and had produced no report”),
+// więc kumpel z `maxTurns` zna swój limit i pisze raport przed nim. Lista padłych Młota nie mieści się
+// w 150 słowach przy 10 padłych, więc limit słów jej nie obejmuje.
+test('a mate with a turn limit knows it, and the tester keeps the failure list outside the word limit', () => {
+  for (const { agent } of Object.values(ROSTER)) {
+    const text = fs.readFileSync(new URL(`../agents/${agent}.md`, import.meta.url), 'utf8')
+    const turns = text.match(/^maxTurns: (\d+)$/mu)?.[1]
+    if (turns !== undefined) assert.match(text, new RegExp(`Masz najwyżej ${turns} tur: raport piszesz, zanim je wyczerpiesz`, 'u'), `${agent}.md: limit tur`)
+  }
+  const mlot = fs.readFileSync(new URL('../agents/mlot.md', import.meta.url), 'utf8')
+  assert.match(mlot, /^Raport [^\n]*do 150 słów; lista padłych testów nie liczy się do limitu:$/mu)
 })
 
 // Audyt wykopał duplikaty kolorów stanów i Morry (#5b9bd5 dwa razy, #3fb950 i #e0322b po dwa):

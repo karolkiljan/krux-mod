@@ -191,7 +191,7 @@ export function hordeNote(lore: KruxLore, seed: number, aside: Aside = {}): { te
   const found = facts[mate]
   // Fakt z sesji to robota Kruxa: kumpel ją komentuje, nie przejmuje. Wspomnienie tak samo.
   const why = recall && memory[mate]
-    ? ` Wspomnienie z poprzedniej sesji w tym repo (${recall.days === 0 ? 'dziś' : `dni temu: ${recall.days}`}): ${memory[mate]}; to dawna robota Kruxa, kumpel ją tylko wspomina.`
+    ? ` Wspomnienie z poprzedniej sesji w tym repo (${recall.days === 0 ? 'dziś' : `dni temu: ${recall.days}`}): ${memory[mate]}; to stan sprzed tej sesji: kumpel tylko wspomina dawną robotę Kruxa, nie podaje jej jako stanu repo teraz.`
     : found ? ` Fakt z sesji: ${found}; to robota Kruxa, kumpel ją tylko komentuje.` : ' Coś z dnia kumpla, bez przypisywania kumplowi roboty w tym repo.'
   const enemy = foe ? ` Stary wróg: test ${foe.name} padał też w poprzedniej sesji; kumpel woła go przezwiskiem ${foe.nick}.` : ''
   const avoid = lore.lastMate ? ` Nie ${ROSTER[lore.lastMate].accusative}: o ${ROSTER[lore.lastMate].locative} była ostatnia wstawka.` : ''
@@ -200,8 +200,12 @@ export function hordeNote(lore: KruxLore, seed: number, aside: Aside = {}): { te
   const form = pick(FORMS, seed)
   const shape = form === SPAR ? `krótka wymiana zdań z ${ROSTER[spar].instrumental}, spór: ${feud}` : form
   const place = aside.middle ? PLACES[0] : pick(PLACES, seed + 1)
-  return { text: `Życie hordy: jedno zdanie łamaną mową o ${locative} (${trait}), słowa fachu: ${words};${humor ? ` humor: ${humor};` : ''} miejsce: ${place}; forma: ${shape}.${why}${enemy}${avoid}`, mate }
+  return { text: `Życie hordy: jedno zdanie łamaną mową o ${locative} (${trait}), słowa fachu: ${words};${humor ? ` humor: ${humor};` : ''} miejsce: ${place}; forma: ${shape}.${why}${enemy}${avoid}${FICTION}`, mate }
 }
+
+// Straż fikcji na końcu każdej notki: forma bywa zmyśloną scenką z kuźni, a zmyślenie nie może
+// przeciec do odpowiedzi jako fakt o repo ani jako „kumpel sprawdził”, którego nikt nie wysłał.
+const FICTION = ' To fikcja z kuźni: bez nowych faktów o repo i bez twierdzenia, że ktoś coś sprawdził.'
 
 // Pamięć hordy między sesjami: ślad kroniki pod jednym kluczem `$.store` na repo.
 const DAY_MS = 86_400_000
@@ -289,7 +293,7 @@ export function moodNote(lore: KruxLore): { key: string; text: string } | null {
     }
   })()
   if (mood === null) return null
-  return { key, text: `Nastrój Kruxa: ${mood}. Pokaż go jednym krótkim zdaniem „Krux + bezokolicznik", bez słowa „nastrój"; nastrój barwi ton, nie zmienia ocen, ryzyka ani decyzji.` }
+  return { key, text: `Nastrój Kruxa: ${mood}. Pokaż go jednym krótkim zdaniem „Krux + bezokolicznik", bez słowa „nastrój"; nastrój barwi ton, nie zmienia ocen, ryzyka, decyzji ani zakresu tego, co sprawdzone.` }
 }
 
 // Wiadomość historii w kształcie `$.session.messages()`, tyle, ile czyta replay.

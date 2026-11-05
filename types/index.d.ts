@@ -1,4 +1,4 @@
-export type KruxMode = 'persona' | 'konkret' | 'flow' | 'animacje' | 'kowal' | 'sztolnia' | 'czat'
+export type KruxMode = 'persona' | 'konkret' | 'flow' | 'animacje' | 'kowal' | 'sztolnia' | 'czat' | 'audyt'
 
 export type KruxModes = Record<KruxMode, boolean>
 
@@ -44,14 +44,18 @@ export type KruxSpeaker = 'Krux' | KruxMate | 'ork'
 // Subagent na scenie, po `agentId` z `agent.spawn`.
 export type KruxHordeMember = { agentId: string; mate: KruxMate | null; scene: KruxScene; target: string; startedAt?: number }
 
+// Kwestia w wymianie zdań: kto mówi i co; `reply` to następna kwestia, która czeka na swoją kolej.
+export type KruxLine = { key: string; speaker: KruxSpeaker; text: string; reply?: KruxLine }
+
 // Dymek nad orkiem `key` (`agentId` kumpla albo 'krux'). `step` to krok wysłanego
 // kumpla, trwa, póki kumpel stoi na scenie; `event` to wtręt po zdarzeniu kroniki,
 // do `until` w ms od epoki; `thought` to myśl Kruxa, liczona przy rysowaniu.
 export type KruxBubble =
   | { kind: 'step'; key: string; speaker: KruxSpeaker; text: string }
   | { kind: 'thought'; key: string; speaker: KruxSpeaker; text: string }
-  // `reply`: odszczekanie pary z hordy, wchodzi na miejsce dymka, gdy ten zgaśnie.
-  | { kind: 'event'; key: string; speaker: KruxSpeaker; text: string; until: number; reply?: { key: string; speaker: KruxSpeaker; text: string } }
+  // `reply`: odszczekanie pary z hordy (albo słowo Kruxa do kumpla), wchodzi na miejsce dymka, gdy ten
+  // zgaśnie; jego własny `reply` to riposta pierwszego mówcy.
+  | { kind: 'event'; key: string; speaker: KruxSpeaker; text: string; until: number; reply?: KruxLine }
 
 // Znak dla płótna, do `until` w ms od epoki: reakcja orka `key` na zdarzenie kroniki
 // z jego roboty albo `handoff` — kumpel skończył i oddaje Kruxowi zwój, zanim zejdzie.
@@ -207,6 +211,8 @@ declare module 'claude-code' {
       activity: KruxActivity | null
       strikes: number
       sessionStrikes: number
+      // Zdarzenia z roboty kumpli w sesji: ziarno ich dymków, bo `sessionStrikes` stoi w czasie `Agent`.
+      mateEvents: number
       still: boolean
       turns: number
       drift: KruxDrift | null

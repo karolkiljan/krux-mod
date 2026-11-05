@@ -20,7 +20,7 @@ import { NAMELESS_APRON, dress } from './apron'
 import type { Face } from './apron'
 import { PALETTE } from './palette'
 import { MATES, ROSTER } from './roster'
-import { GESTURES } from './fidget'
+import { GESTURES, glance } from './fidget'
 import { terminalText } from './terminal-text'
 import { H, STAND, W, actFrame, at, dots, draw, entryOf, finalLoop, flame, inLoop, kitLead, leadIn, legAt, legDone, lerp, moodOf, noise, pad, restFrame, rotation, settleFrames, stander, walker } from './stage'
 import type { Act, Frame, Layer, Leg, Look, Route } from './stage'
@@ -915,8 +915,10 @@ export function errandPose(t: number, from: number, route: ErrandRoute, face: Fa
 }
 
 // Scenka dwóch orków: gospodarz z lewej, gość z prawej, twarzą w twarz, między nimi miejsce na rekwizyt.
-// `toast`: kumpel z kwater wpada z kuflami, stukają się i piją.
-export type DuetKind = 'fence' | 'pass' | 'highfive' | 'argue' | 'toast'
+// `toast`: kumpel z kwater wpada z kuflami, stukają się i piją. `tale`: gość opowiada z rękami
+// w ruchu, gospodarz słucha, a na koniec obaj rechoczą. `debate`: dyskusja na zmianę, aż uścisną
+// sobie dłonie. `council`: narada nad mapą. `show`: gość pokazuje sztabkę, gospodarz ją ocenia.
+export type DuetKind = 'fence' | 'pass' | 'highfive' | 'argue' | 'toast' | 'tale' | 'debate' | 'council' | 'show'
 export const DUET_GAP = 14
 export const DUET_FRAMES = 32
 
@@ -941,8 +943,101 @@ export const TOAST_RETURN = 26
 const DRINK_HOST = pad(draw([stander('right'), 0, 0], at('g', 6, 3)))
 const DRINK_GUEST = raised(DRINK_HOST)
 
+// Opowieść: gość mówi i gestykuluje (ręka do gospodarza, w górę, potem obie szeroko: „taka ruda!”),
+// gospodarz słucha z rozdziawionymi ustami, a od `TALE_LAUGH` obaj rechoczą z zamkniętymi oczami
+// i klepią się po udzie. Usta chodzą jak przy mowie (`withTalk`), rekwizytu nie ma.
+const TALE_LAUGH = 18
+const TALE_END = 30
+const GUEST = (arm: string) => facing('right', arm)
+// Gość z rękami szeroko: tułów w kolumnach 2–7 jak w każdej pozie gościa, ręce po obu stronach.
+const WIDE_GUEST = ['...gggg', '..rggrgg', '...tggt', 'ggbbbbbbgg', '...bGGb', '...G..G']
+
+// Rechot: oczy zamknięte, usta chodzą, dłoń klepie udo: raz przy biodrze, raz na nodze tuż przy niej.
+function laughing(rows: readonly string[], t: number, hip: number, thigh: number): string[] {
+  const shut = rows.map(row => row.replaceAll('r', 'G'))
+  return pad(draw([withTalk(shut, t), 0, 0], t % 4 < 2 ? at('g', thigh, 4) : at('g', hip, 3)))
+}
+
+function tale(t: number): DuetFrame {
+  if (t < 3 || t >= TALE_END) return { host: RIGHT(''), guest: GUEST(''), prop: [] }
+  if (t >= TALE_LAUGH) {
+    const guest = laughing(GUEST(''), t + 1, 1, 2)
+    return { host: laughing(RIGHT(''), t, 6, 5), guest: guest.map(row => row.replace(/\.+$/u, '')), prop: [] }
+  }
+  const step = Math.floor(t / 3)
+  const gesture = step === 2 ? HIGH_GUEST : step >= 4 ? WIDE_GUEST : GUEST('g')
+  // Przy „taka ruda!” gospodarzowi opada szczęka.
+  const host = step >= 4 ? RIGHT('').map((row, y) => (y === 2 ? row.replace('tggt', 'tGGt') : row)) : RIGHT('')
+  return { host, guest: withTalk(gesture, t), prop: [] }
+}
+
+// Ręka przy brodzie: gospodarz waży słowa, dłoń tuż z prawej od żuchwy; gość tak samo z lewej.
+const THINK_HOST = pad(draw([stander('right'), 0, 0], at('g', 5, 2)))
+const THINK_GUEST = draw([GUEST(''), 0, 0], at('g', 2, 2)).map(row => row.replace(/\.+$/u, ''))
+const proud = (rows: readonly string[]): string[] => [...moodOf(rows, 'proud', false)]
+
+// Dyskusja: mówią na zmianę, ręka wskazuje albo idzie w górę, słuchacz trzyma dłoń przy brodzie.
+// Gospodarz zaczyna, gość odpowiada, gospodarz dorzuca swoje, a na zgodę wyciągają ręce i uścisk
+// trzęsie się nad środkiem.
+function debate(t: number): DuetFrame {
+  const talk = (rows: readonly string[]) => withTalk(rows, t)
+  if (t < 2 || t >= 30) return { host: RIGHT(''), guest: GUEST(''), prop: [] }
+  if (t < 10) return { host: talk(t % 4 < 2 ? RIGHT('g') : HIGH_HOST), guest: t >= 8 ? THINK_GUEST : GUEST(''), prop: [] }
+  if (t < 18) return { host: t >= 14 ? THINK_HOST : RIGHT(''), guest: talk(t % 4 < 2 ? GUEST('g') : HIGH_GUEST), prop: [] }
+  if (t < 22) return { host: talk(HIGH_HOST), guest: GUEST(''), prop: [] }
+  // Ręce wychodzą sobie naprzeciw po pikselu, zanim dłonie spotkają się w środku.
+  if (t < 24) return { host: RIGHT(t === 23 ? 'gg' : 'g'), guest: GUEST(t === 23 ? 'gg' : 'g'), prop: [] }
+  // Uścisk: ręce od obu, dłonie w środku raz wyżej, raz niżej.
+  const shake = t % 2 === 0 ? 3 : 2
+  return { host: RIGHT('gg'), guest: GUEST('gg'), prop: draw(at('g', 8, 3), at('g', 9, shake), at('g', 10, shake), at('g', 11, 3)) }
+}
+
+// Narada nad mapą: gospodarz wyjmuje zwój spod fartucha i rozwija go między nimi, gość łapie drugi
+// brzeg. Pokazują palcem na zmianę, gospodarz waży, gość wpada na pomysł (złote oczy, ręka w górę),
+// a na koniec mapa zwija się i wraca pod fartuch gospodarza.
+const MAP: Frame = ['ppnppp', 'pnppdp']
+const HALF_MAP: Frame = ['pnph', 'pnph']
+
+function council(t: number): DuetFrame {
+  const talk = (rows: readonly string[]) => withTalk(rows, t)
+  if (t < 2 || t >= 29) {
+    const roll = t === 0 || t === 30 ? at('h', 7, 3) : t === 31 ? null : ([['hph'], 7, 3] as Layer)
+    return { host: RIGHT(roll === null ? '' : 'g'), guest: GUEST(''), prop: roll === null ? [] : draw(roll) }
+  }
+  if (t < 3 || t === 28) return { host: RIGHT('g'), guest: GUEST(''), prop: draw([HALF_MAP, 7, 2]) }
+  const map: Layer = [MAP, 7, 2]
+  if (t < 12) return { host: talk(t < 4 ? RIGHT('g') : draw([HIGH_HOST, 0, 0], at('g', 8, 1))), guest: GUEST('g'), prop: draw(map) }
+  if (t < 20) return { host: RIGHT('g'), guest: talk(HIGH_GUEST), prop: draw(map, at('g', 11, 1)) }
+  if (t < 24) return { host: THINK_HOST, guest: GUEST('g'), prop: draw(map) }
+  return { host: t >= 26 ? proud(RIGHT('g')) : RIGHT('g'), guest: proud(talk(HIGH_GUEST)), prop: draw(map) }
+}
+
+// Pokaz: gość wyjmuje spod fartucha sztabkę, unosi ją i chwali się, sztabka błyska; gospodarz
+// ocenia z dłonią przy brodzie, potem uznaje: złote oczy i pięść w górę. Sztabka wraca pod fartuch.
+function show(t: number): DuetFrame {
+  const talk = (rows: readonly string[]) => withTalk(rows, t)
+  if (t >= 30) return { host: RIGHT(''), guest: GUEST(''), prop: [] }
+  if (t < 4 || t >= 26) {
+    const bar: Layer = t === 0 || t === 29 ? at('S', 12, 3) : [['SS'], 11, 3]
+    return { host: RIGHT(''), guest: GUEST('g'), prop: draw(bar) }
+  }
+  const glint = t % 2 === 0 ? 'j' : 'y'
+  const held = draw([['SS'], 10, 0], at(glint, t % 4 < 2 ? 10 : 11, 0))
+  if (t < 12) return { host: RIGHT(''), guest: talk(HIGH_GUEST), prop: held }
+  if (t < 20) return { host: t >= 14 && t < 18 ? THINK_HOST.map((row, y) => (y === 2 ? row.replace('tggt', 'tGGt') : row)) : THINK_HOST, guest: HIGH_GUEST, prop: held }
+  return { host: proud(HIGH_HOST), guest: proud(HIGH_GUEST), prop: held }
+}
+
+// Scenki, które same prowadzą usta (opowieść, dyskusja, narada, pokaz): mówią na zmianę według
+// klatki, więc szczęka z dymka nie może im otworzyć drugiej paszczy naraz.
+export const TALKING_DUETS: ReadonlySet<DuetKind> = new Set<DuetKind>(['tale', 'debate', 'council', 'show'])
+
 // Klatka scenki `t`. Współrzędne rekwizytu od lewej krawędzi gospodarza.
 export function duetPose(kind: DuetKind, t: number): DuetFrame {
+  if (kind === 'tale') return tale(t)
+  if (kind === 'debate') return debate(t)
+  if (kind === 'council') return council(t)
+  if (kind === 'show') return show(t)
   const step = Math.floor(t / 3)
   if (kind === 'fence') {
     const up = step % 2 === 1
@@ -998,8 +1093,10 @@ export function dayPhase(hour: number, month: number): DayPhase {
 const SKY: Record<DayPhase, string> = { night: '7', dawn: '8', day: '9', dusk: '0' }
 
 // Ork w drodze po podłodze: nogi na zmianę, oczy w stronę marszu, bo ciało się nie obraca.
-export function walkerRows(step: number, face: Face, look: Look = 'mid'): string[] {
-  return dress(walker(step, look), face)
+// `talk`: mówi w marszu, więc rusza szczęką (`withTalk`).
+export function walkerRows(step: number, face: Face, look: Look = 'mid', talk?: number): string[] {
+  const rows = dress(walker(step, look), face)
+  return talk === undefined ? rows : withTalk(rows, talk)
 }
 
 export type Placed = { rows: readonly string[]; x: number }
@@ -1303,8 +1400,61 @@ export function withNap(rows: readonly string[]): string[] {
   if (top < 0) return [...rows]
   const crown = rows[top]!.search(/[gG]{4}/u)
   const x = crown + 7
-  // Oczy gasną tylko w obrębie głowy: płomień ogniska w tym samym wierszu zostaje ogniem.
-  const shut = (row: string) => [...row].map((cell, at) => (at >= crown - 1 && at <= crown + 4 && (cell === 'r' || cell === 'y') ? 'G' : cell)).join('')
-  const sleepy = rows.map((row, y) => (y === top + 1 ? shut(row) : row))
-  return pad(draw([sleepy, 0, 0], [['mmm', '..m', '.m.'], x, 0]))
+  return pad(draw([shutEyes(rows), 0, 0], [['mmm', '..m', '.m.'], x, 0]))
+}
+
+// ——— Horda się widzi i gada ———
+// Nakładki z rysunku płótna, bez stanu: mówca rusza szczęką, widz zerka na mówcę albo na orka
+// w reakcji i wtóruje mu. Ruszają tylko oczy, usta i wolne tło, jak gesty wiercenia.
+
+// Mówca, póki dymek odsłania tekst: między kłami na zmianę paszcza, szpara i zamknięte usta.
+// Bez szczęki z kłami (głowa w kapturze rekwizytu, leżący bokiem) usta stoją.
+const MOUTH = ['cc', 'GG', ''] as const
+
+export function withTalk(rows: readonly string[], t: number): string[] {
+  const jaw = rows.findIndex(row => /t[gG]{2}t/u.test(row))
+  const mouth = MOUTH[((t % MOUTH.length) + MOUTH.length) % MOUTH.length]!
+  if (jaw < 0 || mouth === '') return [...rows]
+  const row = rows[jaw]!
+  const x = row.search(/t[gG]{2}t/u) + 1
+  return rows.map((line, y) => (y === jaw ? `${row.slice(0, x)}${mouth}${row.slice(x + 2)}` : line))
+}
+
+// Widz patrzy w stronę `dx` (-1 w lewo, 1 w prawo): źrenice idą do samego brzegu oka, krok po
+// pikselu, póki obok jest skóra. Ork, który patrzył w drugą stronę, przenosi wzrok o dwa piksele.
+export function withGaze(rows: readonly string[], dx: -1 | 1): string[] {
+  return [...glance(glance(rows, dx), dx)]
+}
+
+// Cudza reakcja (`t` od jej początku) widziana z boku: po zielonych i commicie widz klatkę po
+// reagującym błyska złotymi oczami jak dumny ork i unosi pięść, po smrodzie, nieudanym budowaniu,
+// zawale i wybuchu mruży oczy na mgnienie, a przez resztę reakcji patrzy w stronę reagującego.
+// Pięść tylko stojącemu i tylko na tle, więc rekwizyt zostaje rekwizytem, a postawa się nie zmienia.
+export const CHEER_FROM = 4
+export const CHEER_TO = 8
+export const WINCE_TO = 2
+
+export function withRegard(rows: readonly string[], kind: KruxEvent, t: number, dx: -1 | 1): string[] {
+  const grid = pad(rows)
+  const happy = kind === 'test-pass' || kind === 'build-pass' || kind === 'commit'
+  if (!happy && t >= 1 && t <= WINCE_TO) return shutEyes(grid)
+  const gazed = withGaze(grid, dx)
+  if (!happy || t < CHEER_FROM || t > CHEER_TO) return gazed
+  const looked = proud(gazed)
+  const x = standingX(grid)
+  if (x === null) return looked
+  // Pięść w górę, na szczycie wyżej, potem opada: ręka nie znika w jednej klatce.
+  const hand = t === CHEER_TO ? 2 : t >= CHEER_FROM + 2 && t <= CHEER_TO - 1 ? 0 : 1
+  // Wolna ręka: prawa, a gdy po prawej stoi rekwizyt, lewa. Lewa nie sięga wiersza czubka: `dress`
+  // szuka czubka od lewej i przy przechylonej głowie wziąłby pięść za głowę (hełm Groma na dłoni).
+  const arm = [lineArm(x + 6, 3, hand), lineArm(x - 1, 3, Math.max(1, hand))].find(pixels => pixels.every(([, ax, ay]) => ax >= 0 && looked[ay]?.[ax] === '.'))
+  return arm === undefined ? looked : pad(draw([looked, 0, 0], ...arm))
+}
+
+// Oczy zamknięte w obrębie głowy, także złote dumne: płomień ogniska w tym samym wierszu zostaje ogniem.
+function shutEyes(rows: readonly string[]): string[] {
+  const top = rows.findIndex(row => /[gG]{4}/u.test(row))
+  if (top < 0) return [...rows]
+  const crown = rows[top]!.search(/[gG]{4}/u)
+  return rows.map((row, y) => (y !== top + 1 ? row : [...row].map((cell, at) => (at >= crown - 1 && at <= crown + 4 && (cell === 'r' || cell === 'y') ? 'G' : cell)).join('')))
 }

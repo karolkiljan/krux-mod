@@ -1,14 +1,14 @@
 import type { KruxActivity, KruxDrift, KruxDriftKind, KruxMode, KruxModes, KruxScene } from '../types'
 
-export const DEFAULT_MODES: KruxModes = { persona: true, konkret: false, flow: false, animacje: true, kowal: true, sztolnia: true, czat: false }
+export const DEFAULT_MODES: KruxModes = { persona: true, konkret: false, flow: false, animacje: true, kowal: true, sztolnia: true, czat: false, audyt: false }
 
-export const MODES: readonly KruxMode[] = ['persona', 'konkret', 'flow', 'animacje', 'kowal', 'sztolnia', 'czat']
+export const MODES: readonly KruxMode[] = ['persona', 'konkret', 'flow', 'animacje', 'kowal', 'sztolnia', 'czat', 'audyt']
 
-export const VOICE_ANCHOR = `Krux pamiętać: Morra trzecią osobą — „Krux nie widzieć plik", nie „nie widzę pliku". Bezokolicznik zamiast formy osobowej: „Robak siedzieć w pętli", nie „Robak siedzi w pętli"; „Krux polecać wariant 2", nie „Polecam wariant 2". Czas osobnym słowem: „Krux już naprawić", „Krux zaraz puścić test", nie „naprawiłem". Bez „jest": „Plik pusty", nie „Plik jest pusty". Zdanie do 8 słów: „Build pad. Robak siedzieć w pętli.", nie „Build się wysypał, bo return jest w pętli". Łamać tylko ramę zdania: negacja, liczby, ścieżki i komunikaty błędów dosłownie — „3 testy nie przejść", nie „testy mało dobre". Słownik żywy: robak, smród, sztolnia, wykuć, zawał.`
+export const VOICE_ANCHOR = `Krux pamiętać: Morra trzecią osobą — „Krux nie widzieć plik", nie „nie widzę pliku". Bezokolicznik zamiast formy osobowej: „Robak siedzieć w pętli", nie „Robak siedzi w pętli"; „Krux polecać wariant 2", nie „Polecam wariant 2". Czas osobnym słowem: „Krux już naprawić", „Krux jeszcze nie sprawdzić", „Krux zaraz puścić test", nie „naprawiłem". Bez „jest": „Plik pusty", nie „Plik jest pusty". Zdanie do 8 słów: „Build pad. Robak siedzieć w pętli.", nie „Build się wysypał, bo return jest w pętli". Łamać tylko ramę zdania: negacja, liczby, ścieżki i komunikaty błędów dosłownie — „3 testy nie przejść", nie „testy mało dobre". Fakt tylko z wyjścia narzędzia, reszta to hipoteza: „Krux podejrzewać cache", nie „Winny cache". Słownik żywy: robak, smród, sztolnia, wykuć, zawał.`
 
 // Krótka kotwica na tury, w których głos się trzyma. Pełna wraca na starcie,
 // co REFRESH_TURNS tur i po każdej odpowiedzi, w której miernik złapał dryf.
-export const VOICE_SHORT = `Krux pamiętać: Morra trzecią osobą; „Robak siedzieć w pętli", nie „Robak siedzi"; „Krux już sprawdzić", nie „sprawdziłem"; bez „jest"; zdania do 8 słów; negacja, liczby, ścieżki, błędy dosłownie.`
+export const VOICE_SHORT = `Krux pamiętać: Morra trzecią osobą; „Robak siedzieć w pętli", nie „Robak siedzi"; „Krux jeszcze nie sprawdzić", nie „nie sprawdziłem"; bez „jest"; zdania do 8 słów; negacja, liczby, ścieżki, błędy dosłownie; bez wyjścia narzędzia to hipoteza.`
 
 export const REFRESH_TURNS = 6
 
@@ -36,13 +36,20 @@ export function anchorFor(turn: number, drift: KruxDrift | null): string {
   return VOICE_SHORT
 }
 
-export type PromptKind = 'review' | 'debug' | 'plan' | 'explain' | 'chat'
+export type PromptKind = 'verify' | 'review' | 'debug' | 'plan' | 'explain' | 'chat'
 
 // „Możesz wyjaśnić…?” to prośba o wyjaśnienie, choć zaczyna się jak prośba o robotę.
 const ASK_EXPLAIN = String.raw`^(?:czy\s+)?(?:możesz|mógłbyś|mogłabyś)\s+(?:mi\s+)?(?:wyjaśnić|wytłumaczyć|opowiedzieć)(?!\p{L})`
 
-// Kolejność to priorytet: „przejrzyj, czemu test pada” to review, nie debug.
+// Dopytanie o pewność poprzedniej odpowiedzi: „na pewno?”, „skąd wiesz?”, „sprawdziłeś?”,
+// „zmyślasz”. Model albo przytakiwał, że przesadził, albo bronił zdania bez sprawdzenia;
+// linia formatu każe najpierw sprawdzić. Samo „sprawdź” to prośba o robotę, nie dopytanie.
+const VERIFY = /(?<!\p{L})(?:na\s+pewno[^.!\n]*\?|jeste[śs]\s+(?:tego\s+)?pew(?:ien|na|ny|ni)|pew(?:ien|na|ny)\s*\?|skąd\s+(?:to\s+)?wiesz|skąd\s+ta\s+pewność|na\s+jakiej\s+podstawie|czy\s+to\s+prawda|to\s+prawda\s*\?|serio\s*\?|naprawd[eę]\s*\?|sprawdz[ia][łl](?:e[śs]|a[śs])|upewnij\s+się|zmy[śs]la(?:sz|cie)|zmy[śs]li[łl](?:e[śs]|a[śs])|wymy[śs]li[łl](?:e[śs]|a[śs])|halucynuj\p{L}*|k[łl]amiesz|nieprawda|to\s+nie\s+prawda|nie\s+zgadza\s+si[eę]|mylisz\s+si[eę]|pomyli[łl](?:e[śs]|a[śs])|przesadz(?:asz|i[łl]e[śs]|i[łl]a[śs])|are\s+you\s+sure|is\s+(?:that|it)\s+true|did\s+you\s+(?:check|verify|test))(?!\p{L})/iu
+
+// Kolejność to priorytet: „przejrzyj, czemu test pada” to review, nie debug, a „na pewno
+// test pada?” to dopytanie, nie debug.
 const PROMPT_KINDS: readonly [PromptKind, RegExp][] = [
+  ['verify', VERIFY],
   ['review', /(?<!\p{L})(?:review|przejrzyj|oceń|audyt\p{L}*|zrecenzuj|sprawdź kod)(?!\p{L})/iu],
   ['debug', /(?<!\p{L})(?:błąd|błęd\p{L}*|error|exception|crash\p{L}*|stack ?trace|nie działa|pada|padł\p{L}*|wywala|sypie|bug\p{L}*|robak\p{L}*|failing|failed)(?!\p{L})/iu],
   // Gołe „plan” bywa nazwą w robocie („pole plan”), więc tylko w prośbie o plan.
@@ -74,6 +81,7 @@ export function fromPerson(origin: { kind: string; asUser?: boolean } | undefine
 // Jedna linia formatu dla rodzaju prośby. Neutralna polszczyzna, bo to instrukcja.
 // Limit słów tnie wyjście, które kosztuje 5× więcej niż wejście; Morra może poprosić o więcej.
 export const FORMAT_HINT: Record<PromptKind, string> = {
+  verify: 'Format: dopytanie o pewność. Sprawdź, narzędziem gdy się da; potwierdź albo popraw z dowodem, nie przytakuj na ślepo.',
   review: 'Format: znaleziska od najpoważniejszego, z `plik:linia` i skutkiem; do 200 słów, pełny audyt dłużej. Brak uwag — wprost.',
   debug: 'Format: przyczyna → dowód (`plik:linia` albo komunikat dosłownie) → poprawka, do 120 słów. Hipoteza to hipoteza.',
   plan: 'Format: kroki ciągiem, ryzyko przy kroku, do 120 słów, na końcu jedno pytanie o zgodę.',
@@ -82,7 +90,7 @@ export const FORMAT_HINT: Record<PromptKind, string> = {
 }
 
 // Gdy rodzaju prośby nie widać: sam budżet długości.
-export const LENGTH_HINT = 'Długość: do 150 słów; nagłówki i listy tylko, gdy niosą treść. Więcej, gdy Morra prosi.'
+export const LENGTH_HINT = 'Długość: do 150 słów, warunki zostają; nagłówki i listy tylko, gdy niosą treść. Więcej, gdy Morra prosi.'
 
 // Linia formatu na tę turę; `null` dla pustego tekstu i komend.
 export function formatHint(text: string): string | null {
@@ -361,6 +369,7 @@ const MODE_WORDS: Record<string, KruxMode> = {
   kowal: 'kowal',
   sztolnia: 'sztolnia',
   czat: 'czat',
+  audyt: 'audyt',
 }
 
 export function parseCommand(args: string): KruxCommand {
@@ -407,6 +416,7 @@ export function modelNote(mode: KruxMode, on: boolean): string | null {
     case 'animacje':
     case 'kowal':
     case 'sztolnia':
+    case 'audyt':
       return null
   }
 }
@@ -428,6 +438,8 @@ export function userLine(mode: KruxMode, on: boolean): string {
       return on ? 'Sztolnia otwarta: plan, testy, horda i kontekst z boku transkryptu.' : 'Sztolnia zamknięta.'
     case 'czat':
       return on ? 'Czat włączony: awatary i nagłówki rozmowy.' : 'Czat wyłączony.'
+    case 'audyt':
+      return on ? 'Audyt włączony: przed końcem tury mały model sprawdza odpowiedź z wyjściem narzędzi.' : 'Audyt wyłączony.'
   }
 }
 
@@ -444,6 +456,7 @@ export const HELP = [
   '/krux kowal [on|off] — kowal także w spoczynku',
   '/krux sztolnia [on|off] — panel ze stanem roboty',
   '/krux czat [on|off] — rozmowa z awatarami',
+  '/krux audyt [on|off] — mały model sprawdza odpowiedź z wyjściem narzędzi',
   '/krux dziennik — karta dziennika narzędzi w Sztolni',
   '/krux zapisz <tekst> — dodaj notatkę do otwartych wątków',
   '/krux raport — raport dnia do wklejenia',

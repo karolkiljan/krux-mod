@@ -1,7 +1,7 @@
 import type { ClientModule } from 'claude-code'
 
 import type { KruxCue, KruxEvent, KruxMate, KruxMood, KruxSpeaker } from '../types'
-import { CATCH_X, CUE_FRAMES, DUET_FRAMES, DUET_GAP, FRAME_MS, MUGS, ORC_GAP, ORC_WIDTH, RISE_FRAMES, SILL_LIFT, SPEAKER_COLOR, TOAST_HELD, TOAST_RETURN, WALL_MIN, bandColumns, behind, bubbleAt, canvasColumns, carried, catchStep, caughtScroll, depthSpot, dayPhase, doorX, dress, duetPose, episodeKit, errandEnd, errandLegs, errandPose, errandSwap, farMugs, farPose, floorHomes, floorStart, frameGrid, hasHearth, headX, hearthProp, kitAt, kitReach, nextEpisode, paint, quartersDoor, roomGrid, runsOf, sameStation, sliceRuns, slotX, stageGrid, stationX, tossFlight, tossFrames, tossGrid, tossScroll, trackArrive, trackBare, trackCold, trackDozing, trackDue, trackFace, trackGrid, trackKit, trackLooping, trackOff, trackOut, trackResume, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withNap } from './sprites'
+import { CATCH_X, CUE_FRAMES, DUET_FRAMES, DUET_GAP, FRAME_MS, MUGS, ORC_GAP, ORC_WIDTH, RISE_FRAMES, SILL_LIFT, SPEAKER_COLOR, TALKING_DUETS, TOAST_HELD, TOAST_RETURN, WALL_MIN, bandColumns, behind, bubbleAt, canvasColumns, carried, catchStep, caughtScroll, depthSpot, dayPhase, doorX, dress, duetPose, episodeKit, errandEnd, errandLegs, errandPose, errandSwap, farMugs, farPose, floorHomes, floorStart, frameGrid, hasHearth, headX, hearthProp, kitAt, kitReach, nextEpisode, paint, quartersDoor, roomGrid, runsOf, sameStation, sliceRuns, slotX, stageGrid, stationX, tossFlight, tossFrames, tossGrid, tossScroll, trackArrive, trackBare, trackCold, trackDozing, trackDue, trackFace, trackGrid, trackKit, trackLooping, trackOff, trackOut, trackResume, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withGaze, withNap, withRegard, withTalk } from './sprites'
 import type { DuetKind, Episode, Face, Far, FloorOrc, Placed, Run, StageScene, Track } from './sprites'
 import { draw } from './stage'
 import type { Frame } from './stage'
@@ -133,19 +133,45 @@ function visitorOf(frame: number, last: KruxMate | undefined): KruxMate {
   return pool[hashOf(frame, 1) % pool.length]!
 }
 
-// Gość przychodzi z kuflami albo przybija piątkę, po zielonych zawsze piątkę. Nic nie pojawia
-// się w dłoniach samo: kufle gość przynosi z kwater, do piątki rekwizytu nie trzeba.
+// Gość przychodzi z kuflami albo przybija piątkę, po zielonych zawsze piątkę, a do Kruxa przy
+// ogniu czasem z opowieścią. Nic nie pojawia się w dłoniach samo: kufle gość przynosi z kwater,
+// do piątki i opowieści rekwizytu nie trzeba.
 function visitKind(krux: Actor, frame: number): DuetKind {
   if (krux.mood === 'proud') return 'highfive'
-  return hashOf(frame, 2) % 3 === 0 ? 'highfive' : 'toast'
+  const roll = hashOf(frame, 2) % 3
+  if (roll === 1 && krux.track.scene === 'watch') return 'tale'
+  return roll === 0 ? 'highfive' : 'toast'
 }
 
-// Para ze sporu walczy albo się kłóci, po zielonych przybija piątkę, inaczej podaje sobie sprzęt.
+// Para ze sporu walczy, kłóci się albo dyskutuje, po zielonych przybija piątkę. Przy stole (czytanie,
+// plan, dumanie, pisanie, pytanie) orkowie naradzają się nad mapą albo dyskutują; reszta podaje
+// sobie sprzęt, szermuje, opowiada, dyskutuje albo pokazuje sztabkę.
+const RIVAL_DUETS: readonly DuetKind[] = ['fence', 'argue', 'debate']
+const DESK_DUETS: readonly DuetKind[] = ['council', 'debate', 'council', 'tale']
+const FLOOR_DUETS: readonly DuetKind[] = ['fence', 'pass', 'tale', 'debate', 'show']
+
 function duetKind(host: Actor, guest: Actor, seed: number): DuetKind {
   if (host.mood === 'proud' || guest.mood === 'proud') return 'highfive'
   const rivals = host.face !== 'Krux' && host.face !== null && ROSTER[host.face].spar === guest.face
-  if (rivals) return seed % 2 === 0 ? 'fence' : 'argue'
-  return seed % 3 === 0 ? 'fence' : 'pass'
+  const desk = [host, guest].some(actor => sameStation(actor.worked, 'read'))
+  const pool = rivals ? RIVAL_DUETS : desk ? DESK_DUETS : FLOOR_DUETS
+  return pool[seed % pool.length]!
+}
+
+// Słuchacz zerka na mówcę klatkę po nowej linii i patrzy 1,5 s, ale tylko przy co drugiej linii
+// (los z linii i klucza widza): orkowie mają swoją robotę i nie gapią się na każde słowo.
+const LISTEN_DELAY = 1
+const LISTEN_FRAMES = 10
+
+function listens(line: string, key: string): boolean {
+  let hash = 7
+  for (const char of `${line}\u0000${key}`) hash = (Math.imul(hash, 31) + char.codePointAt(0)!) >>> 0
+  return (hash >>> 3) % 2 === 0
+}
+
+// Mówca rusza szczęką, póki dymek odsłania tekst; `talks` liczy klatki od początku linii.
+function withTalking(rows: string[], talks: number | undefined): string[] {
+  return talks === undefined ? rows : withTalk(rows, talks)
 }
 
 // Kumpel dalej niż tyle kolumn od Kruxa podchodzi ze zwojem, zamiast rzucać przez cały pas.
@@ -716,6 +742,36 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
     actors[key] = { ...actor, track: trackCold(actor.track, fireless, frame, true) }
     changed = true
   }
+  // Dymek odsłania tekst od klatki, w której zmienił się mówca albo tekst.
+  const saidId = props.bubble === null ? '' : `${props.bubble.key}:${props.bubble.text}`
+  const speech = state.said?.id === saidId ? state.said : { id: saidId, at: frame }
+  const typing = props.bubble !== null && (frame - speech.at + 1) * 3 < Math.min(40, graphemes(props.bubble.text).length)
+  // Horda się widzi i gada: mówca rusza szczęką, póki dymek odsłania tekst; widz zerka na orka
+  // w reakcji i wtóruje mu, Krux patrzy na kumpla, który rzuca mu zwój, a co druga nowa linia
+  // ściąga na chwilę wzrok słuchacza. Wszystko z tej klatki, bez zapisu stanu; w bezruchu nic.
+  const shown = (key: string): number | null => {
+    const actor = actors[key]
+    const at = actor === undefined ? null : placeOf(actor, frame, stage)
+    if (actor === undefined || at === null || at.depth > 0 || at.walking || waiting(actor, frame) || (actor.errand !== undefined && frame >= actor.errand.at)) return null
+    return at.x
+  }
+  const reactor = props.still ? undefined : Object.entries(actors)
+    .filter(([key, actor]) => actor.cue !== undefined && actor.cue.held === undefined && frame - actor.cue.at < CUE_FRAMES && !inDuet(key) && shown(key) !== null)
+    .sort(([, a], [, b]) => b.cue!.at - a.cue!.at)[0]
+  const thrower = Object.entries(actors).find(([, actor]) => actor.handoff !== undefined && frame >= actor.handoff.at && frame < actor.handoff.at + tossFrames(actor.handoff.flight))
+  const talker = !props.still && typing ? props.bubble!.key : null
+  const heard = props.bubble !== null && !props.still && (typing || !frozen) && frame - speech.at >= LISTEN_DELAY && frame - speech.at < LISTEN_DELAY + LISTEN_FRAMES ? props.bubble.key : null
+  // Dokąd patrzy widz z kolumny `x`: `regard`, gdy patrzy na cudzą reakcję i jej wtóruje.
+  const sightOf = (key: string, x: number): { dx: -1 | 1; regard?: { kind: KruxEvent; t: number } } | null => {
+    const toward = (to: number | null): -1 | 1 | null => (to === null || Math.abs(to - x) < 2 ? null : to > x ? 1 : -1)
+    if (reactor !== undefined && reactor[0] !== key) {
+      const dx = toward(shown(reactor[0]))
+      if (dx !== null) return { dx, regard: { kind: reactor[1].cue!.kind, t: frame - reactor[1].cue!.at } }
+    }
+    const target = key === 'krux' && thrower !== undefined ? thrower[0] : heard !== null && heard !== key && listens(speech.id, key) ? heard : null
+    const dx = target === null ? null : toward(shown(target))
+    return dx === null ? null : { dx }
+  }
   const placed: (Placed & { walking: boolean })[] = []
   const scrolls: Placed[] = []
   const loads: Placed[] = []
@@ -791,7 +847,9 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
     // Scenka gra obu; rekwizyt między nimi liczy się od gospodarza.
     if (duet !== undefined && duet.at !== null && (key === duet.guest || (key === duet.host && frame >= duet.at))) {
       const pose = duetPose(duet.kind, Math.max(0, frame - duet.at))
-      const rows = dress(key === duet.host ? pose.host : pose.guest, actor.face)
+      // Scenka z rozmową prowadzi usta sama: dymek nie otwiera drugiej paszczy naraz.
+      const talks = key === talker && !TALKING_DUETS.has(duet.kind) ? frame - speech.at : undefined
+      const rows = withTalking(dress(key === duet.host ? pose.host : pose.guest, actor.face), talks)
       headsAt[key] = headX(key === duet.host ? pose.host : pose.guest, key === duet.host ? at.x : at.x - 2)
       placed.push({ rows, x: key === duet.host ? at.x : at.x - 2, walking: false })
       if (key === duet.host && pose.prop.length > 0) loads.push({ rows: [...pose.prop], x: at.x })
@@ -809,7 +867,7 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
     }
     // Krux czeka na gościa przodem do niego: robota leży przy rekwizycie, nie w jego klatce.
     if (duet !== undefined && duet.at === null && key === duet.host && visiting(duet.guest) && !at.walking && frame >= actor.track.since) {
-      placed.push({ rows: dress(duetPose(duet.kind, 0).host, actor.face), x: at.x, walking: false })
+      placed.push({ rows: withTalking(dress(duetPose(duet.kind, 0).host, actor.face), key === talker ? frame - speech.at : undefined), x: at.x, walking: false })
       moving = true
       continue
     }
@@ -818,7 +876,7 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
     // ten trzyma gospodarz, a swój gość zostawił na ziemi.
     if (duet !== undefined && duet.at === null && key === duet.guest && (visiting(key) || frame >= actor.track.since) && at.depth === 0 && !at.walking) {
       const pose = duetPose(duet.kind, 0)
-      placed.push({ rows: dress(pose.guest, actor.face), x: at.x - 2, walking: false })
+      placed.push({ rows: withTalking(dress(pose.guest, actor.face), key === talker ? frame - speech.at : undefined), x: at.x - 2, walking: false })
       if (visiting(key) && pose.prop.length > 0) loads.push({ rows: [...pose.prop], x: at.x - DUET_GAP })
       moving = true
       continue
@@ -848,10 +906,16 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
       // Krux wyciąga dłoń po zwój kumpla; w tych klatkach się nie poci.
       const catching = key === 'krux' ? caught : null
       if (catching !== null) raw = withCatch(raw, catching)
+      // Widz cudzej reakcji wtóruje jej, Krux śledzi zwój, słuchacz zerka na mówcę. Kto sam
+      // reaguje, łapie albo rzuca, patrzy tam, gdzie każe mu jego klatka. Przed potem: kropla
+      // spływa po skroni tam, gdzie staje prawa pięść, i przerzucałaby ją co klatkę na lewą.
+      const sight = reacting || catching !== null || tossing ? null : sightOf(key, at.x)
+      if (sight !== null) raw = sight.regard === undefined ? withGaze(raw, sight.dx) : withRegard(raw, sight.regard.kind, sight.regard.t, sight.dx)
       if (actor.leftAt === null && !frozen && !reacting && catching === null && actor.workAt !== undefined) raw = withEffort(raw, frame - (actor.effortAt ?? frame))
       if (key === 'krux' && ((frozen && state.snoozing) || trackDozing(actor.track, frame))) raw = withNap(raw)
     }
-    const rows = at.walking ? walkerRows(frame, actor.face, leftward ? 'left' : 'right') : dress(raw, actor.face)
+    const talks = key === talker && actor.leftAt === null ? frame - speech.at : undefined
+    const rows = at.walking ? walkerRows(frame, actor.face, leftward ? 'left' : 'right', talks) : withTalking(dress(raw, actor.face), talks)
     if (!at.walking) headsAt[key] = headX(raw, at.x)
     if (tossing) {
       const scroll = tossScroll(frame - actor.handoff!.at, at.x + 6, kruxX + CATCH_X, actor.handoff!.flight)
@@ -869,9 +933,6 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
     placed.push({ rows, x: at.x, walking: at.walking })
   }
   // Zegar stoi, gdy płótno nieruchome i nikt nie maszeruje.
-  const saidId = props.bubble === null ? '' : `${props.bubble.key}:${props.bubble.text}`
-  const speech = state.said?.id === saidId ? state.said : { id: saidId, at: frame }
-  const typing = props.bubble !== null && (frame - speech.at + 1) * 3 < Math.min(40, graphemes(props.bubble.text).length)
   const idle = props.still || (frozen && !moving && !typing)
   if (changed || idle !== state.idle || speech !== state.said || state.reduced !== props.still || state.ground !== ground) {
     surface.setState({ frame, actors, idle, ground, said: speech, reduced: props.still, snoozing: idle ? state.snoozing : false, ...(laid ? { laidAt: frame } : state.laidAt === undefined ? {} : { laidAt: state.laidAt }), ...(duet === undefined ? {} : { duet }), ...(duetAt === undefined ? {} : { duetAt }), ...(visit === undefined ? {} : { visit }), visitDue: nextVisit, ...(visitor === undefined ? {} : { visitor }) })

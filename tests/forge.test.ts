@@ -5,7 +5,7 @@ import Forge from '../hooks/forge'
 import type { ForgeOrc, ForgeProps } from '../hooks/forge'
 import { CALM } from '../hooks/mood'
 import { MATES } from '../hooks/roster'
-import { ACTS, DUET_FRAMES, SPEAKER_COLOR, WALL_MIN, DUET_GAP, ERRAND_FRAMES, PALETTE, RISE_FRAMES, TOAST_RETURN, carried, doorX, errandEnd, errandPose, kitAt, kitReach, quartersDoor, routeOf, stationX, tossFrames, trackGrid } from '../hooks/sprites'
+import { ACTS, CUE_FRAMES, WINCE_TO, DUET_FRAMES, SPEAKER_COLOR, WALL_MIN, DUET_GAP, ERRAND_FRAMES, PALETTE, RISE_FRAMES, TOAST_RETURN, carried, doorX, errandEnd, errandPose, kitAt, kitReach, quartersDoor, routeOf, stationX, tossFrames, trackGrid } from '../hooks/sprites'
 import type { Track } from '../hooks/sprites'
 import { STAND, legAt, pad } from '../hooks/stage'
 import { drawHeadless, headless, svgOf } from '../hooks/vector'
@@ -1703,4 +1703,188 @@ test('a visit called just before the act changes puts down the kit the guest sta
     }
     expect([ahead, armed, played > 0]).toEqual([ahead, true, true])
   }
+})
+
+// ——— Horda się widzi i gada ———
+
+// Piksele w prostokącie orka na podłodze pokoju (wiersze 6–11), od jego lewej krawędzi.
+const orcPixels = (tree: unknown, x: number) => pixelsOf(tree).slice(6, 12).map(row => row.slice(x, x + ORC_W))
+const ORC_W = 22
+// Lewe oko orka w jego prostokącie: kolumna pierwszego czerwonego piksela w wierszu oczu; `null`, gdy zamknięte.
+const eyeOf = (pixels: (string | null)[][]) => {
+  for (const row of pixels) {
+    const eyes = row.flatMap((cell, x) => (cell === PALETTE.r ? [x] : []))
+    if (eyes.length === 2) return eyes[0]!
+  }
+  return null
+}
+// Otwarta paszcza: dwa ciemne piksele między kłami gdziekolwiek na płótnie.
+const mouthOpen = (tree: unknown) => pixelsOf(tree).some(row => row.some((cell, x) => cell === PALETTE.t && row[x + 1] === PALETTE.c && row[x + 2] === PALETTE.c && row[x + 3] === PALETTE.t))
+
+test('the speaker works its jaw while the bubble types and shuts it once the line is out', () => {
+  const text = 'Krux czytać zwój o kuźni hordy.'
+  const props: ForgeProps = { ...FLOOR, orcs: [{ ...KRUX, scene: 'read' }], bubble: { key: 'krux', text, speaker: 'Krux' } }
+  const { surface, tick } = surfaceOf()
+  const open: boolean[] = []
+  for (let i = 0; i < 16; i++) {
+    open.push(mouthOpen(draw(props, surface)))
+    tick()
+  }
+  // Odsłanianie trwa, póki 3 znaki na klatkę nie pokażą całej linii.
+  const typing = Math.ceil(text.length / 3) - 1
+  expect(open.slice(0, typing).some(Boolean)).toBe(true)
+  expect(open.slice(typing + 1).some(Boolean)).toBe(false)
+  // Bez dymka i w bezruchu usta stoją.
+  const quiet = surfaceOf()
+  for (let i = 0; i < 6; i++) { expect(mouthOpen(draw({ ...props, bubble: null }, quiet.surface))).toBe(false); quiet.tick() }
+  const still = surfaceOf()
+  for (let i = 0; i < 6; i++) { expect(mouthOpen(draw({ ...props, still: true }, still.surface))).toBe(false); still.tick() }
+})
+
+test('a reaction draws the eyes of the horde: Krux looks at Grom cheering green and winces at a crash', () => {
+  for (const [kind, wince] of [['test-pass', false], ['zawał', true]] as const) {
+    const base: ForgeProps = { ...FLOOR, orcs: [{ ...KRUX, scene: 'read' }, GROM] }
+    const calm = surfaceOf()
+    const loud = surfaceOf()
+    // Obaj stoją przy robocie: dopiero wtedy reakcja gra na miejscu, nie w drodze.
+    for (let i = 0; i < 140; i++) { draw(base, calm.surface); draw(base, loud.surface); calm.tick(); loud.tick() }
+    const cued: ForgeProps = { ...base, cues: [{ key: 'a1', kind, until: 9_000_000 }] }
+    const seen = loud.surface.state as Seen
+    expect([kind, seen.actors.a1!.errand, seen.actors.a1!.pending]).toEqual([kind, undefined, undefined])
+    const kruxX = seen.actors.krux!.home
+    // Grom kuje przy palenisku, z lewej od stołu Kruxa: tam Krux patrzy.
+    const side = Math.sign(seen.actors.a1!.home - kruxX)
+    expect(side).not.toBe(0)
+    const looks: (number | null)[][] = []
+    for (let i = 0; i < CUE_FRAMES; i++) {
+      const quiet = eyeOf(orcPixels(draw(base, calm.surface), kruxX))
+      const loudEye = eyeOf(orcPixels(draw(cued, loud.surface), kruxX))
+      looks.push([quiet, loudEye])
+      calm.tick()
+      loud.tick()
+    }
+    // Pierwsza klatka to start reakcji u Groma; potem Krux zamyka oczy przy zawale albo patrzy na Groma.
+    if (wince) expect([kind, looks[1]![1], looks[2]![1]]).toEqual([kind, null, null])
+    const after = looks.slice(WINCE_TO + 1, CUE_FRAMES).filter(([quiet, loudEye]) => quiet !== null && loudEye !== null && loudEye !== quiet)
+    expect([kind, after.length > 0]).toEqual([kind, true])
+    expect([kind, after.every(([quiet, loudEye]) => Math.sign(loudEye! - quiet!) === side)]).toEqual([kind, true])
+  }
+})
+
+test('a new line from a mate turns the head of a listener toward it now and then, never away', () => {
+  const base: ForgeProps = { ...FLOOR, orcs: [{ ...KRUX, scene: 'read' }, GROM] }
+  let turned = 0
+  for (const text of ['Grom kuć endpoint.', 'Grom czytać schemat.', 'Grom puszczać testy.', 'Grom ostrzyć API.', 'Grom hartować migrację.', 'Grom sprawdzać typy.']) {
+    const calm = surfaceOf()
+    const told = surfaceOf()
+    for (let i = 0; i < 140; i++) { draw(base, calm.surface); draw(base, told.surface); calm.tick(); told.tick() }
+    const said: ForgeProps = { ...base, bubble: { key: 'a1', text, speaker: 'Grom' } }
+    const { krux, a1 } = (told.surface.state as Seen).actors
+    const kruxX = krux!.home
+    const side = Math.sign(a1!.home - kruxX)
+    for (let i = 0; i < 16; i++) {
+      const quiet = eyeOf(orcPixels(draw(base, calm.surface), kruxX))
+      const heard = eyeOf(orcPixels(draw(said, told.surface), kruxX))
+      if (quiet !== null && heard !== null && heard !== quiet) {
+        expect([text, i, Math.sign(heard - quiet)]).toEqual([text, i, side])
+        // Zerka od drugiej klatki linii i najwyżej przez 1,5 s.
+        expect([text, i >= 1 && i <= 10]).toEqual([text, true])
+        turned += 1
+      }
+      calm.tick()
+      told.tick()
+    }
+  }
+  expect(turned).toBeGreaterThan(0)
+})
+
+test('two orcs at work sometimes trade a tale, and both go back to work after the laugh', () => {
+  const seen = surfaceOf()
+  const state = () => seen.surface.state as Seen
+  draw(pair, seen.surface)
+  const kinds = new Set<string>()
+  for (let i = 0; i < 1500 && !kinds.has('tale'); i++) {
+    seen.tick()
+    draw(pair, seen.surface)
+    if (state().duet !== undefined) kinds.add(state().duet!.kind)
+  }
+  expect(kinds.has('tale')).toBe(true)
+  const started = until(seen, pair, now => now.duet?.at !== null && now.duet?.at !== undefined, 200)
+  expect(started.duet!.kind).toBe('tale')
+  const done = until(seen, pair, now => now.duet === undefined, DUET_FRAMES + 40)
+  expect(done.duet).toBe(undefined)
+  const back = until(seen, pair, now => Object.values(now.actors).every(actor => actor.pending === undefined && actor.left === undefined), 300)
+  expect([back.actors.krux!.track.scene, back.actors.a1!.track.scene]).toEqual(['read', 'pick'])
+})
+
+test('Krux follows the mate who throws him the scroll with his eyes until he reaches out for it', () => {
+  const { surface, tick } = surfaceOf()
+  const working: ForgeProps = { ...FLOOR, orcs: [{ ...KRUX, scene: 'hammer' }, { ...NIUCH, scene: 'pick' }] }
+  draw(working, surface)
+  const done: ForgeProps = { ...FLOOR, cues: [{ key: 'a1', kind: 'handoff', until: 4000 }] }
+  draw(done, surface)
+  const { handoff } = (surface.state as Seen).actors.a1!
+  const kruxX = (surface.state as Seen).actors.krux!.home
+  // Do klatki, w której Krux wyciąga dłoń (rzut: 4 klatki zamachu, lot, potem chwyt).
+  const reach = handoff!.at + 4 + handoff!.flight - 1
+  const looks: number[] = []
+  while ((surface.state as Seen).frame < reach) {
+    const frame = (surface.state as Seen).frame
+    const pixels = orcPixels(draw(done, surface), kruxX)
+    if (frame >= handoff!.at) {
+      // Czubek głowy: pierwszy wiersz z czterema pikselami skóry; oko w wierszu pod nim.
+      const top = pixels.findIndex(row => row.some((_, x) => [0, 1, 2, 3].every(dx => row[x + dx] === PALETTE.g)))
+      const crown = pixels[top]!.findIndex((_, x) => [0, 1, 2, 3].every(dx => pixels[top]![x + dx] === PALETTE.g))
+      const eye = pixels[top + 1]!.findIndex(cell => cell === PALETTE.r)
+      if (eye >= 0) looks.push(eye - crown)
+    }
+    tick()
+  }
+  // Kumpel podszedł z prawej: źrenice przy prawym brzegu oka, piksel za czubkiem.
+  expect(looks.length).toBeGreaterThan(0)
+  expect(new Set(looks)).toEqual(new Set([1]))
+})
+
+// Dyskusja prowadzi usta sama: nowa linia gościa w dymku nie otwiera drugiej paszczy, gdy mówi gospodarz.
+test('in a debate a new line in the bubble never opens a second mouth while the other orc talks', () => {
+  const openMouths = (tree: unknown) => pixelsOf(tree).reduce((count, row) => count + row.filter((cell, x) => cell === PALETTE.t && row[x + 1] === PALETTE.c && row[x + 2] === PALETTE.c && row[x + 3] === PALETTE.t).length, 0)
+  const seen = surfaceOf()
+  const state = () => seen.surface.state as Seen & { frame: number }
+  draw(pair, seen.surface)
+  for (let i = 0; i < 6000 && !(state().duet?.kind === 'debate' && state().duet?.at === state().frame); i++) { seen.tick(); draw(pair, seen.surface) }
+  const duet = state().duet!
+  expect([duet.kind, duet.at]).toEqual(['debate', state().frame])
+  const told: ForgeProps = { ...pair, bubble: { key: duet.guest, text: 'Niuch węszyć w logach serwera.', speaker: 'Niuch' } }
+  let talked = 0
+  for (let t = 0; t < 20; t++) {
+    const open = openMouths(draw(t < 3 ? pair : told, seen.surface))
+    expect([t, open <= 1]).toEqual([t, true])
+    talked += open
+    seen.tick()
+  }
+  // Gospodarz dalej mówi swoją kolejkę: paszcza się otwiera, tylko nie dwie naraz.
+  expect(talked).toBeGreaterThan(0)
+})
+
+test('orcs at the table hold councils and debates, orcs on the floor also show off a bar', () => {
+  const kindsOf = (props: ForgeProps, limit: number) => {
+    const seen = surfaceOf()
+    draw(props, seen.surface)
+    const kinds = new Set<string>()
+    for (let i = 0; i < limit; i++) {
+      seen.tick()
+      draw(props, seen.surface)
+      const duet = (seen.surface.state as Seen).duet
+      if (duet !== undefined) kinds.add(duet.kind)
+    }
+    return kinds
+  }
+  // Krux przy stole: narada i dyskusja, czasem opowieść; bez szermierki i podawania stali.
+  const desk = kindsOf(pair, 2500)
+  expect([desk.has('council'), desk.has('debate')]).toEqual([true, true])
+  for (const kind of desk) expect(['council', 'debate', 'tale']).toContain(kind)
+  // Obaj przy kuźni i w sztolni: sprzęt, szermierka, opowieść, dyskusja albo pokaz sztabki.
+  const floor = kindsOf({ ...FLOOR, orcs: [{ ...KRUX, scene: 'hammer' }, { ...NIUCH, scene: 'pick' }] }, 3000)
+  expect(floor.has('show')).toBe(true)
+  for (const kind of floor) expect(['fence', 'pass', 'tale', 'debate', 'show']).toContain(kind)
 })

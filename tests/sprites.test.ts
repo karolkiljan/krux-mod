@@ -3,9 +3,9 @@ import { expect, test } from 'claude-code/testing'
 import { GESTURES, headOf } from '../hooks/fidget'
 import { MATE_APRONS } from '../hooks/palette'
 import { MATES } from '../hooks/roster'
-import { ACTS, BUBBLE_TEXT, WALL_MIN, WALL_ROOMY, depthSpot, wallSpans, errandPose, farPose, CATCH_X, DUET_FRAMES, DUET_GAP, carried, doorX, dayPhase, duetPose, floorHomes, kitAt, kitReach, quartersDoor, roomGrid, hasHearth, stationX, CUE_FRAMES, FRAME_MS, HOLD_FRAMES, actsFor, routeOf, trackDozing, trackFace, ORC_GAP, ORC_WIDTH, PALETTE, bandColumns, behind, bubbleLines, canvasColumns, catchStep, caughtScroll, dress, frameGrid, forgeColumns, runsOf, slotX, stageGrid, tossFrames, trackGrid, trackOff, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withNap } from '../hooks/sprites'
+import { ACTS, BUBBLE_TEXT, WALL_MIN, WALL_ROOMY, depthSpot, wallSpans, errandPose, farPose, CATCH_X, DUET_FRAMES, DUET_GAP, carried, doorX, dayPhase, duetPose, floorHomes, kitAt, kitReach, quartersDoor, roomGrid, hasHearth, stationX, CUE_FRAMES, FRAME_MS, HOLD_FRAMES, actsFor, routeOf, trackDozing, trackFace, ORC_GAP, ORC_WIDTH, PALETTE, bandColumns, behind, bubbleLines, canvasColumns, catchStep, caughtScroll, dress, frameGrid, forgeColumns, runsOf, slotX, stageGrid, tossFrames, trackGrid, trackOff, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withGaze, withNap, withRegard, withTalk, CHEER_FROM, CHEER_TO, WINCE_TO } from '../hooks/sprites'
 import type { DayPhase, StageScene } from '../hooks/sprites'
-import { H, STAND, W, actFrame, entryOf, head, kitLead, legAt, moodOf, pad, settleFrames, stander } from '../hooks/stage'
+import { H, STAND, W, actFrame, draw, entryOf, head, kitLead, legAt, moodOf, pad, settleFrames, stander } from '../hooks/stage'
 import type { Frame } from '../hooks/stage'
 
 test('every forge frame is a rectangle and two pixels make one cell', async () => {
@@ -441,12 +441,14 @@ test('the window shows the sky of the hour, and the room has no background', () 
 })
 
 test('duet poses stay in the palette, keep both eyes and open with the partner in reach', () => {
-  for (const kind of ['fence', 'pass', 'highfive', 'argue', 'toast'] as const) {
+  for (const kind of ['fence', 'pass', 'highfive', 'argue', 'toast', 'tale', 'debate', 'council', 'show'] as const) {
     for (let t = 0; t < DUET_FRAMES; t += 1) {
       const { host, guest, prop } = duetPose(kind, t)
       for (const rows of [host, guest, prop]) expect([...rows.join('')].every(cell => cell === '.' || PALETTE[cell] !== undefined)).toBe(true)
-      expect(host.join('').split('r').length - 1).toBe(2)
-      expect(guest.join('').split('r').length - 1).toBe(2)
+      // Oczy otwarte (czerwone albo złote z dumy), poza rechotem w opowieści: wtedy obaj mają je zamknięte.
+      const open = kind === 'tale' && t >= 18 && t < 30 ? 0 : 2
+      const eyes = (rows: readonly string[]) => [...rows.join('')].filter(cell => cell === 'r' || cell === 'y').length
+      expect([kind, t, eyes(host), eyes(guest)]).toEqual([kind, t, open, open])
     }
   }
   expect(duetPose('fence', 0).prop.join('')).toContain('s')
@@ -1183,4 +1185,178 @@ test('the candle goes down from the hand, and the book comes out from behind the
 test('the map hangs under the top bar of the easel, which stays in sight', () => {
   const easel = actNamed('plan', 'sztaluga')
   for (let t = 0; t < easel.length; t += 1) expect([t, pad(easel.loop(t, t))[0]!.slice(9, 19)]).toEqual([t, 'h'.repeat(10)])
+})
+
+// ——— Horda się widzi i gada ———
+
+test('a speaker works its jaw between the fangs: wide, a slit, shut, and nothing else moves', () => {
+  const rows = pad(STAND)
+  expect(withTalk(rows, 0)[2]!.slice(0, 6)).toBe('.tcct.')
+  expect(withTalk(rows, 1)[2]!.slice(0, 6)).toBe('.tGGt.')
+  expect(withTalk(rows, 2)).toEqual(rows)
+  expect(withTalk(rows, 3)).toEqual(withTalk(rows, 0))
+  // Tylko dwa piksele ust: oczy, fartuch i reszta klatki zostają.
+  for (const t of [0, 1]) {
+    const talked = withTalk(rows, t)
+    const changed = rows.flatMap((row, y) => [...row].flatMap((cell, x) => (talked[y]![x] === cell ? [] : [[x, y]])))
+    expect(changed).toEqual([[2, 2], [3, 2]])
+  }
+  // Szczęka idzie za głową: ork w marszu też mówi, a bez kłów usta stoją.
+  expect(walkerRows(4, 'Grom', 'left', 0).join('')).toContain('tcct')
+  expect(walkerRows(4, 'Grom', 'left')).toEqual(walkerRows(4, 'Grom', 'left', 2))
+  expect(withTalk(['......', 'gggggg'], 0)).toEqual(['......', 'gggggg'])
+})
+
+test('talking keeps both eyes, the apron and the palette in every pose of every act', { timeoutMs: 30_000 }, () => {
+  for (const [scene, acts] of Object.entries(ACTS)) {
+    for (const act of acts) {
+      for (const frame of framesOf(act)) {
+        const rows = pad(frame)
+        const eyes = [...rows.join('')].filter(cell => cell === 'r').length
+        for (const t of [0, 1]) {
+          const talked = withTalk(rows, t)
+          const changed = rows.flatMap((row, y) => [...row].flatMap((cell, x) => (talked[y]![x] === cell ? [] : [cell])))
+          expect([scene, act.name, t, [...talked.join('')].filter(cell => cell === 'r').length, talked.join('').includes('b')]).toEqual([scene, act.name, t, eyes, true])
+          // Zmieniają się tylko usta, i to tylko skóra między kłami.
+          expect([scene, act.name, t, changed.length <= 2 && changed.every(cell => cell === 'g' || cell === 'G')]).toEqual([scene, act.name, t, true])
+        }
+      }
+    }
+  }
+})
+
+// Kropla potu spływa w kolumnie prawej pięści. Pas kładzie pot po spojrzeniu i tylko na wolne tło,
+// więc pięść nie przeskakuje przez kroplę na lewą stronę ani nie pojawia się nagle czterema pikselami.
+test('sweat laid after the cheer keeps the fist on its side and never covers it', () => {
+  for (const base of [pad(STAND), pad(draw([stander('mid'), 2, 0]))]) {
+    const sides = new Set<number>()
+    for (let t = CHEER_FROM; t <= CHEER_TO; t++) {
+      const cheer = withRegard(base, 'test-pass', t, -1)
+      const seen = withEffort(cheer, 70 + t)
+      // Pot nie zjada pięści: każdy piksel pięści zostaje skórą.
+      const fist = cheer.flatMap((row, y) => [...row].flatMap((cell, x) => (cell === 'g' && base[y]![x] === '.' ? [[x, y] as const] : [])))
+      expect([t, fist.every(([x, y]) => seen[y]![x] === 'g')]).toEqual([t, true])
+      for (const [x] of fist) sides.add(x)
+    }
+    expect(sides.size).toBe(1)
+  }
+})
+
+test('a bystander looks toward a reaction, cheers a green one with a fist and winces at a red one', () => {
+  const rows = pad(STAND)
+  const eyesAt = (frame: readonly string[]) => [...frame[1]!].flatMap((cell, x) => (cell === 'r' ? [x] : []))
+  expect(eyesAt(withGaze(rows, 1))).toEqual([2, 5])
+  expect(eyesAt(withGaze(rows, -1))).toEqual([0, 3])
+  // Z drugiej strony oka wzrok przechodzi całą drogę, nie staje w połowie.
+  expect(eyesAt(withGaze(pad(stander('right')), -1))).toEqual([0, 3])
+  for (const kind of ['test-pass', 'build-pass', 'commit'] as const) {
+    expect(withRegard(rows, kind, CHEER_FROM - 1, -1)).toEqual(withGaze(rows, -1))
+    for (let t = CHEER_FROM; t <= CHEER_TO; t++) {
+      const cheer = withRegard(rows, kind, t, -1)
+      // Pięść po prawej, na tle, w kolumnie za tułowiem; złote oczy dumy w stronę reagującego.
+      const gold = [...cheer[1]!].flatMap((cell, x) => (cell === 'y' ? [x] : []))
+      expect([kind, t, cheer[3]![6], cheer[2]![6], eyesAt(cheer), gold]).toEqual([kind, t, 'g', 'g', [], [0, 3]])
+    }
+    expect(withRegard(rows, kind, CHEER_TO + 1, 1)).toEqual(withGaze(rows, 1))
+  }
+  for (const kind of ['test-fail', 'build-fail', 'zawał', 'tear'] as const) {
+    for (let t = 1; t <= WINCE_TO; t++) expect([kind, t, eyesAt(withRegard(rows, kind, t, 1))]).toEqual([kind, t, []])
+    expect([kind, eyesAt(withRegard(rows, kind, WINCE_TO + 1, 1))]).toEqual([kind, [2, 5]])
+  }
+  // Rekwizyt w dłoni zostaje rekwizytem: na zajętym tle pięści nie ma, zostaje spojrzenie.
+  const holding = pad(stander('mid', 'gg'))
+  expect(withRegard(holding, 'commit', CHEER_FROM + 2, 1)).toEqual(moodOf(withGaze(holding, 1), 'proud', false))
+  // Z rekwizytem po prawej pięść idzie w górę po lewej, gdy tam jest tło.
+  const aside = pad(draw([stander('mid', 'gg'), 2, 0]))
+  const left = withRegard(aside, 'commit', CHEER_FROM + 2, 1)
+  // Lewa pięść staje najwyżej w wierszu oczu: w wierszu czubka `dress` wziąłby ją za głowę.
+  expect([0, 1, 2, 3].map(y => left[y]![1])).toEqual(['.', 'g', 'g', 'g'])
+  expect(left[3]!.slice(8, 10)).toBe('gg')
+  for (const face of MATES) expect([face, dress(left, face)[0]!.search(/[^.]/u)]).toEqual([face, dress(aside, face)[0]!.search(/[^.]/u)])
+  // Leżący na szezlongu nie zrywa się do pięści.
+  const lying = pad(ACTS.lounge.find(act => act.name === 'szezlong')!.loop(0, 0))
+  expect(withRegard(lying, 'commit', CHEER_FROM + 2, 1)).toEqual(moodOf(withGaze(lying, 1), 'proud', false))
+})
+
+test('a reaction seen from the side keeps the frame rules in every pose of every act', { timeoutMs: 30_000 }, () => {
+  for (const [scene, acts] of Object.entries(ACTS)) {
+    for (const act of acts) {
+      for (const frame of framesOf(act)) {
+        const rows = pad(frame)
+        for (const [kind, t] of [['commit', CHEER_FROM + 2], ['test-fail', 1], ['zawał', 5]] as const) {
+          for (const dx of [-1, 1] as const) {
+            const seen = withRegard(rows, kind, t, dx)
+            const eyes = [...seen.join('')].filter(cell => cell === 'r').length
+            expect([scene, act.name, kind, dx, eyes === 0 || eyes === 2, seen.join('').includes('b'), seen.every(row => row.length === W)]).toEqual([scene, act.name, kind, dx, true, true, true])
+            expect([scene, act.name, kind, [...seen.join('')].every(cell => cell === '.' || PALETTE[cell] !== undefined)]).toEqual([scene, act.name, kind, true])
+            // Rekwizyt i fartuch zostają: zmienia się tylko skóra, oczy i wolne tło.
+            const moved = rows.flatMap((row, y) => [...row].flatMap((cell, x) => (seen[y]![x] === cell ? [] : [cell])))
+            expect([scene, act.name, kind, moved.every(cell => 'grG.y'.includes(cell))]).toEqual([scene, act.name, kind, true])
+          }
+        }
+      }
+    }
+  }
+})
+
+test('a tale: the guest talks with its hands, the host gapes at the big catch, then both laugh slapping their thighs', () => {
+  const crown = (rows: readonly string[]) => { const y = rows.findIndex(row => /[gG]{4}/u.test(row)); return [y, rows[y]!.search(/[gG]{4}/u)] }
+  const eyes = (rows: readonly string[]) => [...rows.join('')].filter(cell => cell === 'r').length
+  const mouths = new Set<string>()
+  for (let t = 0; t < DUET_FRAMES; t++) {
+    const { host, guest, prop } = duetPose('tale', t)
+    // Bez rekwizytu, a gość stoi w tych samych kolumnach co w każdej scence: nic nie skacze.
+    expect([t, prop.length, crown(guest), crown(host)]).toEqual([t, 0, [0, 3], [0, 1]])
+    const laughing = t >= 18 && t < 30
+    expect([t, eyes(host), eyes(guest)]).toEqual([t, laughing ? 0 : 2, laughing ? 0 : 2])
+    mouths.add(guest[2]!.slice(3, 7))
+    // „Taka ruda!”: gość rozkłada ręce, gospodarzowi opada szczęka.
+    if (t >= 12 && t < 18) expect([t, guest[3], host[2]!.slice(0, 6)]).toEqual([t, 'ggbbbbbbgg', '.tGGt.'])
+    // Dłoń klepie udo tuż przy ciele: przy biodrze albo na nodze, bez wiszącego piksela.
+    if (laughing) expect([t, host[3]![6] === 'g' || host[4]![5] === 'g', guest[3]![1] === 'g' || guest[4]![2] === 'g']).toEqual([t, true, true])
+  }
+  expect([...mouths].sort()).toEqual(['tGGt', 'tcct', 'tggt'])
+})
+
+// Rekwizyt scenki w kolumnach od lewej krawędzi gospodarza; gość stoi od kolumny DUET_GAP - 2.
+const propAt = (prop: readonly string[], x: number, y: number) => pad(prop)[y]![x]
+const mouthOpen = (rows: readonly string[]) => rows.some(row => /tcct/u.test(row))
+
+test('a debate takes turns: one talks with its hands while the other listens, and it ends in a shaken hand', () => {
+  for (let t = 0; t < DUET_FRAMES; t++) {
+    const { host, guest, prop } = duetPose('debate', t)
+    // Nigdy nie mówią naraz: dyskusja to kolejka, nie kłótnia.
+    expect([t, mouthOpen(host) && mouthOpen(guest)]).toEqual([t, false])
+    if (t >= 10 && t < 18) expect([t, mouthOpen(host)]).toEqual([t, false])
+    if (t >= 24 && t < 30) {
+      // Ręce obu sięgają do środka, a dłonie w uścisku są raz wyżej, raz niżej.
+      expect([t, host[3]!.slice(6, 8), guest[3]!.slice(0, 2), propAt(prop, 8, 3), propAt(prop, 11, 3)]).toEqual([t, 'gg', 'gg', 'g', 'g'])
+      expect([t, propAt(prop, 9, t % 2 === 0 ? 3 : 2)]).toEqual([t, 'g'])
+    } else expect([t, prop.length]).toEqual([t, 0])
+  }
+  const spoken = (from: number, to: number, side: 'host' | 'guest') => Array.from({ length: to - from }, (_, k) => mouthOpen(duetPose('debate', from + k)[side])).some(Boolean)
+  expect([spoken(2, 10, 'host'), spoken(10, 18, 'guest'), spoken(18, 22, 'host')]).toEqual([true, true, true])
+})
+
+test('a council unrolls the map out of the host’s apron, both point at it, the guest gets the idea, and the map rolls back', () => {
+  const pixels = (t: number) => pad(duetPose('council', t).prop).join('').replace(/\./gu, '').length
+  // Mapa rośnie i maleje po kawałku: jeden piksel zwoju, zwój, pół mapy, cała.
+  expect([0, 1, 2, 3, 27, 28, 29, 30, 31].map(pixels)).toEqual([1, 3, 8, 12, 12, 8, 3, 1, 0])
+  for (let t = 3; t < 28; t++) expect([t, pixels(t) >= 12, pad(duetPose('council', t).prop).join('').includes('d')]).toEqual([t, true, true])
+  // Najpierw palcem pokazuje gospodarz, potem gość; palec nad mapą, nie na niej.
+  expect([propAt(duetPose('council', 6).prop, 11, 1), pad(duetPose('council', 6).host)[1]![8]]).toEqual(['.', 'g'])
+  expect([propAt(duetPose('council', 14).prop, 11, 1), pad(duetPose('council', 14).host)[1]![8]]).toEqual(['g', '.'])
+  // „Aha!”: gość błyska złotymi oczami z ręką w górę.
+  expect(duetPose('council', 25).guest.join('')).toContain('y')
+  expect(duetPose('council', 22).guest.join('')).not.toContain('y')
+})
+
+test('a show brings the bar out of the guest’s apron, the host weighs it, approves and the bar goes back', () => {
+  const bar = (t: number) => pad(duetPose('show', t).prop).join('').replace(/\./gu, '').length
+  expect([0, 1, 4, 25, 26, 29, 30].map(bar)).toEqual([1, 2, 2, 2, 2, 1, 0])
+  // Uniesiona sztabka błyska, gość się chwali, gospodarz waży z dłonią przy brodzie, potem uznaje.
+  expect(pad(duetPose('show', 6).prop)[0]!.slice(10, 12)).toMatch(/^(?:jS|Sy|Sj|yS)$/u)
+  expect(mouthOpen(duetPose('show', 6).guest) || mouthOpen(duetPose('show', 7).guest) || mouthOpen(duetPose('show', 8).guest)).toBe(true)
+  expect(pad(duetPose('show', 15).host)[2]!.slice(0, 6)).toBe('.tGGtg')
+  expect([duetPose('show', 22).host.join('').includes('y'), pad(duetPose('show', 22).host)[1]![7]]).toEqual([true, 'g'])
 })
