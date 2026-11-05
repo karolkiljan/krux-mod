@@ -119,10 +119,10 @@ test('status distinguishes automatic konkret from a manual mode and keeps the ot
 
 test('sections follow the plugin order: persona, konkret, flow', async () => {
   const texts = { persona: 'P', konkret: 'K', flow: 'F' }
-  const all = personaSections({ persona: true, konkret: true, flow: true, animacje: false, kowal: false, sztolnia: false, czat: true }, texts)
+  const all = personaSections({ persona: true, konkret: true, flow: true, animacje: false, kowal: false, sztolnia: false, czat: true, audyt: false }, texts)
   expect(all.map(section => section.id)).toEqual(['krux-mod:persona', 'krux-mod:konkret', 'krux-mod:flow'])
   expect(all.every(section => section.scope === 'session')).toBe(true)
-  expect(personaSections({ persona: false, konkret: false, flow: false, animacje: true, kowal: true, sztolnia: false, czat: true }, texts)).toEqual([])
+  expect(personaSections({ persona: false, konkret: false, flow: false, animacje: true, kowal: true, sztolnia: false, czat: true, audyt: true }, texts)).toEqual([])
 })
 
 test('the anchor keeps the plugin budget of 1000 characters', async () => {

@@ -23,12 +23,20 @@ function clip(text: string, limit: number): string {
   return text.length > limit ? `${text.slice(0, limit - 1)}…` : text
 }
 
+// Wynik komendy ma sedno na końcu (podsumowanie testów, błąd budowania), więc z długiego zostaje
+// początek i dłuższy koniec, inaczej audytor nie widziałby wyniku, który odpowiedź cytuje.
+function clipEnds(text: string, limit: number): string {
+  if (text.length <= limit) return text
+  const head = Math.floor(limit / 3)
+  return `${text.slice(0, head)}\n…\n${text.slice(text.length - (limit - head - 3))}`
+}
+
 export function evidenceOf(messages: readonly HistoryMessage[], facts: string | null): string {
   const calls = messages.flatMap(message => message.toolUses).reverse()
   const parts: string[] = facts === null ? [] : [facts]
   let used = parts.join('').length
   for (const call of calls) {
-    const entry = `${call.tool} ${clip(JSON.stringify(call.input ?? {}), INPUT_CHARS)}${call.isError === true ? ' [błąd]' : ''}:\n${clip(call.text ?? '', RESULT_CHARS)}`
+    const entry = `${call.tool} ${clip(JSON.stringify(call.input ?? {}), INPUT_CHARS)}${call.isError === true ? ' [błąd]' : ''}:\n${clipEnds(call.text ?? '', RESULT_CHARS)}`
     if (used + entry.length > EVIDENCE_CHARS) break
     parts.push(entry)
     used += entry.length

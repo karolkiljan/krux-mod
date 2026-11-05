@@ -17,14 +17,34 @@ const SOFT = /\?|(?<!\p{L})(?:hipotez\p{L}*|niesprawdz\p{L}*|nie\s+sprawdz\p{L}*
 // Porażka w tym samym zdaniu: to relacja z czerwonego przebiegu albo zdanie mieszane, nie „zielono”.
 const RED = /(?<!\p{L})(?:nie\s+(?:przechodz|przej|zielon|pass|wypchn|push)\p{L}*|pad\p{L}*|fail\p{L}*|czerwon\p{L}*|smr[oó]d\p{L}*|robak\p{L}*|błęd\p{L}*|błąd|error\p{L}*|odrzuc\p{L}*|rejected|authentication)(?!\p{L})/iu
 
+// Koniec członu: kwestia stoi sama albo za nią idzie spójnik czy przyimek, nie rzeczownik.
+const CLAUSE_END = String.raw`(?=\s*(?:$|[,.;:!)\]—–])|\s+(?:i|a|oraz|ale|bo|bez|od|po|jak|w|we|na|u|z|ze|do|in|on|and|but)(?!\p{L}))`
+// „Zielone” i „green” mówią o wyniku tylko na końcu członu: „testy zielone.”, „52 zielone, 0 padać”;
+// „zielony kolor” i „2 zielone przyciski” to przymiotnik przy rzeczowniku, nie przebieg.
+// „Przechodzi przez gałęzie” i „przechodzi do kroku” to ruch, nie przejście testu.
+const PASS_VERB = String.raw`(?:(?:przechodz\p{L}*|przesz(?:ł|edł)\p{L}*)(?!\p{L})(?!\s+(?:przez|do)(?!\p{L}))|(?:przejść|przejdą|przejdzie|pass(?:ed|es|ing)?|śpiew\p{L}*)(?!\p{L})|(?:zielon\p{L}*|green)(?!\p{L})${CLAUSE_END})`
+// Podmiot to rzeczownik: „testowy przycisk” ani „zestawienie” nie mówią o przebiegu.
 const TESTS_GREEN = [
-  /(?<!\p{L})(?:test\p{L}*|kanar\p{L}*|suite|zestaw\p{L}*)(?=[^.!\n]{0,40}?(?<!\p{L})(?:przechodz\p{L}*|przeszł\p{L}*|przej[śd]\p{L}*|zielon\p{L}*|pass(?:ed|es|ing)?|green|śpiew\p{L}*)(?!\p{L}))/iu,
-  /(?<!\p{L})(?:wszystko|całość)\s+zielon\p{L}*/iu,
+  new RegExp(String.raw`(?<!\p{L})(?:test(?:y|ów|u|s)?|kanar\p{L}*|suite|zestaw\p{L}*\s+test\p{L}*)(?!\p{L})(?=[^.!\n]{0,40}?(?<!\p{L})${PASS_VERB})`, 'iu'),
+  new RegExp(String.raw`(?<!\p{L})(?:wszystko|całość)\s+zielon\p{L}*(?!\p{L})${CLAUSE_END}`, 'iu'),
 ]
-const PUSHED = /(?<!\p{L})(?:wypchn\p{L}*|pushed|push\p{L}*\s+(?:poszedł|poszło|przeszedł|zrobion\p{L}*|gotow\p{L}*|iść|pójść))(?!\p{L})/iu
+// Wypchnięcie jako fakt: imiesłów i czas przeszły („gałąź wypchnięta”, „wypchnął”), orkowe „już
+// wypchnąć” i „pushed”. Rzeczownik („do wypchnięcia”) i goły bezokolicznik („wypchnąć teraz czy po
+// review”) to propozycja: ta pada właśnie wtedy, gdy commity czekają.
+const PUSHED = /(?<!\p{L})(?:wypchnięt[aeoyi]\p{L}*|wypchn(?:ął|ęł)\p{L}*|już\s+(?:wypchn\p{L}*|push\p{L}*)|(?<!(?:not|n't|be)\s+(?:yet\s+)?(?:been\s+)?)pushed|push\p{L}*\s+(?:poszedł|poszło|przeszedł|przeszło|zrobion\p{L}*))(?!\p{L})/iu
 const CLEAN = /(?<!\p{L})(?:(?:drzewo|working\s+tree|repo)\s+(?:czyst\p{L}*|clean)|nothing\s+to\s+commit|wszystko\s+zacommitowan\p{L}*|brak\s+(?:niezacommitowanych\s+zmian|zmian\s+(?:do\s+commita|w\s+drzewie)))(?!\p{L})/iu
-// Liczba przeszłych w twierdzeniu („52 przejść”, „52 passed”, „52/52 zielone”) do porównania z przebiegiem.
-const PASSED_COUNT = /(?<!\p{L}|\d)(\d+)\s*(?:(?:\/|na|z)\s*\d+\s*)?(?:test\p{L}*\s+)?(?:przechodz\p{L}*|przeszł\p{L}*|przej[śd]\p{L}*|zielon\p{L}*|passed|pass(?:es|ing)?)(?!\p{L})/iu
+// Liczba przeszłych w twierdzeniu do porównania z przebiegiem: z rzeczownikiem testu albo z proporcją
+// („52 testy przechodzą”, „52 na 52 przejść”, „50/52 zielone”) w każdym zdaniu…
+const PASSED_COUNT = new RegExp(String.raw`(?<!\p{L}|\d)(\d+)\s*(?:(?:\/|na|z)\s*\d+\s*(?:test\p{L}*\s+)?|test\p{L}*\s+)${PASS_VERB}`, 'iu')
+// …a goła liczba przy czasowniku („51 przejść, 1 padać”) tylko przed znakiem przestankowym i w zdaniu
+// o testach, bo „wersja 2 przechodzi na fetch” i „po 1 przejściu pętli” to nie przebieg.
+const PASSED_BARE = new RegExp(String.raw`(?<!\p{L}|\d)(\d+)\s+${PASS_VERB}(?=\s*(?:$|[,.;:!)\]—–]))`, 'iu')
+const TEST_TALK = /(?<!\p{L})(?:test\p{L}*|suite)(?!\p{L})|(?<!\p{L}|\d)\d+\s+(?:pad\p{L}*|fail\p{L}*|czerwon\p{L}*|smr[oó]d\p{L}*)(?!\p{L})/iu
+
+function passedCount(sentence: string): number | null {
+  const match = sentence.match(PASSED_COUNT) ?? (TEST_TALK.test(sentence) ? sentence.match(PASSED_BARE) : null)
+  return match === null ? null : Number(match[1])
+}
 
 // Zdania mowy do Morry: bez bloków kodu, kodu w linii, cytatów i wierszy cytatu `>` (tam wolno
 // przytoczyć cudze „testy przechodzą”).
@@ -56,19 +76,24 @@ function commandOf(command: string): string {
 }
 
 // Rozjazdy odpowiedzi z faktami sesji, po jednym zdaniu na rozjazd; pusta lista: nic do poprawki.
+// Mod widzi tylko przebiegi z Bash na pierwszym planie (Krux i kumple): przebieg w tle zna dopiero
+// model, więc powód mówi, czego mod nie widział, a nie, że testów nie było.
 export function mismatches(answer: string, facts: Facts): string[] {
   const sentences = sentencesOf(answer)
   const found: string[] = []
   const green = claim(sentences, TESTS_GREEN)
   const run = facts.board.test
   if (green !== null) {
-    if (run === null) found.push(`„${cut(green)}", a w tej sesji żaden przebieg testów nie wrócił z wynikiem`)
-    else if (!run.ok) found.push(`„${cut(green)}", a ostatni przebieg (${commandOf(run.command)}) padł${run.failed === null ? '' : `: padłe ${run.failed}`}`)
+    if (run === null) found.push(`„${cut(green)}", a mod nie widział w tej sesji przebiegu testów z wynikiem (przebiegu w tle nie widzi)`)
+    else if (!run.ok) found.push(`„${cut(green)}", a ostatni przebieg widziany przez mod (${commandOf(run.command)}) padł${run.failed === null ? '' : `: padłe ${run.failed}`}`)
     else if (facts.stale) found.push(`„${cut(green)}", a po ostatnim przebiegu testów była edycja kodu, więc wynik jest nieświeży`)
   }
   if (run !== null && run.passed !== null) {
-    const counted = sentences.filter(sentence => !SOFT.test(sentence)).map(sentence => ({ sentence, match: sentence.match(PASSED_COUNT) })).find(({ match }) => match !== null && Number(match[1]) !== run.passed)
-    if (counted !== undefined) found.push(`„${cut(counted.sentence)}", a ostatni przebieg (${commandOf(run.command)}) podał przeszłe: ${run.passed}`)
+    const counted = sentences.filter(sentence => !SOFT.test(sentence)).find(sentence => {
+      const passed = passedCount(sentence)
+      return passed !== null && passed !== run.passed
+    })
+    if (counted !== undefined) found.push(`„${cut(counted)}", a ostatni przebieg widziany przez mod (${commandOf(run.command)}) podał przeszłe: ${run.passed}`)
   }
   const { git } = facts
   if (git !== null) {
@@ -98,7 +123,7 @@ export function factsLine(facts: Facts): string | null {
     const counts = [run.passed === null ? null : `przeszło ${run.passed}`, run.failed === null ? null : `padło ${run.failed}`].filter(part => part !== null).join(', ')
     const verdict = run.ok ? 'zielony' : 'czerwony'
     parts.push(`testy: ostatni przebieg ${commandOf(run.command)} ${verdict}${counts === '' ? '' : ` (${counts})`}${facts.stale ? ', nieświeży: po nim edycja kodu' : ''}`)
-  } else parts.push('testy: w tej sesji żaden przebieg nie wrócił z wynikiem')
+  } else parts.push('testy: mod nie widział w tej sesji przebiegu z wynikiem (przebiegu w tle nie widzi)')
   const { git } = facts
   if (git !== null) {
     const unpushed = git.upstream !== null && git.upstreamGone !== true ? git.ahead : git.commits.filter(commit => !commit.pushed).length

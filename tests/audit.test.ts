@@ -25,6 +25,11 @@ test('the evidence is the newest tool output first, with the facts line on top, 
   const flood: HistoryMessage[] = Array.from({ length: 40 }, (_, i) => ({ role: 'assistant' as const, text: '', toolUses: [{ tool: 'Read', input: { file_path: `f${i}.ts` }, text: 'x'.repeat(3000) }] }))
   expect(evidenceOf(flood, null).length).toBeLessThanOrEqual(8000)
   expect(evidenceOf(flood, null)).toContain('f39.ts')
+  // Podsumowanie długiego wyjścia stoi na końcu: audytor musi je widzieć.
+  const long: HistoryMessage[] = [{ role: 'assistant', text: '', toolUses: [{ tool: 'Bash', input: { command: 'npm run build' }, text: `${'log\n'.repeat(1000)}Build succeeded in 4.2s` }] }]
+  const kept = evidenceOf(long, null)
+  expect(kept).toContain('Build succeeded in 4.2s')
+  expect(kept.length).toBeLessThan(1800)
 })
 
 test('the verdict keeps only sentences that stand in the answer, and BRAK means nothing to fix', () => {

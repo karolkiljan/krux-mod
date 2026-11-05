@@ -40,6 +40,14 @@ Granica: bramka nie sprawdzi zdań o treści kodu („funkcja zwraca null”) an
 
 3. **Audyt małym modelem** (`/krux audyt on`, domyślnie off). Po bramce odpowiedź, w której padają słowa o sprawdzaniu, czytaniu i wynikach, idzie do Haiku (`$.model.complete`, alias `haiku`, limit 20 s). Dostaje dowody: linię stanu i ostatnie wywołania narzędzi z wynikami, najnowsze pierwsze, razem do 8000 znaków. Zdania podane jako zobaczone, których dowody nie pokazują, wracają do modelu tym samym `block`. Zmyślony przez audytora cytat nie zatrzyma tury: zostają tylko zdania, które naprawdę stoją w odpowiedzi. Awaria albo milczenie modelu nic nie blokuje. Koszt: jedno wywołanie Haiku na odpowiedź ze słowami o sprawdzaniu. `$.model.complete` wymaga pola `model`; alias rozwiązuje silnik i sprawdza listę dozwolonych modeli organizacji, czego zestaw testów nie widzi.
 
+## Weryfikacja przed scaleniem
+
+Gałąź sprawdzona 5 listopada na silniku 2.1.318: `last_assistant_message` i `stop_hook_active` stoją w wejściu hooka `Stop`, `block` w wyniku hooka moda to `decision: "block"` z powodem, a `$.model.complete` bierze `model`, `system`, `maxTokens` i `timeoutMs` (typy silnika). `tsc` nie był puszczony w nocy i padał na czterech błędach typów w testach (wynik `model.complete` bez `usage`, wpis historii bez `tool_use_id`, tryby bez `audyt`); poprawione.
+
+Próba bramki na 19 zwykłych zdaniach z rozmowy o kodzie zatrzymała turę 14 razy bez powodu, między innymi przy „Krux dodać 2 zielone przyciski”, „Pętla kończyć po 1 przejściu”, „Wersja 2 przechodzi na fetch”, „Test przechodzi przez wszystkie gałęzie”, „Do wypchnięcia: 3 commity” i „Wypchnąć teraz czy po review — Morra wybiera”. Ostatnie dwa padają właśnie wtedy, gdy commity czekają, czyli pod koniec prawie każdej roboty. Poprawki: podmiot testów tylko jako rzeczownik, „zielone” tylko na końcu członu, przejście zamiast ruchu, liczba przy rzeczowniku testu albo proporcji (goła tylko przed przestankiem w zdaniu o testach), wypchnięcie tylko jako fakt. Po nich próba na 42 zdaniach zgadza się z oczekiwaniem w każdym, a testy pilnują obu stron.
+
+Do tego: powód i linia stanu mówią, że mod nie widział przebiegu, a nie, że testów nie było (przebieg w tle zna tylko model); blokada hooka `Stop` z ustawień Morry zostaje, a powód moda idzie za nią; pogawędka idzie bez linii stanu; audytor widzi koniec długiego wyniku, gdzie stoi podsumowanie.
+
 ## Czego nie zmierzono
 
 Bench (`scripts/voice-bench.mjs`) liczy głos, nie prawdę, a próbę na modelu blokuje w tej sesji klasyfikator trybu auto. Do zrobienia przy następnym pomiarze: tura „Na pewno?” po każdym scenariuszu i licznik twierdzeń o testach i plikach bez wyjścia narzędzia w tej samej turze, ramię przed i po tych zmianach. Bench liczy kotwice po prefiksie, więc nowe teksty mierzy bez zmian w przyrządzie.

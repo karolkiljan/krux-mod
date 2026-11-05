@@ -62,7 +62,7 @@ claude plugin disable krux@krux-marketplace
 
 | Komenda | Skutek |
 |---|---|
-| `/krux` | panel kuźni: tryby pod klawiszami 1–7, horda, palenisko |
+| `/krux` | panel kuźni: tryby pod klawiszami 1–8, horda, palenisko |
 | `/krux on` / `/krux off` | głos orka / tryb neutralny |
 | `/krux konkret [on\|off]` | precyzja zakresu: tylko to, o co proszono |
 | `/krux flow [on\|off]` | jeden ruch na raz, zgoda przed każdym |

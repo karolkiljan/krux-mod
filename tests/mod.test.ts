@@ -3111,7 +3111,7 @@ test('the fact gate sends an answer that claims green tests after a red run back
   await start($)
   await $.tool.call({ tool: 'Bash', command: 'npm test' })
   const blocked = await $.classic.Stop({ stop_hook_active: false, last_assistant_message: 'Krux już naprawić walidację. Testy przechodzą.' }) as { block?: string }
-  expect(blocked.block).toContain('ostatni przebieg (npm test) padł')
+  expect(blocked.block).toContain('ostatni przebieg widziany przez mod (npm test) padł')
   const again = await $.classic.Stop({ stop_hook_active: true, last_assistant_message: 'Krux już naprawić walidację. Testy przechodzą.' }) as { block?: string }
   expect(again.block).toBe(undefined)
   const honest = await $.classic.Stop({ stop_hook_active: false, last_assistant_message: 'Krux już naprawić walidację. Testy jeszcze nie puszczone ponownie.' }) as { block?: string }
@@ -3119,6 +3119,21 @@ test('the fact gate sends an answer that claims green tests after a red run back
   await $.prompt.submit({ text: 'wyłącz krux', wait: false, origin: ORIGIN })
   const off = await $.classic.Stop({ stop_hook_active: false, last_assistant_message: 'Testy przechodzą.' }) as { block?: string }
   expect(off.block).toBe(undefined)
+})
+
+// Hook Stop spod spodu (np. lint w ustawieniach Morry) zostaje: powód moda idzie za jego powodem,
+// a zatrzymanie sesji wygrywa bez bramki.
+test('the fact gate keeps a block from the hooks beneath and yields to a session stop', async ($, on) => {
+  let beneath: { block?: string; preventContinuation?: true } = { block: 'Lint: 2 errors.' }
+  on('classic.Stop', () => beneath)
+  engine(on, new Map(), { toolError: '1 failed' })
+  await start($)
+  await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  const both = await $.classic.Stop({ stop_hook_active: false, last_assistant_message: 'Testy przechodzą.' }) as { block?: string }
+  expect(both.block?.startsWith('Lint: 2 errors.\n\nBramka faktów')).toBe(true)
+  beneath = { preventContinuation: true }
+  const stopped = await $.classic.Stop({ stop_hook_active: false, last_assistant_message: 'Testy przechodzą.' }) as { block?: string; preventContinuation?: true }
+  expect([stopped.block, stopped.preventContinuation]).toEqual([undefined, true])
 })
 
 // Linia stanu z narzędzi: po przebiegu testów prośba Morry niesie jego wynik, raport kumpla nie.
@@ -3133,6 +3148,9 @@ test('a prompt after a test run carries the facts line from the board', async ($
   expect(line).toContain('ostatni przebieg npm test czerwony')
   const report = await $.prompt.submit({ text: 'Review: build failed.', wait: false, origin: { kind: 'task-notification' } })
   expect((report.context ?? []).some(entry => entry.startsWith('Stan z narzędzi'))).toBe(false)
+  // Pogawędka idzie bez stanu repo: nie wciąga roboty do rozmowy.
+  const chat = await $.prompt.submit({ text: 'Hej Krux', wait: false, origin: ORIGIN })
+  expect((chat.context ?? []).some(entry => entry.startsWith('Stan z narzędzi'))).toBe(false)
 })
 
 // Tryb audyt: po bramce mały model sprawdza zdania podane jako zobaczone; zmyślony cytat nic nie
@@ -3143,9 +3161,9 @@ test('the audit mode asks a small model about the answer and sends unsupported s
   on('classic.Stop', () => ({}))
   on('model.complete', ($, e) => {
     prompts.push(String(e.prompt))
-    return { value: { isAnswered: true, text: verdict } }
+    return { value: { isAnswered: true, text: verdict, usage: { input_tokens: 0, output_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 } } }
   })
-  engine(on, new Map(), { history: [{ role: 'assistant', text: '', toolUses: [{ tool: 'Read', input: { file_path: 'config.yml' }, text: 'port: 3000' }] }] })
+  engine(on, new Map(), { history: [{ role: 'assistant', text: '', toolUses: [{ tool_use_id: 'toolu_config', tool: 'Read', input: { file_path: 'config.yml' }, text: 'port: 3000' }] }] })
   await start($)
   const answer = 'Krux przeczytać config.yml: port 8080. Pewnie warto dodać cache.'
   const asleep = await $.classic.Stop({ stop_hook_active: false, last_assistant_message: answer }) as { block?: string }

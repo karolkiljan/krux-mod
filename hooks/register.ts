@@ -858,17 +858,18 @@ export const register: Register = on => {
   // Hook moda zatrzymuje koniec tury polem `block` z powodem (tekst); `decision` to u silnika
   // obiekt zgody na narzędzie, więc `decision: 'block'` z hooków powłoki silnik odrzuca.
   // Tryb `audyt` dokłada po bramce audyt małym modelem: zdania podane jako sprawdzone kontra
-  // wyjście narzędzi, także bez persony.
+  // wyjście narzędzi, także bez persony. Blokada hooka spod spodu (np. lint w ustawieniach Morry)
+  // zostaje, a powód moda idzie za nią; zatrzymanie sesji (`preventContinuation`) wygrywa bez bramki.
   on('classic.Stop', async ($, e, next) => {
     const result = await next(e)
-    const input = e as { stop_hook_active?: boolean; last_assistant_message?: string }
-    if (input.stop_hook_active === true || typeof input.last_assistant_message !== 'string') return result
+    const answer = e.last_assistant_message
+    if (e.stop_hook_active || typeof answer !== 'string' || result.preventContinuation === true) return result
     const now = await read($, modes)
     if (!now.persona && !now.audyt) return result
     const facts = await factsOf($)
-    const answer = input.last_assistant_message
     const reason = (now.persona ? groundingGate(answer, facts) : null) ?? (now.audyt ? await auditAnswer($, answer, facts) : null)
-    return reason === null ? result : { ...result, block: reason }
+    if (reason === null) return result
+    return { ...result, block: result.block === undefined ? reason : `${result.block}\n\n${reason}` }
   })
 
   on('prompt.compose', async ($, e, next) => {
@@ -936,8 +937,9 @@ export const register: Register = on => {
           await update($, moodSeen, seen => { fresh = seen !== mood.key; return mood.key })
           if (fresh && risk === null && !judges) extra.push(mood.text)
         }
-        // Stan testów i repo z narzędzi: model mówi z niego, a nie z pamięci rozmowy.
-        const facts = factsLine(await factsOf($))
+        // Stan testów i repo z narzędzi: model mówi z niego, a nie z pamięci rozmowy. Pogawędka
+        // („Hej Krux”, „dzięki”) go nie dostaje: tam stan repo tylko wciągałby robotę do rozmowy.
+        const facts = kind === 'chat' ? null : factsLine(await factsOf($))
         if (facts) extra.push(facts)
         const hint = formatHint(e.text)
         if (hint) extra.push(hint)
