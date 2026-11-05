@@ -14,7 +14,7 @@ test('a green claim stands only on a fresh green run from this session', () => {
   expect(mismatches(claim, FRESH)).toEqual([])
   // Przebieg w tle zna tylko model, więc powód mówi, czego mod nie widział, a nie, że testów nie było.
   expect(mismatches(claim, { ...FRESH, board: { tasks: [], test: null } })[0]).toContain('mod nie widział w tej sesji przebiegu testów z wynikiem (przebiegu w tle nie widzi)')
-  expect(mismatches(claim, { ...FRESH, board: { tasks: [], test: { ...RUN, ok: false, passed: 50, failed: 2 } } })[0]).toContain('ostatni przebieg widziany przez mod (npm test) padł: padłe 2')
+  expect(mismatches(claim, { ...FRESH, board: { tasks: [], test: { ...RUN, ok: false, passed: 50, failed: 2 } } })[0]).toContain('przebieg na tablicy moda (npm test) padł: padłe 2')
   expect(mismatches(claim, { ...FRESH, stale: true })[0]).toContain('nieświeży')
   // Orkowe „przejść”, kanarek i „wszystko zielone” to też twierdzenie o zielonych testach.
   for (const text of ['Testy przejść.', 'Kanarek śpiewać, testy zielone.', 'Wszystko zielone.', 'All tests pass.']) {
@@ -111,12 +111,12 @@ test('the gate tells the model what to fix, without apologies and with ASCII-clo
 test('the facts line states the last run and the repo, and says nothing without either', () => {
   expect(factsLine({ board: { tasks: [], test: null }, stale: false, git: null })).toBe(null)
   const line = factsLine({ board: { tasks: [], test: { ...RUN, ok: false, passed: 50, failed: 2 } }, stale: true, git: { ...GIT, changed: 3, untracked: 1, ahead: 2 } })!
-  expect(line).toContain('ostatni przebieg npm test czerwony (przeszło 50, padło 2), nieświeży: po nim edycja kodu')
+  expect(line).toContain('przebieg na tablicy npm test czerwony (przeszło 50, padło 2), nieświeży: po nim edycja kodu')
   expect(line).toContain('repo: gałąź feat/cache, zmienione 3, nowe 1, niewypchnięte commity 2')
   expect(factsLine({ board: { tasks: [], test: null }, stale: false, git: GIT })).toContain('testy: mod nie widział w tej sesji przebiegu z wynikiem (przebiegu w tle nie widzi)')
   expect(line).not.toMatch(/[”“«»]/u)
   // Komenda z heredoca nie łamie linii: model dostaje ją w jednym wierszu.
   const heredoc = factsLine({ board: { tasks: [], test: { ...RUN, command: "python3 - <<'EOF'\nimport pathlib\nEOF\nclaude plugin test ." } }, stale: false, git: null })!
-  expect(heredoc).toContain("ostatni przebieg python3 - <<'EOF' import pathlib EOF")
+  expect(heredoc).toContain("przebieg na tablicy python3 - <<'EOF' import pathlib EOF")
   expect(heredoc).not.toContain('\n')
 })
