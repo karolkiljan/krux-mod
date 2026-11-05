@@ -177,6 +177,22 @@ export function testPassed(output: string, isError: boolean): boolean {
   return testRunOf('', { text: output, isError, who: 'Krux' }).ok
 }
 
+// Zielony przebieg, który obejmuje mniej testów niż czerwony przed nim i idzie inną komendą, to jego
+// wycinek (`pytest --lf`, `npm test -- a.test.ts`, inny mniejszy zestaw), nie cały zestaw. Ta sama
+// komenda to ten sam zestaw, choćby testów ubyło; bez liczby przeszłych zakresu nie znamy.
+function narrower(run: KruxTestRun, before: KruxTestRun | null): boolean {
+  if (before === null || before.ok || !run.ok) return false
+  if (oneLine(run.command) === oneLine(before.command)) return false
+  const total = (one: KruxTestRun) => (one.passed === null ? null : one.passed + (one.failed ?? 0))
+  const now = total(run)
+  const then = total(before)
+  return now !== null && then !== null && now < then
+}
+
+function oneLine(command: string): string {
+  return command.replace(/\s+/gu, ' ').trim()
+}
+
 // Tablica po jednym wywołaniu narzędzia. Plan zmienia lista zadań z wątku głównego
 // (`result` to rekord narzędzia, z niego id `TaskCreate`); testy zmienia komenda
 // testów, gdy znamy jej wynik (`call`). `now` to czas zdarzenia w ms od epoki;
@@ -192,7 +208,11 @@ export function boardAfter(board: KruxBoard, tool: string, input: Record<string,
   if (call && workOf(tool, input) === 'test') {
     // Test w tle odpowiada od razu, bez wyniku: ostatni prawdziwy przebieg zostaje.
     if (isBackgroundToolCall(tool, input, result)) return board
-    return { ...board, test: { ...testRunOf(text(input.command), call), ...(now === undefined ? {} : { at: now }) } }
+    const run: KruxTestRun = { ...testRunOf(text(input.command), call), ...(now === undefined ? {} : { at: now }) }
+    // Zielona powtórka padłych, jeden plik albo filtr nazw nie zielenieje szerszego czerwonego
+    // przebiegu: zestaw dalej padł, a gotowość do commita i bramka faktów czytają tablicę.
+    if (narrower(run, board.test)) return board
+    return { ...board, test: run }
   }
   // Nieudane wywołanie listy zadań nie zmienia planu.
   if (call?.isError) return board

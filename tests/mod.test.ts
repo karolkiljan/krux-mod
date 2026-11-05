@@ -3132,7 +3132,7 @@ test('the fact gate sends an answer that claims green tests after a red run back
   await start($)
   await $.tool.call({ tool: 'Bash', command: 'npm test' })
   const blocked = await $.classic.Stop({ stop_hook_active: false, last_assistant_message: 'Krux już naprawić walidację. Testy przechodzą.' }) as { block?: string }
-  expect(blocked.block).toContain('ostatni przebieg widziany przez mod (npm test) padł')
+  expect(blocked.block).toContain('przebieg na tablicy moda (npm test) padł')
   const again = await $.classic.Stop({ stop_hook_active: true, last_assistant_message: 'Krux już naprawić walidację. Testy przechodzą.' }) as { block?: string }
   expect(again.block).toBe(undefined)
   const honest = await $.classic.Stop({ stop_hook_active: false, last_assistant_message: 'Krux już naprawić walidację. Testy jeszcze nie puszczone ponownie.' }) as { block?: string }
@@ -3166,7 +3166,7 @@ test('a prompt after a test run carries the facts line from the board', async ($
   await $.tool.call({ tool: 'Bash', command: 'npm test' })
   const after = await $.prompt.submit({ text: 'Jak poszło?', wait: false, origin: ORIGIN })
   const line = (after.context ?? []).find(entry => entry.startsWith('Stan z narzędzi'))
-  expect(line).toContain('ostatni przebieg npm test czerwony')
+  expect(line).toContain('przebieg na tablicy npm test czerwony')
   const report = await $.prompt.submit({ text: 'Review: build failed.', wait: false, origin: { kind: 'task-notification' } })
   expect((report.context ?? []).some(entry => entry.startsWith('Stan z narzędzi'))).toBe(false)
   // Pogawędka idzie bez stanu repo: nie wciąga roboty do rozmowy.

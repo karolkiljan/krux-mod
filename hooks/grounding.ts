@@ -5,7 +5,7 @@
 
 import type { KruxBoard, KruxGit } from '../types'
 
-// Co mod wie przed końcem tury: ostatni przebieg testów z tablicy (także kumpla), czy po nim była
+// Co mod wie przed końcem tury: przebieg testów z tablicy (także kumpla), czy po nim była
 // edycja i odczyt gita (`null`: brak repo albo odczytu). Budowania nie sprawdzamy: przebiegi kumpli
 // nie trafiają do kroniki Kruxa, więc „build zielony” po robocie Młota dawałby fałszywy alarm.
 export type Facts = { board: KruxBoard; stale: boolean; git: KruxGit | null }
@@ -46,7 +46,7 @@ function passedCount(sentence: string): number | null {
   return match === null ? null : Number(match[1])
 }
 
-// Odpowiedź, która podaje też liczbę z ostatniego przebiegu („skrypty 46/46”, „46 pass”), zna go:
+// Odpowiedź, która podaje też liczbę z przebiegu na tablicy („skrypty 46/46”, „46 pass”), zna go:
 // inna liczba obok to inny zestaw („721 testów zielonych”), nie pomyłka. Mod widzi jeden przebieg naraz.
 function namesCount(answer: string, passed: number): boolean {
   return new RegExp(String.raw`(?<!\p{L}|\d)${passed}(?:\s*\/\s*\d+|\s+(?:na|z)\s+\d+|\s+(?:test\p{L}*\s+)?(?:przechodz\p{L}*|przesz\p{L}*|przejść|zielon\p{L}*|pass\p{L}*|green|ok))(?!\p{L})`, 'iu').test(answer)
@@ -93,15 +93,15 @@ export function mismatches(answer: string, facts: Facts): string[] {
   const run = facts.board.test
   if (green !== null) {
     if (run === null) found.push(`„${cut(green)}", a mod nie widział w tej sesji przebiegu testów z wynikiem (przebiegu w tle nie widzi)`)
-    else if (!run.ok) found.push(`„${cut(green)}", a ostatni przebieg widziany przez mod (${commandOf(run.command)}) padł${run.failed === null ? '' : `: padłe ${run.failed}`}`)
-    else if (facts.stale) found.push(`„${cut(green)}", a po ostatnim przebiegu testów była edycja kodu, więc wynik jest nieświeży`)
+    else if (!run.ok) found.push(`„${cut(green)}", a przebieg na tablicy moda (${commandOf(run.command)}) padł${run.failed === null ? '' : `: padłe ${run.failed}`}; węższa zielona powtórka go nie zastępuje`)
+    else if (facts.stale) found.push(`„${cut(green)}", a po przebiegu na tablicy moda była edycja kodu, więc wynik jest nieświeży`)
   }
   if (run !== null && run.passed !== null && !namesCount(answer, run.passed)) {
     const counted = sentences.filter(sentence => !SOFT.test(sentence)).find(sentence => {
       const passed = passedCount(sentence)
       return passed !== null && passed !== run.passed
     })
-    if (counted !== undefined) found.push(`„${cut(counted)}", a ostatni przebieg widziany przez mod (${commandOf(run.command)}) podał przeszłe: ${run.passed}`)
+    if (counted !== undefined) found.push(`„${cut(counted)}", a przebieg na tablicy moda (${commandOf(run.command)}) podał przeszłe: ${run.passed}`)
   }
   const { git } = facts
   if (git !== null) {
@@ -121,7 +121,7 @@ export function groundingGate(answer: string, facts: Facts): string | null {
   return `Bramka faktów moda: odpowiedź twierdzi więcej, niż pokazały narzędzia. ${found.map(line => `${line}.`).join(' ')} Zanim skończysz: sprawdź to narzędziem albo dopisz krótką poprawkę, co sprawdzone, a co nie. Bez przeprosin i bez powtarzania całej odpowiedzi.`
 }
 
-// Stan z narzędzi przed turą, jedna linia dla modelu: ostatni przebieg testów i odczyt repo.
+// Stan z narzędzi przed turą, jedna linia dla modelu: przebieg testów z tablicy i odczyt repo.
 // Model mówi o testach i gicie z tej linii albo z nowego wyjścia narzędzia, nie z pamięci rozmowy.
 // `null`, gdy mod nic nie wie: bez przebiegu i bez repo linia nic by nie dała.
 export function factsLine(facts: Facts): string | null {
@@ -130,7 +130,7 @@ export function factsLine(facts: Facts): string | null {
   if (run !== null) {
     const counts = [run.passed === null ? null : `przeszło ${run.passed}`, run.failed === null ? null : `padło ${run.failed}`].filter(part => part !== null).join(', ')
     const verdict = run.ok ? 'zielony' : 'czerwony'
-    parts.push(`testy: ostatni przebieg ${commandOf(run.command)} ${verdict}${counts === '' ? '' : ` (${counts})`}${facts.stale ? ', nieświeży: po nim edycja kodu' : ''}`)
+    parts.push(`testy: przebieg na tablicy ${commandOf(run.command)} ${verdict}${counts === '' ? '' : ` (${counts})`}${facts.stale ? ', nieświeży: po nim edycja kodu' : ''}`)
   } else parts.push('testy: mod nie widział w tej sesji przebiegu z wynikiem (przebiegu w tle nie widzi)')
   const { git } = facts
   if (git !== null) {

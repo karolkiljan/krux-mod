@@ -60,6 +60,32 @@ test('a test command lands on the board with counts and failing names from its o
   expect(boardAfter(failed, 'Bash', { command: 'git status' }, undefined, { text: '', isError: false, who: 'Krux' })).toBe(failed)
 })
 
+// Zielona powtórka padłych, jeden plik albo mniejszy zestaw nie zielenieje szerszego czerwonego
+// przebiegu: gotowość do commita i bramka faktów czytają tablicę, a zestaw dalej padł.
+test('a narrower green rerun does not turn a wider red run green, the same command or a red one does', () => {
+  const run = (board: KruxBoard, command: string, output: string, isError: boolean, now?: number) => boardAfter(board, 'Bash', { command }, undefined, { text: output, isError, who: 'Krux' }, now)
+  const red = run(EMPTY_BOARD, 'npm test', ' 50 pass\n 2 fail\n', true, 1_000)
+  for (const [command, output] of [['npm test -- cache.test.ts', ' 2 pass\n 0 fail\n'], ['pytest --lf', '===== 2 passed in 0.1s ====='], ['node --test tests/scripts-regression.mjs', 'ℹ pass 46\nℹ fail 0\n']] as const) {
+    const rerun = run(red, command, output, false, 2_000)
+    expect([command, rerun.test]).toEqual([command, red.test])
+    expect([command, readiness(rerun, GIT).missing]).toEqual([command, ['testy padłe']])
+  }
+  // Ten sam zestaw: zielony zastępuje czerwony, także gdy testów ubyło.
+  expect(run(red, 'npm test', ' 49 pass\n 0 fail\n', false, 2_000).test).toMatchObject({ ok: true, passed: 49, at: 2_000 })
+  // Szerszy albo równy zielony też zastępuje, choćby szedł inną komendą.
+  expect(run(red, 'npx vitest run', ' 52 pass\n 0 fail\n', false, 2_000).test).toMatchObject({ ok: true, passed: 52 })
+  // Czerwona powtórka mówi, co dalej pada: zastępuje.
+  expect(run(red, 'npm test -- cache.test.ts', ' 1 pass\n 1 fail\n', true, 2_000).test).toMatchObject({ ok: false, passed: 1, failed: 1 })
+  // Bez liczb zakresu nie znamy: zielony zastępuje jak dotąd.
+  expect(run(red, 'npm test -- cache.test.ts', 'ok', false, 2_000).test).toMatchObject({ ok: true, passed: null })
+  // Po wznowieniu ta sama reguła: historia z powtórką zostawia czerwony zestaw.
+  const replayed = replayBoard([{ role: 'assistant', text: '', toolUses: [
+    { tool: 'Bash', input: { command: 'npm test' }, text: ' 50 pass\n 2 fail\n', isError: true },
+    { tool: 'Bash', input: { command: 'npm test -- cache.test.ts' }, text: ' 2 pass\n 0 fail\n' },
+  ] }])
+  expect(replayed.test).toMatchObject({ command: 'npm test', ok: false, passed: 50, failed: 2 })
+})
+
 test('the board keeps at most five failing names', () => {
   const output = Array.from({ length: 8 }, (_, index) => `(fail) case ${index}`).join('\n')
   expect(boardAfter(EMPTY_BOARD, 'Bash', { command: 'bun test' }, undefined, { text: output, isError: true, who: 'Krux' }).test?.failures).toHaveLength(5)

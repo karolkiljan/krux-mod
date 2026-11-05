@@ -118,8 +118,9 @@ export type KruxMemory = { last: KruxTrace; before: KruxTrace | null }
 // `startedAt`: ms od epoki, gdy zadanie weszło w `in_progress`; z niego znak utknięcia.
 export type KruxTask = { id: string | null; subject: string; status: 'pending' | 'in_progress' | 'completed'; startedAt?: number }
 
-// Ostatni przebieg testów: komenda, wynik, liczby z wyjścia (gdy dało się je
-// odczytać) i nazwy padających testów; `who` to Krux albo kumpel, który puścił.
+// Przebieg testów na tablicy: ostatni, chyba że węższa zielona powtórka nie zastąpiła szerszego
+// czerwonego. Komenda, wynik, liczby z wyjścia (gdy dało się je odczytać) i nazwy padających
+// testów; `who` to Krux albo kumpel, który puścił.
 export type KruxTestRun = {
   command: string
   ok: boolean
