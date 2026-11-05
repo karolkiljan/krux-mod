@@ -115,4 +115,8 @@ test('the facts line states the last run and the repo, and says nothing without 
   expect(line).toContain('repo: gałąź feat/cache, zmienione 3, nowe 1, niewypchnięte commity 2')
   expect(factsLine({ board: { tasks: [], test: null }, stale: false, git: GIT })).toContain('testy: mod nie widział w tej sesji przebiegu z wynikiem (przebiegu w tle nie widzi)')
   expect(line).not.toMatch(/[”“«»]/u)
+  // Komenda z heredoca nie łamie linii: model dostaje ją w jednym wierszu.
+  const heredoc = factsLine({ board: { tasks: [], test: { ...RUN, command: "python3 - <<'EOF'\nimport pathlib\nEOF\nclaude plugin test ." } }, stale: false, git: null })!
+  expect(heredoc).toContain("ostatni przebieg python3 - <<'EOF' import pathlib EOF")
+  expect(heredoc).not.toContain('\n')
 })

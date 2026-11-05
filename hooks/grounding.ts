@@ -77,8 +77,10 @@ function cut(text: string, limit = 80): string {
   return chars.length > limit ? `${chars.slice(0, limit - 1).join('')}…` : text
 }
 
+// Komenda w jednym wierszu: heredoc i łańcuch z nowymi liniami łamałyby linię stanu i powód bramki.
 function commandOf(command: string): string {
-  return command.trim() === '' ? 'testy' : cut(command.trim(), 40)
+  const line = command.replace(/\s+/gu, ' ').trim()
+  return line === '' ? 'testy' : cut(line, 40)
 }
 
 // Rozjazdy odpowiedzi z faktami sesji, po jednym zdaniu na rozjazd; pusta lista: nic do poprawki.
