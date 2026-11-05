@@ -143,13 +143,19 @@ function visitKind(krux: Actor, frame: number): DuetKind {
   return roll === 0 ? 'highfive' : 'toast'
 }
 
-// Para ze sporu walczy albo się kłóci, po zielonych przybija piątkę, inaczej podaje sobie sprzęt,
-// szermuje albo opowiada.
+// Para ze sporu walczy, kłóci się albo dyskutuje, po zielonych przybija piątkę. Przy stole (czytanie,
+// plan, dumanie, pisanie, pytanie) orkowie naradzają się nad mapą albo dyskutują; reszta podaje
+// sobie sprzęt, szermuje, opowiada, dyskutuje albo pokazuje sztabkę.
+const RIVAL_DUETS: readonly DuetKind[] = ['fence', 'argue', 'debate']
+const DESK_DUETS: readonly DuetKind[] = ['council', 'debate', 'council', 'tale']
+const FLOOR_DUETS: readonly DuetKind[] = ['fence', 'pass', 'tale', 'debate', 'show']
+
 function duetKind(host: Actor, guest: Actor, seed: number): DuetKind {
   if (host.mood === 'proud' || guest.mood === 'proud') return 'highfive'
   const rivals = host.face !== 'Krux' && host.face !== null && ROSTER[host.face].spar === guest.face
-  if (rivals) return seed % 2 === 0 ? 'fence' : 'argue'
-  return (['fence', 'pass', 'tale'] as const)[seed % 3]!
+  const desk = [host, guest].some(actor => sameStation(actor.worked, 'read'))
+  const pool = rivals ? RIVAL_DUETS : desk ? DESK_DUETS : FLOOR_DUETS
+  return pool[seed % pool.length]!
 }
 
 // Słuchacz zerka na mówcę klatkę po nowej linii i patrzy 1,5 s, ale tylko przy co drugiej linii

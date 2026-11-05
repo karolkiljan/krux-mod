@@ -1844,3 +1844,26 @@ test('Krux follows the mate who throws him the scroll with his eyes until he rea
   expect(looks.length).toBeGreaterThan(0)
   expect(new Set(looks)).toEqual(new Set([1]))
 })
+
+test('orcs at the table hold councils and debates, orcs on the floor also show off a bar', () => {
+  const kindsOf = (props: ForgeProps, limit: number) => {
+    const seen = surfaceOf()
+    draw(props, seen.surface)
+    const kinds = new Set<string>()
+    for (let i = 0; i < limit; i++) {
+      seen.tick()
+      draw(props, seen.surface)
+      const duet = (seen.surface.state as Seen).duet
+      if (duet !== undefined) kinds.add(duet.kind)
+    }
+    return kinds
+  }
+  // Krux przy stole: narada i dyskusja, czasem opowieść; bez szermierki i podawania stali.
+  const desk = kindsOf(pair, 2500)
+  expect([desk.has('council'), desk.has('debate')]).toEqual([true, true])
+  for (const kind of desk) expect(['council', 'debate', 'tale']).toContain(kind)
+  // Obaj przy kuźni i w sztolni: sprzęt, szermierka, opowieść, dyskusja albo pokaz sztabki.
+  const floor = kindsOf({ ...FLOOR, orcs: [{ ...KRUX, scene: 'hammer' }, { ...NIUCH, scene: 'pick' }] }, 3000)
+  expect(floor.has('show')).toBe(true)
+  for (const kind of floor) expect(['fence', 'pass', 'tale', 'debate', 'show']).toContain(kind)
+})

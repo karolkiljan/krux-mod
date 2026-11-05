@@ -441,14 +441,14 @@ test('the window shows the sky of the hour, and the room has no background', () 
 })
 
 test('duet poses stay in the palette, keep both eyes and open with the partner in reach', () => {
-  for (const kind of ['fence', 'pass', 'highfive', 'argue', 'toast', 'tale'] as const) {
+  for (const kind of ['fence', 'pass', 'highfive', 'argue', 'toast', 'tale', 'debate', 'council', 'show'] as const) {
     for (let t = 0; t < DUET_FRAMES; t += 1) {
       const { host, guest, prop } = duetPose(kind, t)
       for (const rows of [host, guest, prop]) expect([...rows.join('')].every(cell => cell === '.' || PALETTE[cell] !== undefined)).toBe(true)
-      // Oczy otwarte, poza rechotem w opowieści: wtedy obaj mają je zamknięte.
+      // Oczy otwarte (czerwone albo złote z dumy), poza rechotem w opowieści: wtedy obaj mają je zamknięte.
       const open = kind === 'tale' && t >= 18 && t < 30 ? 0 : 2
-      expect([kind, t, host.join('').split('r').length - 1]).toEqual([kind, t, open])
-      expect([kind, t, guest.join('').split('r').length - 1]).toEqual([kind, t, open])
+      const eyes = (rows: readonly string[]) => [...rows.join('')].filter(cell => cell === 'r' || cell === 'y').length
+      expect([kind, t, eyes(host), eyes(guest)]).toEqual([kind, t, open, open])
     }
   }
   expect(duetPose('fence', 0).prop.join('')).toContain('s')
@@ -1299,4 +1299,47 @@ test('a tale: the guest talks with its hands, the host gapes at the big catch, t
     if (laughing) expect([t, host[3]![6] === 'g' || host[4]![5] === 'g', guest[3]![1] === 'g' || guest[4]![2] === 'g']).toEqual([t, true, true])
   }
   expect([...mouths].sort()).toEqual(['tGGt', 'tcct', 'tggt'])
+})
+
+// Rekwizyt scenki w kolumnach od lewej krawędzi gospodarza; gość stoi od kolumny DUET_GAP - 2.
+const propAt = (prop: readonly string[], x: number, y: number) => pad(prop)[y]![x]
+const mouthOpen = (rows: readonly string[]) => rows.some(row => /tcct/u.test(row))
+
+test('a debate takes turns: one talks with its hands while the other listens, and it ends in a shaken hand', () => {
+  for (let t = 0; t < DUET_FRAMES; t++) {
+    const { host, guest, prop } = duetPose('debate', t)
+    // Nigdy nie mówią naraz: dyskusja to kolejka, nie kłótnia.
+    expect([t, mouthOpen(host) && mouthOpen(guest)]).toEqual([t, false])
+    if (t >= 10 && t < 18) expect([t, mouthOpen(host)]).toEqual([t, false])
+    if (t >= 24 && t < 30) {
+      // Ręce obu sięgają do środka, a dłonie w uścisku są raz wyżej, raz niżej.
+      expect([t, host[3]!.slice(6, 8), guest[3]!.slice(0, 2), propAt(prop, 8, 3), propAt(prop, 11, 3)]).toEqual([t, 'gg', 'gg', 'g', 'g'])
+      expect([t, propAt(prop, 9, t % 2 === 0 ? 3 : 2)]).toEqual([t, 'g'])
+    } else expect([t, prop.length]).toEqual([t, 0])
+  }
+  const spoken = (from: number, to: number, side: 'host' | 'guest') => Array.from({ length: to - from }, (_, k) => mouthOpen(duetPose('debate', from + k)[side])).some(Boolean)
+  expect([spoken(2, 10, 'host'), spoken(10, 18, 'guest'), spoken(18, 22, 'host')]).toEqual([true, true, true])
+})
+
+test('a council unrolls the map out of the host’s apron, both point at it, the guest gets the idea, and the map rolls back', () => {
+  const pixels = (t: number) => pad(duetPose('council', t).prop).join('').replace(/\./gu, '').length
+  // Mapa rośnie i maleje po kawałku: jeden piksel zwoju, zwój, pół mapy, cała.
+  expect([0, 1, 2, 3, 27, 28, 29, 30, 31].map(pixels)).toEqual([1, 3, 8, 12, 12, 8, 3, 1, 0])
+  for (let t = 3; t < 28; t++) expect([t, pixels(t) >= 12, pad(duetPose('council', t).prop).join('').includes('d')]).toEqual([t, true, true])
+  // Najpierw palcem pokazuje gospodarz, potem gość; palec nad mapą, nie na niej.
+  expect([propAt(duetPose('council', 6).prop, 11, 1), pad(duetPose('council', 6).host)[1]![8]]).toEqual(['.', 'g'])
+  expect([propAt(duetPose('council', 14).prop, 11, 1), pad(duetPose('council', 14).host)[1]![8]]).toEqual(['g', '.'])
+  // „Aha!”: gość błyska złotymi oczami z ręką w górę.
+  expect(duetPose('council', 25).guest.join('')).toContain('y')
+  expect(duetPose('council', 22).guest.join('')).not.toContain('y')
+})
+
+test('a show brings the bar out of the guest’s apron, the host weighs it, approves and the bar goes back', () => {
+  const bar = (t: number) => pad(duetPose('show', t).prop).join('').replace(/\./gu, '').length
+  expect([0, 1, 4, 25, 26, 29, 30].map(bar)).toEqual([1, 2, 2, 2, 2, 1, 0])
+  // Uniesiona sztabka błyska, gość się chwali, gospodarz waży z dłonią przy brodzie, potem uznaje.
+  expect(pad(duetPose('show', 6).prop)[0]!.slice(10, 12)).toMatch(/^(?:jS|Sy|Sj|yS)$/u)
+  expect(mouthOpen(duetPose('show', 6).guest) || mouthOpen(duetPose('show', 7).guest) || mouthOpen(duetPose('show', 8).guest)).toBe(true)
+  expect(pad(duetPose('show', 15).host)[2]!.slice(0, 6)).toBe('.tGGtg')
+  expect([duetPose('show', 22).host.join('').includes('y'), pad(duetPose('show', 22).host)[1]![7]]).toEqual([true, 'g'])
 })
