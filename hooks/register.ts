@@ -81,6 +81,9 @@ const modes = atom({ plugin: 'krux-mod', key: 'modes' } as const, DEFAULT_MODES)
 const activity = atom({ plugin: 'krux-mod', key: 'activity' } as const, null)
 const strikes = atom({ plugin: 'krux-mod', key: 'strikes' } as const, 0)
 const sessionStrikes = atom({ plugin: 'krux-mod', key: 'sessionStrikes' } as const, 0)
+// Zdarzenia z roboty kumpli: ziarno ich dymków. `sessionStrikes` stoi, póki główna pętla czeka na
+// `Agent`, więc samo dawało każdemu wynikowi kumpla tę samą parzystość i tę samą kwestię.
+const mateEvents = atom({ plugin: 'krux-mod', key: 'mateEvents' } as const, 0)
 const still = atom({ plugin: 'krux-mod', key: 'still' } as const, false)
 const turns = atom({ plugin: 'krux-mod', key: 'turns' } as const, 0)
 const drift = atom({ plugin: 'krux-mod', key: 'drift' } as const, null)
@@ -423,7 +426,9 @@ async function afterMateTool($: EngineInterface, agentId: string, tool: string, 
   if (member === undefined) return
   const mate = member.mate
   if (mate !== null) await update($, moods, now => mateMoodAfter(now, mate, event))
-  await crewStep($, { kind: 'mate-event', agentId, event, lore: single, seed: await read($, sessionStrikes), failure })
+  let count = 0
+  await update($, mateEvents, seen => { count = seen; return seen + 1 })
+  await crewStep($, { kind: 'mate-event', agentId, event, lore: single, seed: (await read($, sessionStrikes)) + count, failure })
   expireTalk($)
 }
 

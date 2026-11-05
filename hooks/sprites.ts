@@ -1028,6 +1028,10 @@ function show(t: number): DuetFrame {
   return { host: proud(HIGH_HOST), guest: proud(HIGH_GUEST), prop: held }
 }
 
+// Scenki, które same prowadzą usta (opowieść, dyskusja, narada, pokaz): mówią na zmianę według
+// klatki, więc szczęka z dymka nie może im otworzyć drugiej paszczy naraz.
+export const TALKING_DUETS: ReadonlySet<DuetKind> = new Set<DuetKind>(['tale', 'debate', 'council', 'show'])
+
 // Klatka scenki `t`. Współrzędne rekwizytu od lewej krawędzi gospodarza.
 export function duetPose(kind: DuetKind, t: number): DuetFrame {
   if (kind === 'tale') return tale(t)

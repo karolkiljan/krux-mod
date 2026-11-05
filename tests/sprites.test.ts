@@ -1225,6 +1225,23 @@ test('talking keeps both eyes, the apron and the palette in every pose of every 
   }
 })
 
+// Kropla potu spływa w kolumnie prawej pięści. Pas kładzie pot po spojrzeniu i tylko na wolne tło,
+// więc pięść nie przeskakuje przez kroplę na lewą stronę ani nie pojawia się nagle czterema pikselami.
+test('sweat laid after the cheer keeps the fist on its side and never covers it', () => {
+  for (const base of [pad(STAND), pad(draw([stander('mid'), 2, 0]))]) {
+    const sides = new Set<number>()
+    for (let t = CHEER_FROM; t <= CHEER_TO; t++) {
+      const cheer = withRegard(base, 'test-pass', t, -1)
+      const seen = withEffort(cheer, 70 + t)
+      // Pot nie zjada pięści: każdy piksel pięści zostaje skórą.
+      const fist = cheer.flatMap((row, y) => [...row].flatMap((cell, x) => (cell === 'g' && base[y]![x] === '.' ? [[x, y] as const] : [])))
+      expect([t, fist.every(([x, y]) => seen[y]![x] === 'g')]).toEqual([t, true])
+      for (const [x] of fist) sides.add(x)
+    }
+    expect(sides.size).toBe(1)
+  }
+})
+
 test('a bystander looks toward a reaction, cheers a green one with a fist and winces at a red one', () => {
   const rows = pad(STAND)
   const eyesAt = (frame: readonly string[]) => [...frame[1]!].flatMap((cell, x) => (cell === 'r' ? [x] : []))

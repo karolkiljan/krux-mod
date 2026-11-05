@@ -44,12 +44,12 @@ export type KruxSpeaker = 'Krux' | KruxMate | 'ork'
 // Subagent na scenie, po `agentId` z `agent.spawn`.
 export type KruxHordeMember = { agentId: string; mate: KruxMate | null; scene: KruxScene; target: string; startedAt?: number }
 
-// Dymek nad orkiem `key` (`agentId` kumpla albo 'krux'). `step` to krok wysłanego
-// kumpla, trwa, póki kumpel stoi na scenie; `event` to wtręt po zdarzeniu kroniki,
-// do `until` w ms od epoki; `thought` to myśl Kruxa, liczona przy rysowaniu.
 // Kwestia w wymianie zdań: kto mówi i co; `reply` to następna kwestia, która czeka na swoją kolej.
 export type KruxLine = { key: string; speaker: KruxSpeaker; text: string; reply?: KruxLine }
 
+// Dymek nad orkiem `key` (`agentId` kumpla albo 'krux'). `step` to krok wysłanego
+// kumpla, trwa, póki kumpel stoi na scenie; `event` to wtręt po zdarzeniu kroniki,
+// do `until` w ms od epoki; `thought` to myśl Kruxa, liczona przy rysowaniu.
 export type KruxBubble =
   | { kind: 'step'; key: string; speaker: KruxSpeaker; text: string }
   | { kind: 'thought'; key: string; speaker: KruxSpeaker; text: string }
@@ -211,6 +211,8 @@ declare module 'claude-code' {
       activity: KruxActivity | null
       strikes: number
       sessionStrikes: number
+      // Zdarzenia z roboty kumpli w sesji: ziarno ich dymków, bo `sessionStrikes` stoi w czasie `Agent`.
+      mateEvents: number
       still: boolean
       turns: number
       drift: KruxDrift | null

@@ -1845,6 +1845,27 @@ test('Krux follows the mate who throws him the scroll with his eyes until he rea
   expect(new Set(looks)).toEqual(new Set([1]))
 })
 
+// Dyskusja prowadzi usta sama: nowa linia gościa w dymku nie otwiera drugiej paszczy, gdy mówi gospodarz.
+test('in a debate a new line in the bubble never opens a second mouth while the other orc talks', () => {
+  const openMouths = (tree: unknown) => pixelsOf(tree).reduce((count, row) => count + row.filter((cell, x) => cell === PALETTE.t && row[x + 1] === PALETTE.c && row[x + 2] === PALETTE.c && row[x + 3] === PALETTE.t).length, 0)
+  const seen = surfaceOf()
+  const state = () => seen.surface.state as Seen & { frame: number }
+  draw(pair, seen.surface)
+  for (let i = 0; i < 6000 && !(state().duet?.kind === 'debate' && state().duet?.at === state().frame); i++) { seen.tick(); draw(pair, seen.surface) }
+  const duet = state().duet!
+  expect([duet.kind, duet.at]).toEqual(['debate', state().frame])
+  const told: ForgeProps = { ...pair, bubble: { key: duet.guest, text: 'Niuch węszyć w logach serwera.', speaker: 'Niuch' } }
+  let talked = 0
+  for (let t = 0; t < 20; t++) {
+    const open = openMouths(draw(t < 3 ? pair : told, seen.surface))
+    expect([t, open <= 1]).toEqual([t, true])
+    talked += open
+    seen.tick()
+  }
+  // Gospodarz dalej mówi swoją kolejkę: paszcza się otwiera, tylko nie dwie naraz.
+  expect(talked).toBeGreaterThan(0)
+})
+
 test('orcs at the table hold councils and debates, orcs on the floor also show off a bar', () => {
   const kindsOf = (props: ForgeProps, limit: number) => {
     const seen = surfaceOf()

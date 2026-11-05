@@ -1,7 +1,7 @@
 import type { ClientModule } from 'claude-code'
 
 import type { KruxCue, KruxEvent, KruxMate, KruxMood, KruxSpeaker } from '../types'
-import { CATCH_X, CUE_FRAMES, DUET_FRAMES, DUET_GAP, FRAME_MS, MUGS, ORC_GAP, ORC_WIDTH, RISE_FRAMES, SILL_LIFT, SPEAKER_COLOR, TOAST_HELD, TOAST_RETURN, WALL_MIN, bandColumns, behind, bubbleAt, canvasColumns, carried, catchStep, caughtScroll, depthSpot, dayPhase, doorX, dress, duetPose, episodeKit, errandEnd, errandLegs, errandPose, errandSwap, farMugs, farPose, floorHomes, floorStart, frameGrid, hasHearth, headX, hearthProp, kitAt, kitReach, nextEpisode, paint, quartersDoor, roomGrid, runsOf, sameStation, sliceRuns, slotX, stageGrid, stationX, tossFlight, tossFrames, tossGrid, tossScroll, trackArrive, trackBare, trackCold, trackDozing, trackDue, trackFace, trackGrid, trackKit, trackLooping, trackOff, trackOut, trackResume, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withGaze, withNap, withRegard, withTalk } from './sprites'
+import { CATCH_X, CUE_FRAMES, DUET_FRAMES, DUET_GAP, FRAME_MS, MUGS, ORC_GAP, ORC_WIDTH, RISE_FRAMES, SILL_LIFT, SPEAKER_COLOR, TALKING_DUETS, TOAST_HELD, TOAST_RETURN, WALL_MIN, bandColumns, behind, bubbleAt, canvasColumns, carried, catchStep, caughtScroll, depthSpot, dayPhase, doorX, dress, duetPose, episodeKit, errandEnd, errandLegs, errandPose, errandSwap, farMugs, farPose, floorHomes, floorStart, frameGrid, hasHearth, headX, hearthProp, kitAt, kitReach, nextEpisode, paint, quartersDoor, roomGrid, runsOf, sameStation, sliceRuns, slotX, stageGrid, stationX, tossFlight, tossFrames, tossGrid, tossScroll, trackArrive, trackBare, trackCold, trackDozing, trackDue, trackFace, trackGrid, trackKit, trackLooping, trackOff, trackOut, trackResume, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withGaze, withNap, withRegard, withTalk } from './sprites'
 import type { DuetKind, Episode, Face, Far, FloorOrc, Placed, Run, StageScene, Track } from './sprites'
 import { draw } from './stage'
 import type { Frame } from './stage'
@@ -847,7 +847,9 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
     // Scenka gra obu; rekwizyt między nimi liczy się od gospodarza.
     if (duet !== undefined && duet.at !== null && (key === duet.guest || (key === duet.host && frame >= duet.at))) {
       const pose = duetPose(duet.kind, Math.max(0, frame - duet.at))
-      const rows = withTalking(dress(key === duet.host ? pose.host : pose.guest, actor.face), key === talker ? frame - speech.at : undefined)
+      // Scenka z rozmową prowadzi usta sama: dymek nie otwiera drugiej paszczy naraz.
+      const talks = key === talker && !TALKING_DUETS.has(duet.kind) ? frame - speech.at : undefined
+      const rows = withTalking(dress(key === duet.host ? pose.host : pose.guest, actor.face), talks)
       headsAt[key] = headX(key === duet.host ? pose.host : pose.guest, key === duet.host ? at.x : at.x - 2)
       placed.push({ rows, x: key === duet.host ? at.x : at.x - 2, walking: false })
       if (key === duet.host && pose.prop.length > 0) loads.push({ rows: [...pose.prop], x: at.x })
@@ -904,12 +906,13 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
       // Krux wyciąga dłoń po zwój kumpla; w tych klatkach się nie poci.
       const catching = key === 'krux' ? caught : null
       if (catching !== null) raw = withCatch(raw, catching)
-      if (actor.leftAt === null && !frozen && !reacting && catching === null && actor.workAt !== undefined) raw = withEffort(raw, frame - (actor.effortAt ?? frame))
-      if (key === 'krux' && ((frozen && state.snoozing) || trackDozing(actor.track, frame))) raw = withNap(raw)
       // Widz cudzej reakcji wtóruje jej, Krux śledzi zwój, słuchacz zerka na mówcę. Kto sam
-      // reaguje, łapie albo rzuca, patrzy tam, gdzie każe mu jego klatka.
+      // reaguje, łapie albo rzuca, patrzy tam, gdzie każe mu jego klatka. Przed potem: kropla
+      // spływa po skroni tam, gdzie staje prawa pięść, i przerzucałaby ją co klatkę na lewą.
       const sight = reacting || catching !== null || tossing ? null : sightOf(key, at.x)
       if (sight !== null) raw = sight.regard === undefined ? withGaze(raw, sight.dx) : withRegard(raw, sight.regard.kind, sight.regard.t, sight.dx)
+      if (actor.leftAt === null && !frozen && !reacting && catching === null && actor.workAt !== undefined) raw = withEffort(raw, frame - (actor.effortAt ?? frame))
+      if (key === 'krux' && ((frozen && state.snoozing) || trackDozing(actor.track, frame))) raw = withNap(raw)
     }
     const talks = key === talker && actor.leftAt === null ? frame - speech.at : undefined
     const rows = at.walking ? walkerRows(frame, actor.face, leftward ? 'left' : 'right', talks) : withTalking(dress(raw, actor.face), talks)

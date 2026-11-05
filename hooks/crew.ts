@@ -52,7 +52,8 @@ function replyTo(members: readonly KruxHordeMember[], mate: KruxMate, event: Kru
 
 // Wynik własnej roboty kumpla: kumpel fachu zdarzenia dostaje odszczekanie pary, gdy ta stoi
 // na scenie, i co czwarte swoją ripostę; inaczej co drugi wynik krótko komentuje Krux.
-// Para spoza sceny tu nie mówi: odszczekanie „z chodnika” zostaje dla zdarzeń Kruxa.
+// Para spoza sceny tu nie zaczyna: odszczekanie „z chodnika” od początku zostaje dla zdarzeń Kruxa,
+// a para, która zejdzie przed swoją kolejką, mówi przez Kruxa jak zawsze (`expire`).
 function answerTo(members: readonly KruxHordeMember[], member: KruxHordeMember, event: KruxEvent, seed: number): { reply?: KruxLine } {
   if (seed % 2 !== 0) return {}
   const mate = member.mate

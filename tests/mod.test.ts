@@ -2083,6 +2083,27 @@ test('host-backgrounded main and mate tests preserve the failed run without cele
   }
 })
 
+// Główna pętla stoi, póki czeka na `Agent`, więc `sessionStrikes` też: ziarno wyniku kumpla liczy
+// jego zdarzenia, inaczej każdy wynik dostawałby odpowiedź albo żaden, zawsze tą samą kwestią.
+test('every second result of a mate gets an answer while the main loop waits for the agent', async ($, on) => {
+  let latestCrew: KruxCrew | undefined
+  engine(on, new Map(), { agents: [{ id: 'a1', status: 'running' }], toolReply: { result: 'ok', text: '3 pass\n0 fail' } })
+  on('state.set', ($, e, next) => {
+    if (e.plugin === 'krux-mod' && e.key === 'crew') latestCrew = e.value as KruxCrew
+    return next(e)
+  })
+  await start($)
+  await $.agent.spawn(spawnOf({ prompt: 'Młot, puść testy.', description: 'Młot: testy' }))
+  const answered: boolean[] = []
+  for (let i = 0; i < 4; i++) {
+    await $.tool.call({ tool: 'Bash', command: 'npm test', agentId: 'a1' } as never)
+    const bubble = latestCrew?.bubble
+    expect([i, bubble?.kind, bubble?.key]).toEqual([i, 'event', 'a1'])
+    answered.push(bubble?.kind === 'event' && bubble.reply !== undefined)
+  }
+  expect(answered).toEqual([answered[0], !answered[0], answered[0], !answered[0]])
+})
+
 test('working and staged whitespace checks gate commit readiness with a five-second timeout', async ($, on) => {
   let workingCode = 0
   let cachedCode = 0

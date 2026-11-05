@@ -78,3 +78,13 @@ Na `feat/nocny-przeglad-metody-i-pas`, w korzeniu repo:
 - Klatki obejrzane jako PNG: mowa, kibicowanie, mrużenie, słuchanie, opowieść, dyskusja, narada, pokaz.
 - `npx -p typescript@5 tsc -p .`: nie puszczone. Typy silnika (`.claude-plugin/types/`) kładzie dopiero sesja TUI z `--plugin-dir`, a ta pyta o zaufanie do folderu nowego worktree. Tej zgody przegląd nie dał za Morrę; typy nowych funkcji pilnowane ręcznie.
 - `git push`: odrzucony, token `gh` w `/root/.config/gh/hosts.yml` nieważny. Gałąź czeka lokalnie w `/root/projects/krux-mod-straznik`.
+
+## Weryfikacja przed scaleniem
+
+Gałąź sprowadzona z `/root/projects/krux-mod-straznik` i sprawdzona 5 listopada na silniku 2.1.318. W binarce stoją twierdzenia z metody fachu: opis narzędzia Grep („NEVER invoke `grep` or `rg` as a … command”) i oba dopiski silnika o limicie tur. Ocena świeżym okiem animacji i dymków znalazła trzy błędy, każdy odtworzony przed poprawką:
+
+1. **Odpowiedź na wynik kumpla „co drugi raz” działała jak „zawsze albo nigdy”.** Ziarno brało `sessionStrikes`, a ten licznik stoi, póki główna pętla czeka na `Agent`: cztery wyniki Młota dostawały cztery razy tę samą kwestię albo cztery razy ciszę. Teraz ziarno dolicza zdarzenia kumpli (`mateEvents`).
+2. **W dyskusji dwie paszcze naraz.** Szczęka z dymka szła na pozę scenki, która sama prowadzi usta, więc przy nowej linii gościa obaj mówili jednocześnie (klatki 3, 6, 9 dyskusji). Scenki z rozmową (`TALKING_DUETS`) prowadzą usta same.
+3. **Pot przed spojrzeniem.** Kropla potu spływa w kolumnie prawej pięści widza, więc na gołej stójce pięść przeskakiwała z lewej na prawą albo pojawiała się nagle czterema pikselami. W prawdziwych scenach pasa prawą rękę zwykle zajmuje narzędzie i przeskoku nie widać, ale kolejność jest teraz pewna: najpierw spojrzenie, potem pot na wolnym tle.
+
+Do tego kontrakt: odpowiedź na wynik kumpla nie zaczyna się „z chodnika”, ale para, która zejdzie przed swoją kolejką, mówi przez Kruxa, jak w kodzie. `tsc` przechodzi, `claude plugin test .` daje 721 zielonych, skrypty 46 zielonych bez pominiętych. Niesprawdzone: czy gesty wiercenia z dłonią w kolumnie prawej pięści przerzucają ją jak pot.
