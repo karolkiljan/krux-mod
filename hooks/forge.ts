@@ -133,19 +133,23 @@ function visitorOf(frame: number, last: KruxMate | undefined): KruxMate {
   return pool[hashOf(frame, 1) % pool.length]!
 }
 
-// Gość przychodzi z kuflami albo przybija piątkę, po zielonych zawsze piątkę. Nic nie pojawia
-// się w dłoniach samo: kufle gość przynosi z kwater, do piątki rekwizytu nie trzeba.
+// Gość przychodzi z kuflami albo przybija piątkę, po zielonych zawsze piątkę, a do Kruxa przy
+// ogniu czasem z opowieścią. Nic nie pojawia się w dłoniach samo: kufle gość przynosi z kwater,
+// do piątki i opowieści rekwizytu nie trzeba.
 function visitKind(krux: Actor, frame: number): DuetKind {
   if (krux.mood === 'proud') return 'highfive'
-  return hashOf(frame, 2) % 3 === 0 ? 'highfive' : 'toast'
+  const roll = hashOf(frame, 2) % 3
+  if (roll === 1 && krux.track.scene === 'watch') return 'tale'
+  return roll === 0 ? 'highfive' : 'toast'
 }
 
-// Para ze sporu walczy albo się kłóci, po zielonych przybija piątkę, inaczej podaje sobie sprzęt.
+// Para ze sporu walczy albo się kłóci, po zielonych przybija piątkę, inaczej podaje sobie sprzęt,
+// szermuje albo opowiada.
 function duetKind(host: Actor, guest: Actor, seed: number): DuetKind {
   if (host.mood === 'proud' || guest.mood === 'proud') return 'highfive'
   const rivals = host.face !== 'Krux' && host.face !== null && ROSTER[host.face].spar === guest.face
   if (rivals) return seed % 2 === 0 ? 'fence' : 'argue'
-  return seed % 3 === 0 ? 'fence' : 'pass'
+  return (['fence', 'pass', 'tale'] as const)[seed % 3]!
 }
 
 // Słuchacz zerka na mówcę klatkę po nowej linii i patrzy 1,5 s, ale tylko przy co drugiej linii

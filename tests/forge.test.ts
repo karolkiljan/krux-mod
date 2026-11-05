@@ -1797,3 +1797,22 @@ test('a new line from a mate turns the head of a listener toward it now and then
   }
   expect(turned).toBeGreaterThan(0)
 })
+
+test('two orcs at work sometimes trade a tale, and both go back to work after the laugh', () => {
+  const seen = surfaceOf()
+  const state = () => seen.surface.state as Seen
+  draw(pair, seen.surface)
+  const kinds = new Set<string>()
+  for (let i = 0; i < 1500 && !kinds.has('tale'); i++) {
+    seen.tick()
+    draw(pair, seen.surface)
+    if (state().duet !== undefined) kinds.add(state().duet!.kind)
+  }
+  expect(kinds.has('tale')).toBe(true)
+  const started = until(seen, pair, now => now.duet?.at !== null && now.duet?.at !== undefined, 200)
+  expect(started.duet!.kind).toBe('tale')
+  const done = until(seen, pair, now => now.duet === undefined, DUET_FRAMES + 40)
+  expect(done.duet).toBe(undefined)
+  const back = until(seen, pair, now => Object.values(now.actors).every(actor => actor.pending === undefined && actor.left === undefined), 300)
+  expect([back.actors.krux!.track.scene, back.actors.a1!.track.scene]).toEqual(['read', 'pick'])
+})

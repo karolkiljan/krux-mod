@@ -441,12 +441,14 @@ test('the window shows the sky of the hour, and the room has no background', () 
 })
 
 test('duet poses stay in the palette, keep both eyes and open with the partner in reach', () => {
-  for (const kind of ['fence', 'pass', 'highfive', 'argue', 'toast'] as const) {
+  for (const kind of ['fence', 'pass', 'highfive', 'argue', 'toast', 'tale'] as const) {
     for (let t = 0; t < DUET_FRAMES; t += 1) {
       const { host, guest, prop } = duetPose(kind, t)
       for (const rows of [host, guest, prop]) expect([...rows.join('')].every(cell => cell === '.' || PALETTE[cell] !== undefined)).toBe(true)
-      expect(host.join('').split('r').length - 1).toBe(2)
-      expect(guest.join('').split('r').length - 1).toBe(2)
+      // Oczy otwarte, poza rechotem w opowieści: wtedy obaj mają je zamknięte.
+      const open = kind === 'tale' && t >= 18 && t < 30 ? 0 : 2
+      expect([kind, t, host.join('').split('r').length - 1]).toEqual([kind, t, open])
+      expect([kind, t, guest.join('').split('r').length - 1]).toEqual([kind, t, open])
     }
   }
   expect(duetPose('fence', 0).prop.join('')).toContain('s')
@@ -1276,4 +1278,23 @@ test('a reaction seen from the side keeps the frame rules in every pose of every
       }
     }
   }
+})
+
+test('a tale: the guest talks with its hands, the host gapes at the big catch, then both laugh slapping their thighs', () => {
+  const crown = (rows: readonly string[]) => { const y = rows.findIndex(row => /[gG]{4}/u.test(row)); return [y, rows[y]!.search(/[gG]{4}/u)] }
+  const eyes = (rows: readonly string[]) => [...rows.join('')].filter(cell => cell === 'r').length
+  const mouths = new Set<string>()
+  for (let t = 0; t < DUET_FRAMES; t++) {
+    const { host, guest, prop } = duetPose('tale', t)
+    // Bez rekwizytu, a gość stoi w tych samych kolumnach co w każdej scence: nic nie skacze.
+    expect([t, prop.length, crown(guest), crown(host)]).toEqual([t, 0, [0, 3], [0, 1]])
+    const laughing = t >= 18 && t < 30
+    expect([t, eyes(host), eyes(guest)]).toEqual([t, laughing ? 0 : 2, laughing ? 0 : 2])
+    mouths.add(guest[2]!.slice(3, 7))
+    // „Taka ruda!”: gość rozkłada ręce, gospodarzowi opada szczęka.
+    if (t >= 12 && t < 18) expect([t, guest[3], host[2]!.slice(0, 6)]).toEqual([t, 'ggbbbbbbgg', '.tGGt.'])
+    // Dłoń klepie udo tuż przy ciele: przy biodrze albo na nodze, bez wiszącego piksela.
+    if (laughing) expect([t, host[3]![6] === 'g' || host[4]![5] === 'g', guest[3]![1] === 'g' || guest[4]![2] === 'g']).toEqual([t, true, true])
+  }
+  expect([...mouths].sort()).toEqual(['tGGt', 'tcct', 'tggt'])
 })

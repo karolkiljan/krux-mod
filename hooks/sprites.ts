@@ -915,8 +915,9 @@ export function errandPose(t: number, from: number, route: ErrandRoute, face: Fa
 }
 
 // Scenka dwóch orków: gospodarz z lewej, gość z prawej, twarzą w twarz, między nimi miejsce na rekwizyt.
-// `toast`: kumpel z kwater wpada z kuflami, stukają się i piją.
-export type DuetKind = 'fence' | 'pass' | 'highfive' | 'argue' | 'toast'
+// `toast`: kumpel z kwater wpada z kuflami, stukają się i piją. `tale`: gość opowiada z rękami
+// w ruchu, gospodarz słucha, a na koniec obaj rechoczą.
+export type DuetKind = 'fence' | 'pass' | 'highfive' | 'argue' | 'toast' | 'tale'
 export const DUET_GAP = 14
 export const DUET_FRAMES = 32
 
@@ -941,8 +942,37 @@ export const TOAST_RETURN = 26
 const DRINK_HOST = pad(draw([stander('right'), 0, 0], at('g', 6, 3)))
 const DRINK_GUEST = raised(DRINK_HOST)
 
+// Opowieść: gość mówi i gestykuluje (ręka do gospodarza, w górę, potem obie szeroko: „taka ruda!”),
+// gospodarz słucha z rozdziawionymi ustami, a od `TALE_LAUGH` obaj rechoczą z zamkniętymi oczami
+// i klepią się po udzie. Usta chodzą jak przy mowie (`withTalk`), rekwizytu nie ma.
+const TALE_LAUGH = 18
+const TALE_END = 30
+const GUEST = (arm: string) => facing('right', arm)
+// Gość z rękami szeroko: tułów w kolumnach 2–7 jak w każdej pozie gościa, ręce po obu stronach.
+const WIDE_GUEST = ['...gggg', '..rggrgg', '...tggt', 'ggbbbbbbgg', '...bGGb', '...G..G']
+
+// Rechot: oczy zamknięte, usta chodzą, dłoń klepie udo: raz przy biodrze, raz na nodze tuż przy niej.
+function laughing(rows: readonly string[], t: number, hip: number, thigh: number): string[] {
+  const shut = rows.map(row => row.replaceAll('r', 'G'))
+  return pad(draw([withTalk(shut, t), 0, 0], t % 4 < 2 ? at('g', thigh, 4) : at('g', hip, 3)))
+}
+
+function tale(t: number): DuetFrame {
+  if (t < 3 || t >= TALE_END) return { host: RIGHT(''), guest: GUEST(''), prop: [] }
+  if (t >= TALE_LAUGH) {
+    const guest = laughing(GUEST(''), t + 1, 1, 2)
+    return { host: laughing(RIGHT(''), t, 6, 5), guest: guest.map(row => row.replace(/\.+$/u, '')), prop: [] }
+  }
+  const step = Math.floor(t / 3)
+  const gesture = step === 2 ? HIGH_GUEST : step >= 4 ? WIDE_GUEST : GUEST('g')
+  // Przy „taka ruda!” gospodarzowi opada szczęka.
+  const host = step >= 4 ? RIGHT('').map((row, y) => (y === 2 ? row.replace('tggt', 'tGGt') : row)) : RIGHT('')
+  return { host, guest: withTalk(gesture, t), prop: [] }
+}
+
 // Klatka scenki `t`. Współrzędne rekwizytu od lewej krawędzi gospodarza.
 export function duetPose(kind: DuetKind, t: number): DuetFrame {
+  if (kind === 'tale') return tale(t)
   const step = Math.floor(t / 3)
   if (kind === 'fence') {
     const up = step % 2 === 1
