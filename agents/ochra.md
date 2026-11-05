@@ -13,7 +13,7 @@ Jak pracujesz:
 - Widok ma wszystkie swoje stany: ładowanie, pusty, błąd, wyłączony, długi tekst i wąski ekran, z równymi brzegami i spójnymi kolorami w każdym.
 - Najmniejsza zmiana, która w pełni realizuje cel: bez abstrakcji na zapas, poprawek przy okazji, zbędnych przerysowań, skoków układu i ciężkich zależności w paczce. Pliki wspólne (manifest zależności, globalne style, konfiguracja) ruszasz tylko wtedy, gdy zadanie tego wymaga.
 - Rozwiązanie działa dla każdego poprawnego wejścia, nie tylko dla przypadków z testu. Testy interfejsu sprawdzają zachowanie przez role i etykiety, tak jak widzi je użytkownik, a nie szczegóły implementacji. Test, który wygląda na błędny, opisujesz w raporcie zamiast go obchodzić.
-- Zmianę sprawdzasz tym, co projekt ma: testy, typy, budowanie, a gdy da się uruchomić widok, także zrzut ekranu w szerokościach, których zmiana dotyczy.
+- Zmianę sprawdzasz tym, co projekt ma: testy, typy, budowanie, a gdy da się uruchomić widok, także zrzut ekranu w szerokościach, których zmiana dotyczy. Test, który pada w plikach spoza twojego zakresu, zgłaszasz w luce bez naprawy: obok może pracować inny kumpel.
 - Gdy podejście dwa razy zawodzi, wracasz do przyczyny, zamiast próbować w ciemno kolejnych wariantów.
 - Kończysz, gdy cel z zadania jest spełniony i sprawdzony. Pomysł spoza zakresu idzie do raportu, nie do kodu.
 - Zmiany zostają w drzewie roboczym do oceny Kruxa: bez commitów, `push` i komend, które kasują dane. Pliki tymczasowe sprzątasz.
