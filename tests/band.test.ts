@@ -5,7 +5,7 @@ import { CAPTION_COLUMNS, bandPlan } from '../hooks/band'
 import type { BandInput } from '../hooks/band'
 import { EMPTY_CREW, crewAfter } from '../hooks/crew'
 import { EMPTY_LORE, recordTool } from '../hooks/lore'
-import { CALM, EVENT_HOLD_MS, SPAR_EVENTS, sparLine } from '../hooks/mood'
+import { CALM, EVENT_HOLD_MS, SPAR_EVENTS, kruxAnswer, riposteLine, sparLine } from '../hooks/mood'
 import { MATES } from '../hooks/roster'
 import { BUBBLE_TEXT, hasHearth } from '../hooks/sprites'
 import { describeTool } from '../hooks/voice'
@@ -209,7 +209,7 @@ test('a mate’s own result takes the bubble over the mate, off stage nobody say
   let crew: KruxCrew = crewAfter(EMPTY_CREW, { kind: 'spawn', member: MLOT }, 0)
   crew = crewAfter(crew, { kind: 'mate-tool', agentId: 'a2', doing: describeTool('Bash', { command: 'npm test' }, 0) }, 0)
   const said = crewAfter(crew, { kind: 'mate-event', agentId: 'a2', event: 'test-fail', lore: single, seed: 0 }, 500)
-  expect(said.bubble).toEqual({ kind: 'event', key: 'a2', speaker: 'Młot', text: 'Smród! 1 na 1 padać.', until: 500 + EVENT_HOLD_MS })
+  expect(said.bubble).toEqual({ kind: 'event', key: 'a2', speaker: 'Młot', text: 'Smród! 1 na 1 padać.', until: 500 + EVENT_HOLD_MS, reply: { key: 'krux', speaker: 'Krux', text: kruxAnswer('test-fail', 0) } })
   expect(crewAfter(crew, { kind: 'mate-event', agentId: 'a9', event: 'test-fail', lore: single, seed: 0 }, 500)).toBe(crew)
 })
 
@@ -246,4 +246,58 @@ test('the running list prunes the stage, and Krux’s own tool ends a mate step'
   expect(crewAfter(crew, { kind: 'running', ids: new Set(['a1', 'a2']) }, 0)).toBe(crew)
   expect(crewAfter(crew, { kind: 'running', ids: new Set(['a2']) }, 0)).toEqual({ members: [MLOT], bubble: null, cues: [] })
   expect(crewAfter(crew, { kind: 'own-tool', event: null, lore: EMPTY_LORE, seed: 0 }, 0).bubble).toBe(null)
+})
+
+// Dyskusja w trzech kwestiach: co czwarte zdarzenie mówca wtrętu, gdy sam stoi na scenie,
+// odpowiada na odszczekanie pary. Krux nie opowiada sporu dwóch nieobecnych.
+test('a mate on stage answers the partner back every fourth event, and Krux never relays a debate of two absent mates', () => {
+  const niuch = { ...MLOT, agentId: 'a3', mate: 'Niuch' as const }
+  const both = crewAfter(crewAfter(EMPTY_CREW, { kind: 'spawn', member: MLOT }, 0), { kind: 'spawn', member: niuch }, 0)
+  const said = crewAfter(both, { kind: 'own-tool', event: 'test-fail', lore: failed, seed: 0 }, 1_000)
+  expect(said.bubble).toMatchObject({ key: 'a2', speaker: 'Młot' })
+  const answered = crewAfter(said, { kind: 'expire' }, 1_000 + EVENT_HOLD_MS)
+  expect(answered.bubble).toMatchObject({ key: 'a3', speaker: 'Niuch', text: sparLine('test-fail', 0) })
+  const back = crewAfter(answered, { kind: 'expire' }, 1_000 + 2 * EVENT_HOLD_MS)
+  expect(back.bubble).toMatchObject({ key: 'a2', speaker: 'Młot', text: riposteLine('test-fail', 0), until: 1_000 + 3 * EVENT_HOLD_MS })
+  expect(crewAfter(back, { kind: 'expire' }, 1_000 + 3 * EVENT_HOLD_MS).bubble).toBe(null)
+  // Drugie parzyste zdarzenie: odszczekanie bez riposty.
+  const second = crewAfter(crewAfter(both, { kind: 'own-tool', event: 'test-fail', lore: failed, seed: 2 }, 1_000), { kind: 'expire' }, 1_000 + EVENT_HOLD_MS)
+  expect(second.bubble).toMatchObject({ key: 'a3' })
+  expect(crewAfter(second, { kind: 'expire' }, 1_000 + 2 * EVENT_HOLD_MS).bubble).toBe(null)
+  // Mówcy fachu nie ma na scenie, wtręt mówi Krux: odszczekanie z chodnika, ale bez riposty.
+  const relayed = crewAfter(crewAfter(EMPTY_CREW, { kind: 'own-tool', event: 'test-fail', lore: failed, seed: 0 }, 1_000), { kind: 'expire' }, 1_000 + EVENT_HOLD_MS)
+  expect(relayed.bubble).toMatchObject({ key: 'krux', text: expect.stringMatching(/^Niuch z chodnika: /u) })
+  expect(crewAfter(relayed, { kind: 'expire' }, 1_000 + 2 * EVENT_HOLD_MS).bubble).toBe(null)
+  // Mówca zszedł przed swoją ripostą: mówi przez Kruxa, jak para nieobecna.
+  const gone = crewAfter(answered, { kind: 'mate-done', agentId: 'a2' }, 1_000 + EVENT_HOLD_MS + 100)
+  expect(crewAfter(gone, { kind: 'expire' }, 1_000 + 2 * EVENT_HOLD_MS).bubble).toMatchObject({ key: 'krux', text: `Młot z chodnika: ${riposteLine('test-fail', 0)}` })
+  for (const mate of MATES) {
+    for (const event of SPAR_EVENTS) {
+      for (const seed of [0, 4]) expect(`${mate} z chodnika: ${riposteLine(event, seed)}`.length).toBeLessThanOrEqual(BUBBLE_TEXT)
+    }
+  }
+})
+
+test('a mate’s own result gets an answer: the partner on stage when it is the trade of the event, otherwise a word from Krux', () => {
+  const single = recordTool(EMPTY_LORE, 'Bash', { command: 'npm test' }, true)
+  const niuch = { ...MLOT, agentId: 'a3', mate: 'Niuch' as const }
+  const both = crewAfter(crewAfter(EMPTY_CREW, { kind: 'spawn', member: MLOT }, 0), { kind: 'spawn', member: niuch }, 0)
+  const answered = crewAfter(crewAfter(both, { kind: 'mate-event', agentId: 'a2', event: 'test-fail', lore: single, seed: 0 }, 500), { kind: 'expire' }, 500 + EVENT_HOLD_MS)
+  expect(answered.bubble).toMatchObject({ key: 'a3', speaker: 'Niuch', text: sparLine('test-fail', 0) })
+  expect(crewAfter(answered, { kind: 'expire' }, 500 + 2 * EVENT_HOLD_MS).bubble).toMatchObject({ key: 'a2', speaker: 'Młot', text: riposteLine('test-fail', 0) })
+  // Bez pary na scenie mówi Krux, krótko i bez riposty; nieparzysty los to cisza.
+  const alone = crewAfter(EMPTY_CREW, { kind: 'spawn', member: MLOT }, 0)
+  const krux = crewAfter(crewAfter(alone, { kind: 'mate-event', agentId: 'a2', event: 'test-fail', lore: single, seed: 0 }, 500), { kind: 'expire' }, 500 + EVENT_HOLD_MS)
+  expect(krux.bubble).toMatchObject({ key: 'krux', speaker: 'Krux', text: kruxAnswer('test-fail', 0) })
+  expect(crewAfter(krux, { kind: 'expire' }, 500 + 2 * EVENT_HOLD_MS).bubble).toBe(null)
+  expect(crewAfter(crewAfter(alone, { kind: 'mate-event', agentId: 'a2', event: 'test-fail', lore: single, seed: 1 }, 500), { kind: 'expire' }, 500 + EVENT_HOLD_MS).bubble).toBe(null)
+  // Testy Groma to nie fach Groma: odszczekanie Piryta mówiłoby głosem Niucha, więc mówi Krux.
+  const grom = { ...MLOT, agentId: 'a4', mate: 'Grom' as const }
+  const piryt = { ...MLOT, agentId: 'a5', mate: 'Piryt' as const }
+  const forge = crewAfter(crewAfter(EMPTY_CREW, { kind: 'spawn', member: grom }, 0), { kind: 'spawn', member: piryt }, 0)
+  expect(crewAfter(crewAfter(forge, { kind: 'mate-event', agentId: 'a4', event: 'test-fail', lore: single, seed: 0 }, 500), { kind: 'expire' }, 500 + EVENT_HOLD_MS).bubble).toMatchObject({ key: 'krux', speaker: 'Krux' })
+  // Kumpel, który zszedł, nie dostaje odpowiedzi.
+  const left = crewAfter(crewAfter(alone, { kind: 'mate-event', agentId: 'a2', event: 'test-pass', lore: single, seed: 0 }, 500), { kind: 'mate-done', agentId: 'a2' }, 600)
+  expect(crewAfter(left, { kind: 'expire' }, 500 + EVENT_HOLD_MS).bubble).toBe(null)
+  for (const event of SPAR_EVENTS) for (const seed of [0, 2, 4]) expect(kruxAnswer(event, seed).length).toBeLessThanOrEqual(BUBBLE_TEXT)
 })

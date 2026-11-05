@@ -47,11 +47,15 @@ export type KruxHordeMember = { agentId: string; mate: KruxMate | null; scene: K
 // Dymek nad orkiem `key` (`agentId` kumpla albo 'krux'). `step` to krok wysłanego
 // kumpla, trwa, póki kumpel stoi na scenie; `event` to wtręt po zdarzeniu kroniki,
 // do `until` w ms od epoki; `thought` to myśl Kruxa, liczona przy rysowaniu.
+// Kwestia w wymianie zdań: kto mówi i co; `reply` to następna kwestia, która czeka na swoją kolej.
+export type KruxLine = { key: string; speaker: KruxSpeaker; text: string; reply?: KruxLine }
+
 export type KruxBubble =
   | { kind: 'step'; key: string; speaker: KruxSpeaker; text: string }
   | { kind: 'thought'; key: string; speaker: KruxSpeaker; text: string }
-  // `reply`: odszczekanie pary z hordy, wchodzi na miejsce dymka, gdy ten zgaśnie.
-  | { kind: 'event'; key: string; speaker: KruxSpeaker; text: string; until: number; reply?: { key: string; speaker: KruxSpeaker; text: string } }
+  // `reply`: odszczekanie pary z hordy (albo słowo Kruxa do kumpla), wchodzi na miejsce dymka, gdy ten
+  // zgaśnie; jego własny `reply` to riposta pierwszego mówcy.
+  | { kind: 'event'; key: string; speaker: KruxSpeaker; text: string; until: number; reply?: KruxLine }
 
 // Znak dla płótna, do `until` w ms od epoki: reakcja orka `key` na zdarzenie kroniki
 // z jego roboty albo `handoff` — kumpel skończył i oddaje Kruxowi zwój, zanim zejdzie.

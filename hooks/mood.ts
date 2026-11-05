@@ -152,6 +152,33 @@ export function sparLine(event: KruxEvent, seed: number): string {
   return pick(SPAR_LINES[event], seed >> 1)
 }
 
+// Riposta mówcy wtrętu na odszczekanie pary: kumpel fachu zdarzenia (`EVENT_SPEAKER`) broni
+// swojej strony sporu. Też bez faktów spoza zdarzenia, a z przedrostkiem „z chodnika” mieści się
+// w dymku, więc najwyżej 22 znaki.
+const RIPOSTE_LINES: Record<KruxEvent, readonly string[]> = {
+  'test-fail': ['Nos węszyć. Ja liczyć.', 'Kanarek nie kłamać.'],
+  'test-pass': ['Znać to nie liczyć.', 'Trop to nie próba.'],
+  'build-fail': ['Rysa? Przekuć i tyle.', 'Mniej gadać, kuć!'],
+  'build-pass': ['Szukać rysy do rana?', 'Stal trzymać. Patrz.'],
+  commit: ['Pieczęć zostać.', 'Najpierw szukać rysy.'],
+  tear: ['Mierzone trzy razy.', 'Brzeg cały. Patrz.'],
+  zawał: ['Nos nie kłamać.', 'Ślad świeży. Iść tam.'],
+}
+
+export function riposteLine(event: KruxEvent, seed: number): string {
+  return pick(RIPOSTE_LINES[event], seed >> 2)
+}
+
+// Słowo Kruxa do kumpla po wyniku jego własnej roboty, gdy pary nie ma na scenie.
+const KRUX_ANSWERS: Record<'good' | 'bad', readonly string[]> = {
+  good: ['Dobra stal. Hej!', 'Krux widzieć. Tak kuć!', 'Hej! Tak trzymać.'],
+  bad: ['Spokojnie. Szukać dalej.', 'Robak nie uciec.', 'Grr. Kilof w dłoń.'],
+}
+
+export function kruxAnswer(event: KruxEvent, seed: number): string {
+  return pick(KRUX_ANSWERS[GRUMPY_EVENTS.has(event) ? 'bad' : 'good'], seed >> 1)
+}
+
 // Krok wysłanego kumpla: opis narzędzia bez „Krux” na początku.
 export function mateStep(doing: KruxActivity): string {
   const verb = doing.verb.replace(/^Krux /u, '')

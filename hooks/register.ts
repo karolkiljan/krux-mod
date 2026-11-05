@@ -375,12 +375,13 @@ async function afterOwnTool($: EngineInterface, tool: string, input: Record<stri
   }
   await crewStep($, { kind: 'own-tool', event, lore: after, seed: await read($, sessionStrikes), failure })
   // Timer startuje po zapisie dymka, więc nigdy nie wyprzedzi jego `until`.
-  if (event !== null) {
-    $.clock.after(EVENT_HOLD_MS, () => void crewStep($, { kind: 'expire' }))
-    // Odszczekanie pary wisi drugie tyle; bez niego ten zegar nic nie zmienia.
-    $.clock.after(2 * EVENT_HOLD_MS, () => void crewStep($, { kind: 'expire' }))
-  }
+  if (event !== null) expireTalk($)
   return event
+}
+
+// Wtręt, odszczekanie pary i riposta wiszą po `EVENT_HOLD_MS`; zegar bez kwestii do zmiany nic nie robi.
+function expireTalk($: EngineInterface): void {
+  for (const turn of [1, 2, 3]) $.clock.after(turn * EVENT_HOLD_MS, () => void crewStep($, { kind: 'expire' }))
 }
 
 // Narzędzie kumpla na scenie: wynik jego roboty zmienia jego minę i daje jego wtręt
@@ -394,7 +395,7 @@ async function afterMateTool($: EngineInterface, agentId: string, tool: string, 
   const mate = member.mate
   if (mate !== null) await update($, moods, now => mateMoodAfter(now, mate, event))
   await crewStep($, { kind: 'mate-event', agentId, event, lore: single, seed: await read($, sessionStrikes), failure })
-  $.clock.after(EVENT_HOLD_MS, () => void crewStep($, { kind: 'expire' }))
+  expireTalk($)
 }
 
 // Sztolnia idzie za trybem: otwarty, gdy `sztolnia` on. Bez pytania silnik
