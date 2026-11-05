@@ -1,6 +1,6 @@
 # Nocny przegląd 2: metoda fachu kumpli i życie pasa
 
-Przegląd z nocy 4–5 listopada 2026: review metody fachu z 0.24.0 (PR #49) z poprawkami oraz nowe animacje pasa. Wszystko leży na gałęzi `feat/nocny-przeglad-metody-i-pas` od `a1e2334` (0.24.0), wersja bez zmian, bez PR.
+Przegląd z nocy 4–5 listopada 2026: review metody fachu z 0.24.0 (PR #49) z poprawkami, nowe animacje pasa i, w drugiej rundzie, wspólne scenki i dyskusje hordy. Wszystko leży na gałęzi `feat/nocny-przeglad-metody-i-pas` od `a1e2334` (0.24.0), wersja bez zmian, bez PR.
 
 ## Metoda
 
@@ -49,6 +49,19 @@ Zasady: wszystko liczy rysunek z bieżącej klatki, bez zapisu stanu; w bezruchu
 - **Pożegnanie machaniem z progu kwater**: zmienia plan odejścia (`leftAt`, drzwi), czyli najdelikatniejszą część niezmienników kwater.
 - **Kurz spod stóp w marszu**: pokój jest świadomie bez tła i drobnicy, a pył już znaczy zawał i rozbiórkę.
 
+## Druga runda: wspólne scenki i dyskusje
+
+Morra poprosił o więcej wspólnych interakcji przy robocie i więcej dyskusji. Wdrożone (`9f61e48`, `9fc1c3f`):
+
+1. **Riposta w dymkach**: co czwarte zdarzenie mówca fachu, gdy stoi na scenie, odpowiada na odszczekanie pary trzecią kwestią (Młot: „Kanarek nie kłamać.” na „Trop czuć. Dowód?”). Krux nie opowiada sporu dwóch nieobecnych, a mówca, który zszedł przed swoją kolejką, mówi przez Kruxa jak para.
+2. **Odpowiedź na wynik kumpla**: dotąd wynik własnej roboty kumpla zostawał bez echa. Teraz co drugi dostaje odszczekanie pary na scenie, gdy to zdarzenie fachu kumpla, a inaczej krótkie słowo Kruxa („Robak nie uciec.”). Linie pary mówią jej głosem, więc testy Groma nie dostają nosa Niucha w ustach Piryta.
+3. **Dyskusja** (`debate`): mówią na zmianę, nigdy naraz, słuchacz trzyma dłoń przy brodzie, na zgodę uścisk dłoni, który trzęsie się nad środkiem.
+4. **Narada nad mapą** (`council`): zwój spod fartucha rozwija się po kawałku, pokazują palcem na zmianę, gość dostaje „aha!”, mapa zwija się z powrotem.
+5. **Pokaz sztabki** (`show`): sztabka spod fartucha gościa błyska w górze, gospodarz waży ją z dłonią przy brodzie i uznaje.
+6. **Scenka według roboty**: przy stole narada, dyskusja albo opowieść; para ze sporu szermierka, kłótnia albo dyskusja; reszta stal, szermierka, opowieść, dyskusja albo pokaz.
+
+Odłożone: **wspólne kucie** (jeden trzyma stal w szczypcach, drugi wali młotem). Bez kowadła między orkami to kucie w powietrzu, a kowadło, które pojawia się na środku, łamie zasadę, że nic nie wyskakuje skokiem. Kowadło gospodarza stoi w jego czynności, a każda czynność ma je gdzie indziej, więc gość musiałby znać geometrię każdej klatki. To robota na osobną gałąź.
+
 ## Otwarte, do decyzji Morry
 
 - **Tablica Sztolni bierze ostatni przebieg testów, także zawężoną powtórkę** (`hooks/board.ts:193-196`). Po czerwonym pełnym przebiegu Młota powtórka niestabilnego testu, która przejdzie, zazieleni tablicę i linię gotowości do commita. To semantyka „ostatni przebieg” z kontraktu, nie regresja 0.24.0, ale nowa metoda Młota robi z tego zwykły przebieg roboty. Możliwa poprawka: przebieg z filtrem po plikach albo nazwach nie nadpisuje szerszego czerwonego.
@@ -59,9 +72,9 @@ Zasady: wszystko liczy rysunek z bieżącej klatki, bez zapisu stanu; w bezruchu
 Na `feat/nocny-przeglad-metody-i-pas`, w korzeniu repo:
 
 - `claude plugin validate --strict .`: przechodzi.
-- `claude plugin test .`: przed przeglądem 677 z 682 zielonych; 5 czerwonych to wyczerpujące testy klatek ponad limitem 5 s na tej maszynie (1 rdzeń, pliki testów równolegle), nie asercje. Po przeglądzie 692 zielone, 0 czerwonych (10 nowych testów płótna i nakładek).
+- `claude plugin test .`: przed przeglądem 677 z 682 zielonych; 5 czerwonych to wyczerpujące testy klatek ponad limitem 5 s na tej maszynie (1 rdzeń, pliki testów równolegle), nie asercje. Po pierwszej rundzie 692 zielone, 0 czerwonych. Po drugiej 697 z 698: jedyny czerwony to znowu `test-fail effects preserve eyes and apron in every distinct act pose` (5541 ms przy limicie 5000), w izolacji zielony (3782 ms); `withCue` przegląd nie ruszał.
 - `node --test tests/scripts-regression.mjs`: 38 zielonych, 8 pominiętych (tui-shot bez Pythona z `pyte`).
-- Fuzzer płótna: 60 ziaren po 1200 kroków (kumple wchodzą i wychodzą, rzucają zwoje, reakcje, dymki, szerokości, palenisko, bezruch, spoczynek, niski pas): bez wyjątków, po ustaleniu rysunku 0 zapisów stanu.
-- Klatki obejrzane jako PNG: mowa, kibicowanie, mrużenie, słuchanie, opowieść.
+- Fuzzer płótna: 60 ziaren po 1200 kroków (kumple wchodzą i wychodzą, rzucają zwoje, reakcje, dymki, szerokości, palenisko, bezruch, spoczynek, niski pas), po każdej rundzie: bez wyjątków, po ustaleniu rysunku 0 zapisów stanu. W drugiej zagrały narada, dyskusja, pokaz, opowieść, piątka, toast, szermierka i podanie stali.
+- Klatki obejrzane jako PNG: mowa, kibicowanie, mrużenie, słuchanie, opowieść, dyskusja, narada, pokaz.
 - `npx -p typescript@5 tsc -p .`: nie puszczone. Typy silnika (`.claude-plugin/types/`) kładzie dopiero sesja TUI z `--plugin-dir`, a ta pyta o zaufanie do folderu nowego worktree. Tej zgody przegląd nie dał za Morrę; typy nowych funkcji pilnowane ręcznie.
 - `git push`: odrzucony, token `gh` w `/root/.config/gh/hosts.yml` nieważny. Gałąź czeka lokalnie w `/root/projects/krux-mod-straznik`.
