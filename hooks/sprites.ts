@@ -20,7 +20,7 @@ import { NAMELESS_APRON, dress } from './apron'
 import type { Face } from './apron'
 import { PALETTE } from './palette'
 import { MATES, ROSTER } from './roster'
-import { GESTURES } from './fidget'
+import { GESTURES, glance } from './fidget'
 import { terminalText } from './terminal-text'
 import { H, STAND, W, actFrame, at, dots, draw, entryOf, finalLoop, flame, inLoop, kitLead, leadIn, legAt, legDone, lerp, moodOf, noise, pad, restFrame, rotation, settleFrames, stander, walker } from './stage'
 import type { Act, Frame, Layer, Leg, Look, Route } from './stage'
@@ -998,8 +998,10 @@ export function dayPhase(hour: number, month: number): DayPhase {
 const SKY: Record<DayPhase, string> = { night: '7', dawn: '8', day: '9', dusk: '0' }
 
 // Ork w drodze po podłodze: nogi na zmianę, oczy w stronę marszu, bo ciało się nie obraca.
-export function walkerRows(step: number, face: Face, look: Look = 'mid'): string[] {
-  return dress(walker(step, look), face)
+// `talk`: mówi w marszu, więc rusza szczęką (`withTalk`).
+export function walkerRows(step: number, face: Face, look: Look = 'mid', talk?: number): string[] {
+  const rows = dress(walker(step, look), face)
+  return talk === undefined ? rows : withTalk(rows, talk)
 }
 
 export type Placed = { rows: readonly string[]; x: number }
@@ -1303,8 +1305,60 @@ export function withNap(rows: readonly string[]): string[] {
   if (top < 0) return [...rows]
   const crown = rows[top]!.search(/[gG]{4}/u)
   const x = crown + 7
-  // Oczy gasną tylko w obrębie głowy: płomień ogniska w tym samym wierszu zostaje ogniem.
-  const shut = (row: string) => [...row].map((cell, at) => (at >= crown - 1 && at <= crown + 4 && (cell === 'r' || cell === 'y') ? 'G' : cell)).join('')
-  const sleepy = rows.map((row, y) => (y === top + 1 ? shut(row) : row))
-  return pad(draw([sleepy, 0, 0], [['mmm', '..m', '.m.'], x, 0]))
+  return pad(draw([shutEyes(rows), 0, 0], [['mmm', '..m', '.m.'], x, 0]))
+}
+
+// ——— Horda się widzi i gada ———
+// Nakładki z rysunku płótna, bez stanu: mówca rusza szczęką, widz zerka na mówcę albo na orka
+// w reakcji i wtóruje mu. Ruszają tylko oczy, usta i wolne tło, jak gesty wiercenia.
+
+// Mówca, póki dymek odsłania tekst: między kłami na zmianę paszcza, szpara i zamknięte usta.
+// Bez szczęki z kłami (głowa w kapturze rekwizytu, leżący bokiem) usta stoją.
+const MOUTH = ['cc', 'GG', ''] as const
+
+export function withTalk(rows: readonly string[], t: number): string[] {
+  const jaw = rows.findIndex(row => /t[gG]{2}t/u.test(row))
+  const mouth = MOUTH[((t % MOUTH.length) + MOUTH.length) % MOUTH.length]!
+  if (jaw < 0 || mouth === '') return [...rows]
+  const row = rows[jaw]!
+  const x = row.search(/t[gG]{2}t/u) + 1
+  return rows.map((line, y) => (y === jaw ? `${row.slice(0, x)}${mouth}${row.slice(x + 2)}` : line))
+}
+
+// Widz patrzy w stronę `dx` (-1 w lewo, 1 w prawo): źrenice idą do samego brzegu oka, krok po
+// pikselu, póki obok jest skóra. Ork, który patrzył w drugą stronę, przenosi wzrok o dwa piksele.
+export function withGaze(rows: readonly string[], dx: -1 | 1): string[] {
+  return [...glance(glance(rows, dx), dx)]
+}
+
+// Cudza reakcja (`t` od jej początku) widziana z boku: po zielonych i commicie widz klatkę po
+// reagującym błyska złotymi oczami jak dumny ork i unosi pięść, po smrodzie, nieudanym budowaniu,
+// zawale i wybuchu mruży oczy na mgnienie, a przez resztę reakcji patrzy w stronę reagującego.
+// Pięść tylko stojącemu i tylko na tle, więc rekwizyt zostaje rekwizytem, a postawa się nie zmienia.
+export const CHEER_FROM = 4
+export const CHEER_TO = 8
+export const WINCE_TO = 2
+
+export function withRegard(rows: readonly string[], kind: KruxEvent, t: number, dx: -1 | 1): string[] {
+  const grid = pad(rows)
+  const happy = kind === 'test-pass' || kind === 'build-pass' || kind === 'commit'
+  if (!happy && t >= 1 && t <= WINCE_TO) return shutEyes(grid)
+  const gazed = withGaze(grid, dx)
+  if (!happy || t < CHEER_FROM || t > CHEER_TO) return gazed
+  const looked = [...moodOf(gazed, 'proud', false)]
+  const x = standingX(grid)
+  if (x === null) return looked
+  // Pięść w górę, na szczycie wyżej, potem opada: ręka nie znika w jednej klatce.
+  const hand = t === CHEER_TO ? 2 : t >= CHEER_FROM + 2 && t <= CHEER_TO - 1 ? 0 : 1
+  // Wolna ręka: prawa, a gdy po prawej stoi rekwizyt, lewa.
+  const arm = [x + 6, x - 1].map(column => lineArm(column, 3, hand)).find(pixels => pixels.every(([, ax, ay]) => ax >= 0 && looked[ay]?.[ax] === '.'))
+  return arm === undefined ? looked : pad(draw([looked, 0, 0], ...arm))
+}
+
+// Oczy zamknięte w obrębie głowy, także złote dumne: płomień ogniska w tym samym wierszu zostaje ogniem.
+function shutEyes(rows: readonly string[]): string[] {
+  const top = rows.findIndex(row => /[gG]{4}/u.test(row))
+  if (top < 0) return [...rows]
+  const crown = rows[top]!.search(/[gG]{4}/u)
+  return rows.map((row, y) => (y !== top + 1 ? row : [...row].map((cell, at) => (at >= crown - 1 && at <= crown + 4 && (cell === 'r' || cell === 'y') ? 'G' : cell)).join('')))
 }

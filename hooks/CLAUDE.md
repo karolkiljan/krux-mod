@@ -21,7 +21,7 @@ hooks/journal.ts          dziennik narzędzi
 hooks/crew.ts             przejścia sceny poza Kruxem
 hooks/forge.ts            powierzchnia `Client`: płótno, sloty, marsz, wyprawy po rekwizyt, drzwi kwater i nora, odwiedziny, reakcje
 hooks/vector.ts           płótno na Desktopie: `Forge` bez `Client` (`headless`, `drawHeadless`) i klatka jako jeden dokument SVG (`svgOf`)
-hooks/sprites.ts          katalog scen, oś czynności (`Track`), dymek
+hooks/sprites.ts          katalog scen, oś czynności (`Track`), dymek, nakładki mowy i spojrzeń (`withTalk`, `withGaze`, `withRegard`)
 hooks/palette.ts          kolory pikseli (`PALETTE`) i zarezerwowane fartuchy kumpli (`MATE_APRONS`)
 hooks/apron.ts            fartuchy i znaki fachu (`dress`)
 hooks/stage.ts            warsztat czynności i oś czasu (`Route`)
@@ -200,7 +200,8 @@ Uzupełniają zasady przekrojowe z `.claude/CLAUDE.md` i ich nie powtarzają. Uz
 - `cues` i `now` w propsach płótna są opcjonalne; `Actor.cue` pamięta identyfikator i klatkę reakcji, żeby render jej nie powtarzał; `Actor.handoff` opóźnia `leftAt` do końca lotu zwoju.
 - `withCue` zmienia postawę tylko stojącego orka (szczęka w 3. wierszu, pod nią fartuch, niżej nogi: `standingX`); leżący, siedzący i pochylony dostają same efekty. Ta sama miara rządzi `withCatch`. Przy pełnej klatce kanarka `canaryResult` zastępuje efekty testów; wynik z kroniki, nie z pętli. Reakcja trwa 14 klatek.
 - Dymek odsłania 3 znaki co 150 ms, od nowa przy zmianie mówcy lub tekstu; fallback tekstowy od razu w całości. Po 200 tyknięciach bezczynności Krux śpi (runa snu); praca resetuje licznik. Reakcje, marsz i oddanie zwoju kończą się przed zamrożeniem sceny.
-- `still` (`prefersReducedMotion`) wyłącza marsz, reakcje, rzut zwoju, zmęczenie i drzemkę; dymek w całości; zmiana sceny pokazuje statyczny rekwizyt; znaki fachu zostają.
+- Horda się widzi i gada: nakładki z rysunku płótna, bez zapisu stanu. Mówca, póki dymek odsłania tekst, rusza szczęką między kłami (`withTalk`: paszcza `c`, szpara `G`, zamknięte usta), także w marszu i w scence; bez kłów w klatce usta stoją. Widz to ork w zwykłej ścieżce rysunku (nie w marszu, w głębi ani w scence), który sam nie reaguje, nie łapie i nie rzuca. Patrzy na orka w reakcji przez całą reakcję (`withRegard`): po zielonych i commicie od 4. do 8. klatki złote oczy dumy i pięść na wolnym tle, najpierw z prawej, potem z lewej, a z rekwizytem po obu stronach bez pięści; po smrodzie, nieudanym budowaniu, zawale i wybuchu mruży oczy w 1. i 2. klatce. Reakcja w scence i w głębi nie przyciąga spojrzeń, bo jej nie widać. Krux patrzy na kumpla, który rzuca mu zwój, aż wyciągnie po niego dłoń. Słuchacz zerka na mówcę nowej linii od 2. klatki przez 10 (`LISTEN_FRAMES`), ale tylko przy co drugiej linii (`listens`, los z linii i klucza widza) i tylko póki zegar tyka (`typing || !frozen`), więc zamarłe płótno nie zostaje z zezem. Wzrok idzie do brzegu oka (`withGaze`: dwa kroki `glance`). Nakładki trzymają zasady klatki jak gesty: oczu 0 albo 2, fartuch i rekwizyt zostają, zmienia się tylko skóra, oczy i wolne tło (test).
+- `still` (`prefersReducedMotion`) wyłącza marsz, reakcje, rzut zwoju, zmęczenie, drzemkę, mowę szczęką i spojrzenia; dymek w całości; zmiana sceny pokazuje statyczny rekwizyt; znaki fachu zostają.
 - Scena `ask` dotyczy `AskUserQuestion`, nie okna zgody.
 
 ### Czat i dziennik
