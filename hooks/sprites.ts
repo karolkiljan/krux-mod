@@ -1380,8 +1380,9 @@ export function withRegard(rows: readonly string[], kind: KruxEvent, t: number, 
   if (x === null) return looked
   // Pięść w górę, na szczycie wyżej, potem opada: ręka nie znika w jednej klatce.
   const hand = t === CHEER_TO ? 2 : t >= CHEER_FROM + 2 && t <= CHEER_TO - 1 ? 0 : 1
-  // Wolna ręka: prawa, a gdy po prawej stoi rekwizyt, lewa.
-  const arm = [x + 6, x - 1].map(column => lineArm(column, 3, hand)).find(pixels => pixels.every(([, ax, ay]) => ax >= 0 && looked[ay]?.[ax] === '.'))
+  // Wolna ręka: prawa, a gdy po prawej stoi rekwizyt, lewa. Lewa nie sięga wiersza czubka: `dress`
+  // szuka czubka od lewej i przy przechylonej głowie wziąłby pięść za głowę (hełm Groma na dłoni).
+  const arm = [lineArm(x + 6, 3, hand), lineArm(x - 1, 3, Math.max(1, hand))].find(pixels => pixels.every(([, ax, ay]) => ax >= 0 && looked[ay]?.[ax] === '.'))
   return arm === undefined ? looked : pad(draw([looked, 0, 0], ...arm))
 }
 

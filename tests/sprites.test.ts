@@ -1252,8 +1252,10 @@ test('a bystander looks toward a reaction, cheers a green one with a fist and wi
   // Z rekwizytem po prawej pięść idzie w górę po lewej, gdy tam jest tło.
   const aside = pad(draw([stander('mid', 'gg'), 2, 0]))
   const left = withRegard(aside, 'commit', CHEER_FROM + 2, 1)
-  expect([0, 1, 2, 3].map(y => left[y]![1])).toEqual(['g', 'g', 'g', 'g'])
+  // Lewa pięść staje najwyżej w wierszu oczu: w wierszu czubka `dress` wziąłby ją za głowę.
+  expect([0, 1, 2, 3].map(y => left[y]![1])).toEqual(['.', 'g', 'g', 'g'])
   expect(left[3]!.slice(8, 10)).toBe('gg')
+  for (const face of MATES) expect([face, dress(left, face)[0]!.search(/[^.]/u)]).toEqual([face, dress(aside, face)[0]!.search(/[^.]/u)])
   // Leżący na szezlongu nie zrywa się do pięści.
   const lying = pad(ACTS.lounge.find(act => act.name === 'szezlong')!.loop(0, 0))
   expect(withRegard(lying, 'commit', CHEER_FROM + 2, 1)).toEqual(moodOf(withGaze(lying, 1), 'proud', false))
