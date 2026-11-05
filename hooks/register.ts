@@ -12,7 +12,9 @@ import type { Recall } from './lore'
 import { CALM, EVENT_HOLD_MS, eventOf, mateIn, mateMoodAfter, mateOfType, moodsAfter, moodsTick } from './mood'
 import { MATES, ROSTER } from './roster'
 import type { BoardCall } from './board'
-import { EMPTY_BOARD, boardAfter, replayBoard, returnNote, usageOf } from './board'
+import { EMPTY_BOARD, boardAfter, replayBoard, returnNote, testsStale, usageOf } from './board'
+import { factsLine, groundingGate } from './grounding'
+import type { Facts } from './grounding'
 import { GIT_CHECK, GIT_CHECK_CACHED, GIT_LOCAL, GIT_LOG, GIT_STATUS, GIT_UNPUSHED, gitOf } from './git'
 import { EMPTY_THREADS, THREAD_SPEC, replayThreads, saveThread, threadsAfter, threadsReport } from './threads'
 import { dayReport } from './report'
@@ -377,6 +379,12 @@ async function afterOwnTool($: EngineInterface, tool: string, input: Record<stri
   // Timer startuje po zapisie dymka, więc nigdy nie wyprzedzi jego `until`.
   if (event !== null) expireTalk($)
   return event
+}
+
+// Fakty sesji dla bramki i linii stanu: ostatni przebieg testów z tablicy, jego świeżość i odczyt gita.
+async function factsOf($: EngineInterface): Promise<Facts> {
+  const now = await read($, board)
+  return { board: now, stale: testsStale(now), git: await read($, git) }
 }
 
 // Wtręt, odszczekanie pary i riposta wiszą po `EVENT_HOLD_MS`; zegar bez kwestii do zmiany nic nie robi.
@@ -823,6 +831,20 @@ export const register: Register = on => {
     return next(e)
   })
 
+  // Bramka faktów: odpowiedź, która o testach albo repo twierdzi więcej, niż pokazały narzędzia,
+  // wraca do modelu raz, przed końcem tury, zamiast czekać, aż Morra dopyta „na pewno?”.
+  // Drugie zatrzymanie w tej samej turze (`stop_hook_active`) już przechodzi: bez pętli.
+  // Hook moda zatrzymuje koniec tury polem `block` z powodem (tekst); `decision` to u silnika
+  // obiekt zgody na narzędzie, więc `decision: 'block'` z hooków powłoki silnik odrzuca.
+  on('classic.Stop', async ($, e, next) => {
+    const result = await next(e)
+    const input = e as { stop_hook_active?: boolean; last_assistant_message?: string }
+    if (input.stop_hook_active === true || typeof input.last_assistant_message !== 'string') return result
+    if (!(await read($, modes)).persona) return result
+    const reason = groundingGate(input.last_assistant_message, await factsOf($))
+    return reason === null ? result : { ...result, block: reason }
+  })
+
   on('prompt.compose', async ($, e, next) => {
     const composed = await next(e)
     const now = await read($, modes)
@@ -888,6 +910,9 @@ export const register: Register = on => {
           await update($, moodSeen, seen => { fresh = seen !== mood.key; return mood.key })
           if (fresh && risk === null && !judges) extra.push(mood.text)
         }
+        // Stan testów i repo z narzędzi: model mówi z niego, a nie z pamięci rozmowy.
+        const facts = factsLine(await factsOf($))
+        if (facts) extra.push(facts)
         const hint = formatHint(e.text)
         if (hint) extra.push(hint)
         if (risk) extra.push(risk)

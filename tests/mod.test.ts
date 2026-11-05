@@ -3102,3 +3102,35 @@ test('review and debugging turns go without the mood line', async ($, on) => {
   expect(review.context).toContain(FORMAT_HINT.review)
   expect((review.context ?? []).some(entry => entry.startsWith('Nastrój Kruxa'))).toBe(false)
 })
+
+// Bramka faktów: koniec tury z „testy przechodzą” po czerwonym przebiegu wraca do modelu raz,
+// z powodem; drugie zatrzymanie w tej turze i persona off przechodzą bez blokady.
+test('the fact gate sends an answer that claims green tests after a red run back to the model, once', async ($, on) => {
+  on('classic.Stop', () => ({}))
+  engine(on, new Map(), { toolError: '1 failed' })
+  await start($)
+  await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  const blocked = await $.classic.Stop({ stop_hook_active: false, last_assistant_message: 'Krux już naprawić walidację. Testy przechodzą.' }) as { block?: string }
+  expect(blocked.block).toContain('ostatni przebieg (npm test) padł')
+  const again = await $.classic.Stop({ stop_hook_active: true, last_assistant_message: 'Krux już naprawić walidację. Testy przechodzą.' }) as { block?: string }
+  expect(again.block).toBe(undefined)
+  const honest = await $.classic.Stop({ stop_hook_active: false, last_assistant_message: 'Krux już naprawić walidację. Testy jeszcze nie puszczone ponownie.' }) as { block?: string }
+  expect(honest.block).toBe(undefined)
+  await $.prompt.submit({ text: 'wyłącz krux', wait: false, origin: ORIGIN })
+  const off = await $.classic.Stop({ stop_hook_active: false, last_assistant_message: 'Testy przechodzą.' }) as { block?: string }
+  expect(off.block).toBe(undefined)
+})
+
+// Linia stanu z narzędzi: po przebiegu testów prośba Morry niesie jego wynik, raport kumpla nie.
+test('a prompt after a test run carries the facts line from the board', async ($, on) => {
+  engine(on, new Map(), { toolError: '1 failed' })
+  await start($)
+  const before = await $.prompt.submit({ text: 'napraw testy', wait: false, origin: ORIGIN })
+  expect((before.context ?? []).some(entry => entry.startsWith('Stan z narzędzi'))).toBe(false)
+  await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  const after = await $.prompt.submit({ text: 'Jak poszło?', wait: false, origin: ORIGIN })
+  const line = (after.context ?? []).find(entry => entry.startsWith('Stan z narzędzi'))
+  expect(line).toContain('ostatni przebieg npm test czerwony')
+  const report = await $.prompt.submit({ text: 'Review: build failed.', wait: false, origin: { kind: 'task-notification' } })
+  expect((report.context ?? []).some(entry => entry.startsWith('Stan z narzędzi'))).toBe(false)
+})
