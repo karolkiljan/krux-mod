@@ -1,8 +1,8 @@
 import type { KruxActivity, KruxDrift, KruxDriftKind, KruxMode, KruxModes, KruxScene } from '../types'
 
-export const DEFAULT_MODES: KruxModes = { persona: true, konkret: false, flow: false, animacje: true, kowal: true, sztolnia: true, czat: false }
+export const DEFAULT_MODES: KruxModes = { persona: true, konkret: false, flow: false, animacje: true, kowal: true, sztolnia: true, czat: false, audyt: false }
 
-export const MODES: readonly KruxMode[] = ['persona', 'konkret', 'flow', 'animacje', 'kowal', 'sztolnia', 'czat']
+export const MODES: readonly KruxMode[] = ['persona', 'konkret', 'flow', 'animacje', 'kowal', 'sztolnia', 'czat', 'audyt']
 
 export const VOICE_ANCHOR = `Krux pamiętać: Morra trzecią osobą — „Krux nie widzieć plik", nie „nie widzę pliku". Bezokolicznik zamiast formy osobowej: „Robak siedzieć w pętli", nie „Robak siedzi w pętli"; „Krux polecać wariant 2", nie „Polecam wariant 2". Czas osobnym słowem: „Krux już naprawić", „Krux jeszcze nie sprawdzić", „Krux zaraz puścić test", nie „naprawiłem". Bez „jest": „Plik pusty", nie „Plik jest pusty". Zdanie do 8 słów: „Build pad. Robak siedzieć w pętli.", nie „Build się wysypał, bo return jest w pętli". Łamać tylko ramę zdania: negacja, liczby, ścieżki i komunikaty błędów dosłownie — „3 testy nie przejść", nie „testy mało dobre". Fakt tylko z wyjścia narzędzia, reszta to hipoteza: „Krux podejrzewać cache", nie „Winny cache". Słownik żywy: robak, smród, sztolnia, wykuć, zawał.`
 
@@ -369,6 +369,7 @@ const MODE_WORDS: Record<string, KruxMode> = {
   kowal: 'kowal',
   sztolnia: 'sztolnia',
   czat: 'czat',
+  audyt: 'audyt',
 }
 
 export function parseCommand(args: string): KruxCommand {
@@ -415,6 +416,7 @@ export function modelNote(mode: KruxMode, on: boolean): string | null {
     case 'animacje':
     case 'kowal':
     case 'sztolnia':
+    case 'audyt':
       return null
   }
 }
@@ -436,6 +438,8 @@ export function userLine(mode: KruxMode, on: boolean): string {
       return on ? 'Sztolnia otwarta: plan, testy, horda i kontekst z boku transkryptu.' : 'Sztolnia zamknięta.'
     case 'czat':
       return on ? 'Czat włączony: awatary i nagłówki rozmowy.' : 'Czat wyłączony.'
+    case 'audyt':
+      return on ? 'Audyt włączony: przed końcem tury mały model sprawdza odpowiedź z wyjściem narzędzi.' : 'Audyt wyłączony.'
   }
 }
 
@@ -452,6 +456,7 @@ export const HELP = [
   '/krux kowal [on|off] — kowal także w spoczynku',
   '/krux sztolnia [on|off] — panel ze stanem roboty',
   '/krux czat [on|off] — rozmowa z awatarami',
+  '/krux audyt [on|off] — mały model sprawdza odpowiedź z wyjściem narzędzi',
   '/krux dziennik — karta dziennika narzędzi w Sztolni',
   '/krux zapisz <tekst> — dodaj notatkę do otwartych wątków',
   '/krux raport — raport dnia do wklejenia',

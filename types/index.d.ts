@@ -1,4 +1,4 @@
-export type KruxMode = 'persona' | 'konkret' | 'flow' | 'animacje' | 'kowal' | 'sztolnia' | 'czat'
+export type KruxMode = 'persona' | 'konkret' | 'flow' | 'animacje' | 'kowal' | 'sztolnia' | 'czat' | 'audyt'
 
 export type KruxModes = Record<KruxMode, boolean>
 

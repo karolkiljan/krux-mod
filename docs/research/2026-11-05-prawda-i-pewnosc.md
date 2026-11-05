@@ -36,7 +36,9 @@ Prośba: odpowiedzi osadzone w faktach, bez przeprosin po „na pewno?”. Pełn
 
 Mod zwraca `block`, nie `decision: "block"`: w wyniku hooka moda `decision` to obiekt zgody na narzędzie, a tekst silnik odrzuca („returned a decision that is not an object”, zestaw testów silnika 2.1.295).
 
-Granica: bramka nie sprawdzi zdań o treści kodu („funkcja zwraca null”) ani o zachowaniu programu. Na nie działają triki z promptu wyżej i dopytanie o pewność. Następny krok, droższy: audyt odpowiedzi małym modelem (`$.model.classify`) na tle wyjść narzędzi z tury, przy każdym końcu tury.
+Granica: bramka nie sprawdzi zdań o treści kodu („funkcja zwraca null”) ani o zachowaniu programu. Na to jest tryb `audyt` (niżej) i triki z promptu.
+
+3. **Audyt małym modelem** (`/krux audyt on`, domyślnie off). Po bramce odpowiedź, w której padają słowa o sprawdzaniu, czytaniu i wynikach, idzie do Haiku (`$.model.complete`, alias `haiku`, limit 20 s). Dostaje dowody: linię stanu i ostatnie wywołania narzędzi z wynikami, najnowsze pierwsze, razem do 8000 znaków. Zdania podane jako zobaczone, których dowody nie pokazują, wracają do modelu tym samym `block`. Zmyślony przez audytora cytat nie zatrzyma tury: zostają tylko zdania, które naprawdę stoją w odpowiedzi. Awaria albo milczenie modelu nic nie blokuje. Koszt: jedno wywołanie Haiku na odpowiedź ze słowami o sprawdzaniu. `$.model.complete` wymaga pola `model`; alias rozwiązuje silnik i sprawdza listę dozwolonych modeli organizacji, czego zestaw testów nie widzi.
 
 ## Czego nie zmierzono
 

@@ -252,7 +252,7 @@ test('/krux status and an unknown argument answer as text', async ($, on) => {
   await start($)
   const presentation = { isFullscreen: false, columns: 120 }
   const status = await $.command.run({ command: 'krux', args: 'status', origin: ORIGIN, presentation })
-  expect(status.text).toBe('persona: on · konkret: off · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off')
+  expect(status.text).toBe('persona: on · konkret: off · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off · audyt: off')
   const help = await $.command.run({ command: 'krux', args: 'kopać', origin: ORIGIN, presentation })
   expect(help.text).toContain('/krux status')
 })
@@ -2308,7 +2308,7 @@ test('/krux status reports auto, manual and off konkret without saving the autom
   await start($, clock)
   const command = { command: 'krux', origin: ORIGIN, presentation: { isFullscreen: false, columns: 120 } }
   const automatic = await $.command.run({ ...command, args: 'status' })
-  expect(automatic.text).toBe('persona: on · konkret: auto · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off')
+  expect(automatic.text).toBe('persona: on · konkret: auto · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off · audyt: off')
   expect(automatic.context).toBeUndefined()
   expect(saved.get('mode.konkret')).toBe(false)
   expect(saved.size).toBe(1)
@@ -2339,7 +2339,7 @@ test('a measured limit reset wins over a start read that returns late', async ($
   const command = { command: 'krux', args: 'status', origin: ORIGIN, presentation: { isFullscreen: false, columns: 120 } }
   const off = {
     sections: ['intro', 'krux-mod:persona'],
-    status: 'persona: on · konkret: off · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off',
+    status: 'persona: on · konkret: off · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off · audyt: off',
   }
   const snapshot = async () => ({ sections: await sectionIds($), status: (await $.command.run(command)).text })
   // Odczyt ze startu czeka; w tym czasie silnik pcha świeższe liczby.
@@ -3133,4 +3133,31 @@ test('a prompt after a test run carries the facts line from the board', async ($
   expect(line).toContain('ostatni przebieg npm test czerwony')
   const report = await $.prompt.submit({ text: 'Review: build failed.', wait: false, origin: { kind: 'task-notification' } })
   expect((report.context ?? []).some(entry => entry.startsWith('Stan z narzędzi'))).toBe(false)
+})
+
+// Tryb audyt: po bramce mały model sprawdza zdania podane jako zobaczone; zmyślony cytat nic nie
+// blokuje, odpowiedź bez słów o sprawdzaniu nie kosztuje wywołania, a tryb domyślnie śpi.
+test('the audit mode asks a small model about the answer and sends unsupported sentences back', async ($, on) => {
+  const prompts: string[] = []
+  let verdict = 'Krux przeczytać config.yml: port 8080.'
+  on('classic.Stop', () => ({}))
+  on('model.complete', ($, e) => {
+    prompts.push(String(e.prompt))
+    return { value: { isAnswered: true, text: verdict } }
+  })
+  engine(on, new Map(), { history: [{ role: 'assistant', text: '', toolUses: [{ tool: 'Read', input: { file_path: 'config.yml' }, text: 'port: 3000' }] }] })
+  await start($)
+  const answer = 'Krux przeczytać config.yml: port 8080. Pewnie warto dodać cache.'
+  const asleep = await $.classic.Stop({ stop_hook_active: false, last_assistant_message: answer }) as { block?: string }
+  expect([asleep.block, prompts.length]).toEqual([undefined, 0])
+  await kruxCommand($, 'audyt on')
+  const blocked = await $.classic.Stop({ stop_hook_active: false, last_assistant_message: answer }) as { block?: string }
+  expect(blocked.block).toContain('Audyt faktów')
+  expect(blocked.block).toContain('port 8080')
+  expect(prompts[0]).toContain('port: 3000')
+  verdict = 'Krux usunąć bazę.'
+  const invented = await $.classic.Stop({ stop_hook_active: false, last_assistant_message: answer }) as { block?: string }
+  expect(invented.block).toBe(undefined)
+  const chat = await $.classic.Stop({ stop_hook_active: false, last_assistant_message: 'Hej, co dziś kopać?' }) as { block?: string }
+  expect([chat.block, prompts.length]).toEqual([undefined, 2])
 })

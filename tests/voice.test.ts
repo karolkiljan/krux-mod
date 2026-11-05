@@ -110,10 +110,10 @@ test('a flip toggles one mode and leaves the others', async () => {
 })
 
 test('status distinguishes automatic konkret from a manual mode and keeps the other modes', () => {
-  expect(statusLine(DEFAULT_MODES)).toBe('persona: on · konkret: off · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off')
-  expect(statusLine(DEFAULT_MODES, true)).toBe('persona: on · konkret: auto · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off')
+  expect(statusLine(DEFAULT_MODES)).toBe('persona: on · konkret: off · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off · audyt: off')
+  expect(statusLine(DEFAULT_MODES, true)).toBe('persona: on · konkret: auto · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off · audyt: off')
   for (const automatic of [false, true]) {
-    expect(statusLine({ ...DEFAULT_MODES, konkret: true }, automatic)).toBe('persona: on · konkret: on · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off')
+    expect(statusLine({ ...DEFAULT_MODES, konkret: true }, automatic)).toBe('persona: on · konkret: on · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off · audyt: off')
   }
 })
 

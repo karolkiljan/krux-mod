@@ -15,6 +15,7 @@ import type { BoardCall } from './board'
 import { EMPTY_BOARD, boardAfter, replayBoard, returnNote, testsStale, usageOf } from './board'
 import { factsLine, groundingGate } from './grounding'
 import type { Facts } from './grounding'
+import { AUDIT_SYSTEM, auditClaims, auditPrompt, auditReason, auditWorthy, evidenceOf } from './audit'
 import { GIT_CHECK, GIT_CHECK_CACHED, GIT_LOCAL, GIT_LOG, GIT_STATUS, GIT_UNPUSHED, gitOf } from './git'
 import { EMPTY_THREADS, THREAD_SPEC, replayThreads, saveThread, threadsAfter, threadsReport } from './threads'
 import { dayReport } from './report'
@@ -385,6 +386,26 @@ async function afterOwnTool($: EngineInterface, tool: string, input: Record<stri
 async function factsOf($: EngineInterface): Promise<Facts> {
   const now = await read($, board)
   return { board: now, stale: testsStale(now), git: await read($, git) }
+}
+
+// Audyt odpowiedzi małym modelem (tryb `audyt`): powód zatrzymania albo `null`. Odpowiedź bez słów
+// o sprawdzaniu nie kosztuje wywołania, a awaria modelu nic nie blokuje: idzie do debug logu.
+// Model po aliasie (silnik rozwiązuje go i sprawdza listę dozwolonych organizacji), z limitem czasu,
+// żeby koniec tury nie wisiał na wolnym modelu.
+const AUDIT_MODEL = 'haiku'
+const AUDIT_TIMEOUT_MS = 20_000
+async function auditAnswer($: EngineInterface, answer: string, facts: Facts): Promise<string | null> {
+  if (!auditWorthy(answer)) return null
+  try {
+    const evidence = evidenceOf(await $.session.messages(), factsLine(facts))
+    const verdict = await $.model.complete({ model: AUDIT_MODEL, system: AUDIT_SYSTEM, prompt: auditPrompt(answer, evidence), maxTokens: 400, timeoutMs: AUDIT_TIMEOUT_MS })
+    if (!verdict.isAnswered) return null
+    const claims = auditClaims(verdict.text, answer)
+    return claims.length === 0 ? null : auditReason(claims)
+  } catch (error) {
+    $.ui.log(`audyt: ${error instanceof Error ? error.message : String(error)}`, { to: 'debug' })
+    return null
+  }
 }
 
 // Wtręt, odszczekanie pary i riposta wiszą po `EVENT_HOLD_MS`; zegar bez kwestii do zmiany nic nie robi.
@@ -836,12 +857,17 @@ export const register: Register = on => {
   // Drugie zatrzymanie w tej samej turze (`stop_hook_active`) już przechodzi: bez pętli.
   // Hook moda zatrzymuje koniec tury polem `block` z powodem (tekst); `decision` to u silnika
   // obiekt zgody na narzędzie, więc `decision: 'block'` z hooków powłoki silnik odrzuca.
+  // Tryb `audyt` dokłada po bramce audyt małym modelem: zdania podane jako sprawdzone kontra
+  // wyjście narzędzi, także bez persony.
   on('classic.Stop', async ($, e, next) => {
     const result = await next(e)
     const input = e as { stop_hook_active?: boolean; last_assistant_message?: string }
     if (input.stop_hook_active === true || typeof input.last_assistant_message !== 'string') return result
-    if (!(await read($, modes)).persona) return result
-    const reason = groundingGate(input.last_assistant_message, await factsOf($))
+    const now = await read($, modes)
+    if (!now.persona && !now.audyt) return result
+    const facts = await factsOf($)
+    const answer = input.last_assistant_message
+    const reason = (now.persona ? groundingGate(answer, facts) : null) ?? (now.audyt ? await auditAnswer($, answer, facts) : null)
     return reason === null ? result : { ...result, block: reason }
   })
 
