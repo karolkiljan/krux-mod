@@ -5,7 +5,7 @@ import Forge from '../hooks/forge'
 import type { ForgeOrc, ForgeProps } from '../hooks/forge'
 import { CALM } from '../hooks/mood'
 import { MATES } from '../hooks/roster'
-import { ACTS, CUE_FRAMES, WINCE_TO, DUET_FRAMES, SPEAKER_COLOR, WALL_MIN, DUET_GAP, ERRAND_FRAMES, PALETTE, RISE_FRAMES, TOAST_RETURN, carried, doorX, errandEnd, errandPose, kitAt, kitReach, quartersDoor, routeOf, stationX, tossFrames, trackGrid } from '../hooks/sprites'
+import { ACTS, CHEER_FROM, CHEER_TO, CUE_FRAMES, WINCE_TO, DUET_FRAMES, SPEAKER_COLOR, WALL_MIN, DUET_GAP, ERRAND_FRAMES, PALETTE, RISE_FRAMES, TOAST_RETURN, carried, doorX, errandEnd, errandPose, kitAt, kitReach, quartersDoor, routeOf, stationX, tossFrames, trackGrid } from '../hooks/sprites'
 import type { Track } from '../hooks/sprites'
 import { STAND, legAt, pad } from '../hooks/stage'
 import { drawHeadless, headless, svgOf } from '../hooks/vector'
@@ -1864,6 +1864,42 @@ test('in a debate a new line in the bubble never opens a second mouth while the 
   }
   // Gospodarz dalej mówi swoją kolejkę: paszcza się otwiera, tylko nie dwie naraz.
   expect(talked).toBeGreaterThan(0)
+})
+
+// Widz przy robocie wtóruje zielonym jedną pięścią przez całe kibicowanie albo samymi oczami:
+// pięść nie miga przy narzędziu w ruchu i nie przeskakuje z ręki do ręki. Marsz, wyprawa
+// i scenka zmieniają całą sylwetkę, więc te klatki próba pomija.
+test('a viewer at work cheers with one steady fist or none, never a blinking one', () => {
+  for (const scene of ['hammer', 'plan'] as const) {
+    const base: ForgeProps = { ...FLOOR, orcs: [{ ...KRUX, scene, workAt: 0 }, GROM] }
+    const calm = surfaceOf()
+    const loud = surfaceOf()
+    // Kolumna pięści w każdej klatce kibicowania, po starcie reakcji Groma (`cue.at`).
+    const cheers = new Map<number, (string | null)[]>()
+    for (let frame = 0; frame < 1300; frame++) {
+      const start = frame >= 200 ? frame - ((frame - 200) % 30) : -1
+      const props: ForgeProps = start >= 0 && frame - start < 20 ? { ...base, cues: [{ key: 'a1', kind: 'test-pass', until: 9_000_000 + start }] } : base
+      const quiet = pixelsOf(draw(base, calm.surface)).slice(6, 12)
+      const cheer = pixelsOf(draw(props, loud.surface)).slice(6, 12)
+      const state = loud.surface.state as Seen
+      const krux = state.actors.krux!
+      const cue = state.actors.a1!.cue
+      const t = cue === undefined || cue.held !== undefined ? -1 : state.frame - cue.at
+      const busy = (state.duet?.at ?? null) !== null || krux.errand !== undefined || krux.pending !== undefined || krux.enter > state.frame || state.actors.a1!.errand !== undefined
+      if (t >= CHEER_FROM && t <= CHEER_TO && !busy && JSON.stringify((calm.surface.state as Seen).actors.krux) === JSON.stringify(krux)) {
+        // Szczęka stojącego Kruxa w trzecim wierszu; pięść stoi tuż za tułowiem z prawej albo z lewej.
+        const jaw = quiet[2]!.findIndex((cell, x) => x >= krux.home - 2 && cell === PALETTE.t && quiet[2]![x + 3] === PALETTE.t)
+        const fist = (x: number) => [0, 1, 2, 3].some(y => cheer[y]![x] === PALETTE.g && (quiet[y]![x] === null || quiet[y]![x] === PALETTE.i))
+        const side = jaw < 0 ? null : fist(jaw + 5) ? 'prawa' : fist(jaw - 2) ? 'lewa' : null
+        cheers.set(cue!.at, [...(cheers.get(cue!.at) ?? []), side])
+      }
+      calm.tick()
+      loud.tick()
+    }
+    const whole = [...cheers.entries()].filter(([, sides]) => sides.length === CHEER_TO - CHEER_FROM + 1)
+    expect([scene, whole.length >= 10, whole.some(([, sides]) => sides.includes('prawa') || sides.includes('lewa'))]).toEqual([scene, true, true])
+    for (const [at, sides] of whole) expect([scene, at, new Set(sides).size]).toEqual([scene, at, 1])
+  }
 })
 
 test('orcs at the table hold councils and debates, orcs on the floor also show off a bar', () => {

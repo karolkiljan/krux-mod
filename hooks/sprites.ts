@@ -1434,21 +1434,48 @@ export const CHEER_FROM = 4
 export const CHEER_TO = 8
 export const WINCE_TO = 2
 
-export function withRegard(rows: readonly string[], kind: KruxEvent, t: number, dx: -1 | 1): string[] {
+export type CheerSide = 'right' | 'left'
+
+// Zdarzenia, którym widz wtóruje złotymi oczami i pięścią; reszcie mruży oczy.
+const HAPPY: ReadonlySet<KruxEvent> = new Set<KruxEvent>(['test-pass', 'build-pass', 'commit'])
+
+// Ręka pięści w klatce kibicowania `t`: piksele na wolnym tle stojącego orka albo `null`.
+// Pięść w górę, na szczycie wyżej, potem opada: ręka nie znika w jednej klatce. Lewa nie sięga
+// wiersza czubka: `dress` szuka czubka od lewej i przy przechylonej głowie wziąłby pięść za głowę
+// (hełm Groma na dłoni). Złote oczy i spojrzenie ruszają tylko oczy, więc tło sprawdzamy na pozie.
+function cheerArm(grid: readonly string[], t: number, side: CheerSide): Layer[] | null {
+  const x = standingX(grid)
+  if (x === null) return null
+  const hand = t === CHEER_TO ? 2 : t >= CHEER_FROM + 2 && t <= CHEER_TO - 1 ? 0 : 1
+  const arm = side === 'right' ? lineArm(x + 6, 3, hand) : lineArm(x - 1, 3, Math.max(1, hand))
+  return arm.every(([, ax, ay]) => ax >= 0 && grid[ay]?.[ax] === '.') ? arm : null
+}
+
+// Strona pięści na całe kibicowanie: prawa, a gdy tam stoi rekwizyt, lewa, ale tylko taka, na
+// której ręka mieści się w każdej klatce od `CHEER_FROM` do `CHEER_TO` (`frames[i]` to poza
+// w klatce `CHEER_FROM + i`). Bez takiej strony zostają same złote oczy: pięść wybierana
+// klatka po klatce migała przy narzędziu w ruchu i przeskakiwała z prawej ręki do lewej.
+export function cheerSide(frames: readonly (readonly string[])[]): CheerSide | null {
+  return (['right', 'left'] as const).find(side => frames.every((rows, i) => cheerArm(pad(rows), CHEER_FROM + i, side) !== null)) ?? null
+}
+
+// `side`: strona z całego kibicowania (`cheerSide`), `null` bez pięści; bez niej pierwsza wolna
+// w tej jednej klatce.
+export function withRegard(rows: readonly string[], kind: KruxEvent, t: number, dx: -1 | 1, side?: CheerSide | null): string[] {
   const grid = pad(rows)
-  const happy = kind === 'test-pass' || kind === 'build-pass' || kind === 'commit'
+  const happy = HAPPY.has(kind)
   if (!happy && t >= 1 && t <= WINCE_TO) return shutEyes(grid)
   const gazed = withGaze(grid, dx)
   if (!happy || t < CHEER_FROM || t > CHEER_TO) return gazed
   const looked = proud(gazed)
-  const x = standingX(grid)
-  if (x === null) return looked
-  // Pięść w górę, na szczycie wyżej, potem opada: ręka nie znika w jednej klatce.
-  const hand = t === CHEER_TO ? 2 : t >= CHEER_FROM + 2 && t <= CHEER_TO - 1 ? 0 : 1
-  // Wolna ręka: prawa, a gdy po prawej stoi rekwizyt, lewa. Lewa nie sięga wiersza czubka: `dress`
-  // szuka czubka od lewej i przy przechylonej głowie wziąłby pięść za głowę (hełm Groma na dłoni).
-  const arm = [lineArm(x + 6, 3, hand), lineArm(x - 1, 3, Math.max(1, hand))].find(pixels => pixels.every(([, ax, ay]) => ax >= 0 && looked[ay]?.[ax] === '.'))
+  const sides: readonly CheerSide[] = side === undefined ? ['right', 'left'] : side === null ? [] : [side]
+  const arm = sides.map(one => cheerArm(grid, t, one)).find((pixels): pixels is Layer[] => pixels !== null)
   return arm === undefined ? looked : pad(draw([looked, 0, 0], ...arm))
+}
+
+// Kibicowanie z wolną ręką: wtóruje zielonym i commitowi od `CHEER_FROM` do `CHEER_TO`.
+export function cheers(kind: KruxEvent, t: number): boolean {
+  return HAPPY.has(kind) && t >= CHEER_FROM && t <= CHEER_TO
 }
 
 // Oczy zamknięte w obrębie głowy, także złote dumne: płomień ogniska w tym samym wierszu zostaje ogniem.
