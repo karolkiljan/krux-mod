@@ -51,7 +51,7 @@ Zasady: wszystko liczy rysunek z bieżącej klatki, bez zapisu stanu; w bezruchu
 
 ## Druga runda: wspólne scenki i dyskusje
 
-Morra poprosił o więcej wspólnych interakcji przy robocie i więcej dyskusji. Wdrożone (`9f61e48`, `9fc1c3f`):
+Prośba Morry: więcej wspólnych interakcji przy robocie i więcej dyskusji. Wdrożone (`9f61e48`, `9fc1c3f`):
 
 1. **Riposta w dymkach**: co czwarte zdarzenie mówca fachu, gdy stoi na scenie, odpowiada na odszczekanie pary trzecią kwestią (Młot: „Kanarek nie kłamać.” na „Trop czuć. Dowód?”). Krux nie opowiada sporu dwóch nieobecnych, a mówca, który zszedł przed swoją kolejką, mówi przez Kruxa jak para.
 2. **Odpowiedź na wynik kumpla**: dotąd wynik własnej roboty kumpla zostawał bez echa. Teraz co drugi dostaje odszczekanie pary na scenie, gdy to zdarzenie fachu kumpla, a inaczej krótkie słowo Kruxa („Robak nie uciec.”). Linie pary mówią jej głosem, więc testy Groma nie dostają nosa Niucha w ustach Piryta.
