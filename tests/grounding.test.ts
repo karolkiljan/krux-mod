@@ -68,6 +68,10 @@ test('a count of passed tests has to match the last run', () => {
   expect(mismatches('52 testy przechodzą.', fifty).some(line => line.includes('podał przeszłe: 50'))).toBe(true)
   // Mieszane zdanie z porażką nie jest „zielono”, ale liczba w nim dalej musi się zgadzać.
   expect(mismatches('51 przejść, 1 padać.', fifty)).toEqual([expect.stringContaining('podał przeszłe: 50')])
+  // Podsumowanie dwóch zestawów: liczba ostatniego przebiegu stoi obok, więc druga to inny zestaw.
+  const scripts = { ...FRESH, board: { tasks: [], test: { ...RUN, command: 'node --test tests/scripts-regression.mjs', passed: 46 } } }
+  expect(mismatches('721 testów zielonych, skrypty 46/46.', scripts)).toEqual([])
+  expect(mismatches('721 testów zielonych.', scripts)[0]).toContain('podał przeszłe: 46')
 })
 
 test('pushed and clean claims stand on the git read', () => {

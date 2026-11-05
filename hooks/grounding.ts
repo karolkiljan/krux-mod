@@ -46,6 +46,12 @@ function passedCount(sentence: string): number | null {
   return match === null ? null : Number(match[1])
 }
 
+// Odpowiedź, która podaje też liczbę z ostatniego przebiegu („skrypty 46/46”, „46 pass”), zna go:
+// inna liczba obok to inny zestaw („721 testów zielonych”), nie pomyłka. Mod widzi jeden przebieg naraz.
+function namesCount(answer: string, passed: number): boolean {
+  return new RegExp(String.raw`(?<!\p{L}|\d)${passed}(?:\s*\/\s*\d+|\s+(?:na|z)\s+\d+|\s+(?:test\p{L}*\s+)?(?:przechodz\p{L}*|przesz\p{L}*|przejść|zielon\p{L}*|pass\p{L}*|green|ok))(?!\p{L})`, 'iu').test(answer)
+}
+
 // Zdania mowy do Morry: bez bloków kodu, kodu w linii, cytatów i wierszy cytatu `>` (tam wolno
 // przytoczyć cudze „testy przechodzą”).
 function sentencesOf(answer: string): string[] {
@@ -88,7 +94,7 @@ export function mismatches(answer: string, facts: Facts): string[] {
     else if (!run.ok) found.push(`„${cut(green)}", a ostatni przebieg widziany przez mod (${commandOf(run.command)}) padł${run.failed === null ? '' : `: padłe ${run.failed}`}`)
     else if (facts.stale) found.push(`„${cut(green)}", a po ostatnim przebiegu testów była edycja kodu, więc wynik jest nieświeży`)
   }
-  if (run !== null && run.passed !== null) {
+  if (run !== null && run.passed !== null && !namesCount(answer, run.passed)) {
     const counted = sentences.filter(sentence => !SOFT.test(sentence)).find(sentence => {
       const passed = passedCount(sentence)
       return passed !== null && passed !== run.passed
