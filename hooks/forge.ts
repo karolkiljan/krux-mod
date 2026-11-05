@@ -1,7 +1,7 @@
 import type { ClientModule } from 'claude-code'
 
 import type { KruxCue, KruxEvent, KruxMate, KruxMood, KruxSpeaker } from '../types'
-import { CATCH_X, CUE_FRAMES, DUET_FRAMES, DUET_GAP, FRAME_MS, MUGS, ORC_GAP, ORC_WIDTH, RISE_FRAMES, SILL_LIFT, SPEAKER_COLOR, TALKING_DUETS, TOAST_HELD, TOAST_RETURN, WALL_MIN, bandColumns, behind, bubbleAt, canvasColumns, carried, catchStep, caughtScroll, depthSpot, dayPhase, doorX, dress, duetPose, episodeKit, errandEnd, errandLegs, errandPose, errandSwap, farMugs, farPose, floorHomes, floorStart, frameGrid, hasHearth, headX, hearthProp, kitAt, kitReach, nextEpisode, paint, quartersDoor, roomGrid, runsOf, sameStation, sliceRuns, slotX, stageGrid, stationX, tossFlight, tossFrames, tossGrid, tossScroll, trackArrive, trackBare, trackCold, trackDozing, trackDue, trackFace, trackGrid, trackKit, trackLooping, trackOff, trackOut, trackResume, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withGaze, withNap, withRegard, withTalk } from './sprites'
+import { CATCH_X, CHEER_FROM, CHEER_TO, CUE_FRAMES, DUET_FRAMES, DUET_GAP, FRAME_MS, MUGS, ORC_GAP, ORC_WIDTH, RISE_FRAMES, SILL_LIFT, SPEAKER_COLOR, TALKING_DUETS, TOAST_HELD, TOAST_RETURN, WALL_MIN, bandColumns, behind, bubbleAt, canvasColumns, carried, catchStep, caughtScroll, cheerSide, cheers, depthSpot, dayPhase, doorX, dress, duetPose, episodeKit, errandEnd, errandLegs, errandPose, errandSwap, farMugs, farPose, floorHomes, floorStart, frameGrid, hasHearth, headX, hearthProp, kitAt, kitReach, nextEpisode, paint, quartersDoor, roomGrid, runsOf, sameStation, sliceRuns, slotX, stageGrid, stationX, tossFlight, tossFrames, tossGrid, tossScroll, trackArrive, trackBare, trackCold, trackDozing, trackDue, trackFace, trackGrid, trackKit, trackLooping, trackOff, trackOut, trackResume, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withGaze, withNap, withRegard, withTalk } from './sprites'
 import type { DuetKind, Episode, Face, Far, FloorOrc, Placed, Run, StageScene, Track } from './sprites'
 import { draw } from './stage'
 import type { Frame } from './stage'
@@ -900,7 +900,8 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
     moving ||= at.walking || tossing || reacting || actor.pending !== undefined || (actor.leftAt !== null && frame < actor.leftAt)
     // Z dala od rekwizytu zostawionego na ziemi ork stoi z pustymi rękami: rekwizyt jest tylko jeden.
     const away = actor.left !== undefined && actor.left.x !== at.x && actor.track.stops === 'kit'
-    let raw = tossing ? tossGrid(frame - actor.handoff!.at, actor.mood) : trackGrid(away ? trackBare(actor.track) : actor.track, frame, 'band', actor.mood, frozen)
+    const track = away ? trackBare(actor.track) : actor.track
+    let raw = tossing ? tossGrid(frame - actor.handoff!.at, actor.mood) : trackGrid(track, frame, 'band', actor.mood, frozen)
     if (!at.walking && !props.still) {
       if (reacting) raw = withCue(raw, actor.cue!.kind, frame - actor.cue!.at)
       // Krux wyciąga dłoń po zwój kumpla; w tych klatkach się nie poci.
@@ -910,7 +911,13 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
       // reaguje, łapie albo rzuca, patrzy tam, gdzie każe mu jego klatka. Przed potem: kropla
       // spływa po skroni tam, gdzie staje prawa pięść, i przerzucałaby ją co klatkę na lewą.
       const sight = reacting || catching !== null || tossing ? null : sightOf(key, at.x)
-      if (sight !== null) raw = sight.regard === undefined ? withGaze(raw, sight.dx) : withRegard(raw, sight.regard.kind, sight.regard.t, sight.dx)
+      const regard = sight?.regard
+      // Strona pięści na całe kibicowanie, z póz trasy od jego pierwszej do ostatniej klatki
+      // (bez zapisu stanu): pięść stoi przez całe kibicowanie po jednej stronie albo wcale.
+      const side = regard !== undefined && cheers(regard.kind, regard.t)
+        ? cheerSide(Array.from({ length: CHEER_TO - CHEER_FROM + 1 }, (_, i) => trackGrid(track, frame - regard.t + CHEER_FROM + i, 'band', actor.mood, frozen)))
+        : undefined
+      if (sight !== null) raw = regard === undefined ? withGaze(raw, sight.dx) : withRegard(raw, regard.kind, regard.t, sight.dx, side)
       if (actor.leftAt === null && !frozen && !reacting && catching === null && actor.workAt !== undefined) raw = withEffort(raw, frame - (actor.effortAt ?? frame))
       if (key === 'krux' && ((frozen && state.snoozing) || trackDozing(actor.track, frame))) raw = withNap(raw)
     }

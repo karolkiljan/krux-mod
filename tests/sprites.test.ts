@@ -3,7 +3,7 @@ import { expect, test } from 'claude-code/testing'
 import { GESTURES, headOf } from '../hooks/fidget'
 import { MATE_APRONS } from '../hooks/palette'
 import { MATES } from '../hooks/roster'
-import { ACTS, BUBBLE_TEXT, WALL_MIN, WALL_ROOMY, depthSpot, wallSpans, errandPose, farPose, CATCH_X, DUET_FRAMES, DUET_GAP, carried, doorX, dayPhase, duetPose, floorHomes, kitAt, kitReach, quartersDoor, roomGrid, hasHearth, stationX, CUE_FRAMES, FRAME_MS, HOLD_FRAMES, actsFor, routeOf, trackDozing, trackFace, ORC_GAP, ORC_WIDTH, PALETTE, bandColumns, behind, bubbleLines, canvasColumns, catchStep, caughtScroll, dress, frameGrid, forgeColumns, runsOf, slotX, stageGrid, tossFrames, trackGrid, trackOff, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withGaze, withNap, withRegard, withTalk, CHEER_FROM, CHEER_TO, WINCE_TO } from '../hooks/sprites'
+import { ACTS, BUBBLE_TEXT, WALL_MIN, WALL_ROOMY, depthSpot, wallSpans, errandPose, farPose, CATCH_X, DUET_FRAMES, DUET_GAP, carried, doorX, dayPhase, duetPose, floorHomes, kitAt, kitReach, quartersDoor, roomGrid, hasHearth, stationX, CUE_FRAMES, FRAME_MS, HOLD_FRAMES, actsFor, routeOf, trackDozing, trackFace, ORC_GAP, ORC_WIDTH, PALETTE, bandColumns, behind, bubbleLines, canvasColumns, catchStep, caughtScroll, dress, frameGrid, forgeColumns, runsOf, slotX, stageGrid, tossFrames, trackGrid, trackOff, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withGaze, withNap, withRegard, cheerSide, withTalk, CHEER_FROM, CHEER_TO, WINCE_TO } from '../hooks/sprites'
 import type { DayPhase, StageScene } from '../hooks/sprites'
 import { H, STAND, W, actFrame, draw, entryOf, head, kitLead, legAt, moodOf, pad, settleFrames, stander } from '../hooks/stage'
 import type { Frame } from '../hooks/stage'
@@ -1239,6 +1239,30 @@ test('sweat laid after the cheer keeps the fist on its side and never covers it'
       for (const [x] of fist) sides.add(x)
     }
     expect(sides.size).toBe(1)
+  }
+})
+
+// Pięść wybierana klatka po klatce migała przy narzędziu w ruchu i przeskakiwała z ręki do ręki:
+// strona idzie raz na całe kibicowanie, a bez strony wolnej w każdej klatce zostają same złote oczy.
+test('the fist keeps one side for the whole cheer, or the cheer goes with the golden eyes alone', () => {
+  const free = pad(draw([stander('mid'), 2, 0]))
+  const put = (rows: readonly string[], x: number, y: number) => rows.map((row, at) => (at === y ? `${row.slice(0, x)}S${row.slice(x + 1)}` : row))
+  // Coś w kolumnie prawej pięści (x + 6 = 8) w jednej klatce: cała pięść idzie lewą ręką.
+  const blockRight = put(free, 8, 1)
+  const blockLeft = put(free, 1, 2)
+  const window = (one: readonly string[]) => [free, free, one, free, free]
+  expect(cheerSide(window(free))).toBe('right')
+  expect(cheerSide(window(blockRight))).toBe('left')
+  expect(cheerSide([free, blockLeft, free, blockRight, free])).toBe(null)
+  // Pochylony w którejś klatce nie stoi (szczęka nie w trzecim wierszu): pięści nie ma wcale.
+  expect(cheerSide(window(pad(STAND.map(row => `..${row}`).slice(1))))).toBe(null)
+  for (let t = CHEER_FROM; t <= CHEER_TO; t++) {
+    const fistOf = (rows: readonly string[]) => [...new Set(rows.flatMap((row, y) => [...row].flatMap((cell, x) => (cell === 'g' && free[y]![x] === '.' ? [x] : []))))]
+    expect([t, fistOf(withRegard(free, 'commit', t, 1, 'left'))]).toEqual([t, [1]])
+    expect([t, fistOf(withRegard(free, 'commit', t, 1, 'right'))]).toEqual([t, [8]])
+    // Bez strony: złote oczy dumy, bez pięści.
+    const golden = withRegard(free, 'commit', t, 1, null)
+    expect([t, fistOf(golden), golden.join('').includes('y')]).toEqual([t, [], true])
   }
 })
 
