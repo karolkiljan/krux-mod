@@ -3070,3 +3070,35 @@ test('unmatched tool rows and partly matched groups stay native; matched groups 
   const full = await $.ui.mount({ ...TOOL_USE, requestId: 'fullscreen-row', viewport: { columns: 180, rows: 60, isFullscreen: true } })
   expect(await full.find({ type: 'Text', text: '⚒ Read a.ts' })).toBeDefined()
 })
+
+// Dopytanie o pewność idzie bez fikcji z kuźni i bez nastroju: tura sprawdzania to same fakty.
+test('a challenge to the last answer gets the verify line, without the horde note and the mood line', async ($, on) => {
+  engine(on, new Map(), { toolError: '1 failed' })
+  await start($)
+  await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  for (const turnId of ['t1', 't2']) {
+    await $.turn.complete({ answer: 'Krux szukać dalej.', durationMs: 10, isAborted: false, turnId, reason: 'answer' })
+  }
+  const verify = await $.prompt.submit({ text: 'Na pewno ten test pada?', wait: false, origin: ORIGIN })
+  expect(verify.context).toContain(FORMAT_HINT.verify)
+  expect((verify.context ?? []).some(entry => entry.startsWith('Życie hordy') || entry.startsWith('Nastrój Kruxa'))).toBe(false)
+  // Następna zwykła prośba dostaje notkę jak zawsze.
+  const own = await $.prompt.submit({ text: 'i?', wait: false, origin: ORIGIN })
+  expect((own.context ?? []).some(entry => entry.startsWith('Życie hordy'))).toBe(true)
+})
+
+// Nastrój przechylał niepewne oceny (eksperyment H: triumf odwracał „hold” na „go”), więc
+// przegląd i szukanie przyczyny idą bez linii nastroju, jak plan i wydanie.
+test('review and debugging turns go without the mood line', async ($, on) => {
+  engine(on, new Map(), { toolError: '1 failed' })
+  await start($)
+  await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  const debug = await $.prompt.submit({ text: 'Czemu test pada?', wait: false, origin: ORIGIN })
+  expect(debug.context).toContain(FORMAT_HINT.debug)
+  expect((debug.context ?? []).some(entry => entry.startsWith('Nastrój Kruxa'))).toBe(false)
+  await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  await $.tool.call({ tool: 'Bash', command: 'git commit -m x' })
+  const review = await $.prompt.submit({ text: 'Przejrzyj zmiany w cache.', wait: false, origin: ORIGIN })
+  expect(review.context).toContain(FORMAT_HINT.review)
+  expect((review.context ?? []).some(entry => entry.startsWith('Nastrój Kruxa'))).toBe(false)
+})

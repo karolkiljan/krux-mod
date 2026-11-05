@@ -338,7 +338,7 @@ test('the first aside of a session reaches back to the previous one, and only th
   const quiet = { ...EMPTY_LORE, quietTurns: 2 }
   const note = lifeNote(quiet, 0, { recall })!
   expect(note).toContain('mową o Młocie')
-  expect(note).toContain('Wspomnienie z poprzedniej sesji w tym repo (dni temu: 2): przebiegi testów: 1, padłe: 1, ostatni czerwony, padły test: cache expires; to dawna robota Kruxa, kumpel ją tylko wspomina.')
+  expect(note).toContain('Wspomnienie z poprzedniej sesji w tym repo (dni temu: 2): przebiegi testów: 1, padłe: 1, ostatni czerwony, padły test: cache expires; to stan sprzed tej sesji: kumpel tylko wspomina dawną robotę Kruxa, nie podaje jej jako stanu repo teraz.')
   expect(note).not.toContain('w tej sesji')
   expect(lifeNote({ ...quiet, lastMate: 'Grom' }, 0, { recall })).not.toContain('Wspomnienie')
   const today = recallOf(rememberAfter(undefined, { ...trace, at: NOW }), 's2', NOW)
@@ -609,8 +609,8 @@ test('the mood line comes from the last chronicle event, with its fact, and calm
   expect(angry.text).toContain('Nastrój Kruxa: zadziorny (padłe przebiegi testów: 1 z 1)')
   // Forma z kodu: bezokolicznik przy Kruxie i bez słowa z instrukcji, które model powtarzał.
   expect(angry.text).toContain('jednym krótkim zdaniem „Krux + bezokolicznik", bez słowa „nastrój"')
-  // Linia sama pilnuje, że nastrój nie rusza ocen ani decyzji.
-  expect(angry.text).toContain('nie zmienia ocen, ryzyka ani decyzji')
+  // Linia sama pilnuje, że nastrój nie rusza ocen, decyzji ani zakresu tego, co sprawdzone.
+  expect(angry.text).toContain('nie zmienia ocen, ryzyka, decyzji ani zakresu tego, co sprawdzone')
   const green = recordTool(failing, 'Bash', { command: 'npm test' }, false, '3 passed')
   expect(moodNote(green)!.text).toContain('dumny (testy zielone po padłych przebiegach: 1)')
   expect(moodNote(green)!.key).not.toBe(angry.key)
@@ -627,4 +627,35 @@ test('an edit keeps the mood key, so the same line does not come back', () => {
   const sealed = recordTool(failing, 'Bash', { command: 'git commit -m x' }, false)
   expect(moodNote(recordTool(sealed, 'Edit', { file_path: 'b.ts' }, false))!.key).toBe(moodNote(sealed)!.key)
   expect(moodNote(sealed)!.key).not.toBe(moodNote(failing)!.key)
+})
+
+// Zdanie z zastrzeżeniem albo warunkiem nie liczy się do proporcji krótkich: kara za długość
+// uczyła następną turę gubić „jeszcze nie sprawdzić" i mówić pewniej, niż wolno.
+test('long sentences that carry a caveat or a condition are not drift, plain long ones still are', () => {
+  const hedged = [
+    'Krux jeszcze nie sprawdzić, czy cache czyścić stare klucze po restarcie serwera.',
+    'Jeśli limit pamięci spaść poniżej progu, robak wracać przy drugim żądaniu.',
+    'Krux podejrzewać token, ale to hipoteza do sprawdzenia w logach logowania.',
+    'Może winny być zegar, o ile serwer stać w innej strefie czasowej.',
+    'Krux już naprawić walidację.',
+  ].join(' ')
+  expect(gauge(hedged)?.issues.some(issue => issue.kind === 'long-sentences') ?? false).toBe(false)
+  const plain = [
+    'Krux już przeczytać cały plik konfiguracji serwera i wszystkie moduły cache po kolei.',
+    'Build stać zielony od rana i testy integracyjne przechodzić bez jednego smrodu.',
+    'Krux wykuć nowy moduł autoryzacji w katalogu auth razem z testami jednostkowymi.',
+    'Routing w pliku router.js teraz krótszy i prostszy do czytania przez Morrę.',
+    'Krux już naprawić walidację.',
+  ].join(' ')
+  expect(gauge(plain)!.issues.map(issue => issue.kind)).toContain('long-sentences')
+})
+
+// Kotwica co turę podsuwa uczciwą powierzchnię: przykład niesprawdzonego zamiast „Krux już sprawdzić",
+// które model kopiował jako gotowe zdanie o sprawdzeniu, i parę fakt z narzędzia kontra hipoteza.
+test('the anchors model an unchecked claim, never a ready-made "already checked"', () => {
+  for (const anchor of [VOICE_ANCHOR, VOICE_SHORT]) {
+    expect(anchor).toContain('Krux jeszcze nie sprawdzić')
+    expect(anchor).not.toContain('Krux już sprawdzić')
+    expect(anchor).toMatch(/hipotez/u)
+  }
 })

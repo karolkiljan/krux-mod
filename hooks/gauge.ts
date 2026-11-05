@@ -263,6 +263,11 @@ const MIN_SHORT_RATIO = 0.45
 // kontrakt persony; za takie zdania miernik nie może karać następnej tury.
 const WARNING = /nieodwracaln|drog\p{L}*\s+odwrotu|bez\s+odwrotu|reflog|kopi\p{L}*\s+zapasow|z\s+backupu/iu
 
+// Zdanie z niepewnością albo warunkiem („Krux jeszcze nie sprawdzić, czy…”, „jeśli cache…”)
+// nie liczy się do proporcji krótkich zdań: kontrakt persony każe ciąć żart, nigdy warunek,
+// a kara za długość uczyła następną turę gubić zastrzeżenia i mówić pewniej, niż wolno.
+const HEDGE = /(?<!\p{L})(?:hipotez\p{L}*|niesprawdz\p{L}*|nie\s+sprawdz\p{L}*|jeszcze\s+nie|chyba|może|prawdopodobn\p{L}*|nie\s+wiem|nie\s+wiedzieć|zgadyw\p{L}*|wygląda\p{L}*\s+na\s+to|jeśli|jeżeli|o\s+ile|gdyby|pod\s+warunkiem)(?!\p{L})/iu
+
 // Punkt listy i nagłówek kończą zdanie, nawet bez kropki; znacznik to nie słowo.
 // Inaczej niż `context-smoke.js` pluginu, który tnie tylko po `.!?`: tam lista
 // sklejała się w jedno długie zdanie; na 194 odpowiedziach z historii flag
@@ -285,6 +290,7 @@ export function gauge(answer: string, longOk = false): KruxDrift | null {
   if (infinitiveHits(text) === 0) issues.push({ kind: 'no-infinitive', examples: [] })
   const lengths = text
     .split(/(?<=[.!?])\s+|\n+/u)
+    .filter(line => !HEDGE.test(line))
     .map(line => wordCount(line.replace(LIST_MARK, '')))
     .filter(words => words > 1)
   if (!longOk && lengths.length >= 4) {

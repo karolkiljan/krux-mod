@@ -863,15 +863,20 @@ export const register: Register = on => {
         const chronicle = await read($, lore)
         // Decyzja o wydaniu, plan i ruch nieodwracalny idą samymi faktami: tam nastrój
         // przechylał wybór, więc przepada linia nastroju i humor kumpla w notce.
-        const plan = promptKind(e.text) === 'plan'
-        const decides = plan || asksRelease(e.text)
+        // Dopytanie o pewność idzie bez notki i bez nastroju: tura sprawdzania nie ma
+        // miejsca na fikcję z kuźni. Przegląd i szukanie przyczyny to też ocena, więc bez nastroju.
+        const kind = promptKind(e.text)
+        const plan = kind === 'plan'
+        const verify = kind === 'verify'
+        const decides = plan || verify || asksRelease(e.text)
+        const judges = decides || kind === 'review' || kind === 'debug'
         // Wspomnienie bierze tylko pierwsza wstawka sesji, a starego wroga czerwony test,
         // więc magazyn czytamy tylko wtedy.
         const failing = await read($, ownRed)
-        const recalled = risk === null && (chronicle.lastMate === null || failing !== null) ? await recallFor($) : null
+        const recalled = risk === null && !verify && (chronicle.lastMate === null || failing !== null) ? await recallFor($) : null
         // Plan kończy pytanie o zgodę z linii formatu, więc wstawka idzie w środek.
         const aside = { recall: recalled, foe: foeOf(failing, recalled), humor: !decides, middle: plan }
-        const life = risk === null ? hordeNote(chronicle, turn, aside) : null
+        const life = risk === null && !verify ? hordeNote(chronicle, turn, aside) : null
         if (life) {
           extra.push(life.text)
           noted = life.mate
@@ -881,7 +886,7 @@ export const register: Register = on => {
         if (mood) {
           let fresh = false
           await update($, moodSeen, seen => { fresh = seen !== mood.key; return mood.key })
-          if (fresh && risk === null && !decides) extra.push(mood.text)
+          if (fresh && risk === null && !judges) extra.push(mood.text)
         }
         const hint = formatHint(e.text)
         if (hint) extra.push(hint)

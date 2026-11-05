@@ -864,11 +864,13 @@ test('the bench replays the horde notes by the rule the mod uses', () => {
   assert.match(lore, /miejsce: \$\{place\}/u)
   assert.match(lore, /^const PLACES = \['w środku[^'\n]*', 'na końcu'\] as const$/mu)
   const register = fs.readFileSync('hooks/register.ts', 'utf8')
-  assert.match(register, /const life = risk === null \? hordeNote\(chronicle, turn, aside\) : null/u)
-  assert.match(register, /const plan = promptKind\(e\.text\) === 'plan'\n[\s\S]*middle: plan \}/u)
+  assert.match(register, /const life = risk === null && !verify \? hordeNote\(chronicle, turn, aside\) : null/u)
+  assert.match(register, /const kind = promptKind\(e\.text\)\n\s*const plan = kind === 'plan'\n[\s\S]*middle: plan \}/u)
   for (const { prompts } of Object.values(vm.runInContext('SCENARIOS', benchContext()))) {
     prompts.forEach((prompt, turn) => {
       assert.equal(riskHint(prompt), null, prompt)
+      // Dopytanie o pewność idzie bez notki; bench go nie zadaje, więc harmonogram notek zostaje ten sam.
+      assert.notEqual(promptKind(prompt), 'verify', prompt)
       if (promptKind(prompt) === 'plan') assert.equal(turn % 2, 1, prompt)
     })
   }

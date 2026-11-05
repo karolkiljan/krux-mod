@@ -841,3 +841,16 @@ test('git is read again only after a tool that may change the repo', () => {
     ['Bash', { command: 'cd /repo && grep -n x a.ts' }],
   ] as const) expect(changesRepo(tool, input)).toBe(false)
 })
+
+// Dopytanie o pewność: model przytakiwał, że przesadził, albo bronił zdania bez sprawdzenia.
+// Linia formatu każe sprawdzić; zwykłe „sprawdź" to prośba o robotę, nie dopytanie.
+test('a challenge to the last answer is a verify turn, a plain request to check is not', () => {
+  for (const text of ['Na pewno?', 'Na pewno wszystkie testy przechodzą?', 'Jesteś pewien?', 'jesteś tego pewna', 'Skąd wiesz?', 'Skąd to wiesz, że cache?', 'Czy to prawda?', 'serio?', 'Naprawdę?', 'Sprawdziłeś to?', 'zmyślasz', 'Wymyśliłeś ten plik?', 'Kłamiesz.', 'To nieprawda, test pada.', 'Nie zgadza się z logiem.', 'Mylisz się.', 'Pomyliłaś się?', 'Przesadziłeś z tym.', 'Are you sure?', 'is that true', 'Did you check the logs?', 'ok, na pewno działa?']) {
+    expect([text, promptKind(text)]).toEqual([text, 'verify'])
+  }
+  for (const text of ['Sprawdź testy.', 'Sprawdź, czy w projekcie są jakieś testy dla tej funkcji.', 'Sprawdź dokładnie app.rb', 'Sprawdziłem logi, build pada.', 'Dodaj na pewno test do cache.', 'to nieprawdopodobne, że pada', 'Pomyliłem się, chodzi o plik b.ts', 'nie przesadzaj z abstrakcją', 'Zrób plan migracji.']) {
+    expect([text, promptKind(text) === 'verify']).toEqual([text, false])
+  }
+  expect(formatHint('Na pewno?')).toBe(FORMAT_HINT.verify)
+  expect(FORMAT_HINT.verify).toContain('nie przytakuj')
+})
