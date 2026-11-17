@@ -5,7 +5,7 @@
 import type { KruxActivity, KruxBubble, KruxCue, KruxHordeMember, KruxMoods } from '../types'
 import type { ForgeOrc, ForgeProps } from './forge'
 import { bubbleFor } from './mood'
-import { ORC_GAP, ORC_WIDTH, bandColumns, canvasColumns, hasHearth } from './sprites'
+import { ANNEX_MAX, ANNEX_MIN, ORC_GAP, ORC_WIDTH, bandColumns, canvasColumns, hasHearth } from './sprites'
 import { restVerb } from './voice'
 
 // Podpis z lewej, przerwa 2 kolumny, za nim płótno.
@@ -14,6 +14,13 @@ export const CAPTION_GAP = 2
 
 // Krux i do trzech kumpli; reszta hordy liczona w podpisie.
 const STAGE_MATES = 3
+
+// Pokój nie rozciąga się w nieskończoność: stanowiska stoją w ułamkach podłogi, więc na szerokim
+// oknie kuźnia, regał, skrzynia i sztolnia rozjeżdżały się po całym pasie z pustką między sobą.
+// Do tej szerokości pokój rośnie i pokazuje więcej (palenisko, kolejne miejsca, okienko, przerwy
+// między meblami); szersze okno pokój zostawia zwarty i pokazuje za nim drugą izbę, chodnik
+// kopalni (`annex`): im szerzej, tym więcej go widać, do `ANNEX_MAX`.
+export const STAGE_MAX = 120
 
 // Płótno z pokojem: 3 wiersze ściany pod dymek i 3 wiersze podłogi. Niskie: sama scena.
 const TALL_ROWS = 6
@@ -57,7 +64,7 @@ export type BandPlan = {
 
 export function bandPlan(input: BandInput): BandPlan {
   const { working, members } = input
-  const room = input.columns - CAPTION_COLUMNS - CAPTION_GAP
+  const room = Math.min(STAGE_MAX, input.columns - CAPTION_COLUMNS - CAPTION_GAP)
   const fit = input.hasClient ? Math.floor((room + ORC_GAP) / (ORC_WIDTH + ORC_GAP)) : 0
   // Stała liczba miejsc: płótno nie zmienia szerokości, gdy horda przychodzi i odchodzi.
   // Palenisko ma pierwszeństwo przed ostatnim miejscem kumpla: przy nim Krux czuwa w spoczynku,
@@ -96,6 +103,9 @@ export function bandPlan(input: BandInput): BandPlan {
   if (height === 0) return { rule, verb, target, tally, stage: null }
   // Orkowie chodzą po jednej podłodze przez cały pas, od podpisu do prawej krawędzi.
   const floor = Math.max(bandColumns(slots), room)
+  // Chodnik tylko za pełnym pokojem na wysokim pasie i tylko, gdy mieści choć jedno przęsło.
+  const spare = input.columns - CAPTION_COLUMNS - CAPTION_GAP - STAGE_MAX
+  const annex = tall && room === STAGE_MAX && spare >= ANNEX_MIN ? Math.min(ANNEX_MAX, spare) : 0
   const props: ForgeProps = {
     variant: 'band',
     scale: 1,
@@ -107,10 +117,11 @@ export function bandPlan(input: BandInput): BandPlan {
     red: input.red === true,
     blessed: input.blessed === true,
     bubbleRows: tall,
+    ...(annex > 0 ? { annex } : {}),
     orcs,
     bubble: inCanvas ? { key: speaker!.key, text: said!.text, speaker: said!.speaker } : null,
     cues: (input.cues ?? []).filter(cue => cue.until > input.now),
     now: input.now,
   }
-  return { rule, verb, target, tally, stage: { props, width: tall ? Math.max(canvasColumns(slots, true), floor) : floor, height } }
+  return { rule, verb, target, tally, stage: { props, width: (tall ? Math.max(canvasColumns(slots, true), floor) : floor) + annex, height } }
 }

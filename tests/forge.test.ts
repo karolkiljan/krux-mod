@@ -625,8 +625,15 @@ test('idle typing finishes before freezing, then a nap arrives after thirty seco
   expect((surface.state as Seen).idle).toBe(false)
   for (let i = 0; i < 10; i++) { tick(); draw(props, surface) }
   expect((surface.state as Seen).idle).toBe(true)
-  for (let i = 0; i < 200; i++) { tick(); draw(props, surface) }
-  expect((surface.state as Seen).snoozing).toBe(true)
+})
+
+test('on a flat band the rest stays frozen and a nap arrives after thirty seconds', () => {
+  // Bez pokoju nie ma kwater ani obchodów: zegar niczego nie budzi, Krux zasypia.
+  const { surface, tick } = surfaceOf()
+  const props: ForgeProps = { ...FLAT, rest: true, orcs: [KRUX] }
+  draw(props, surface)
+  for (let i = 0; i < 210; i++) { tick(); draw(props, surface) }
+  expect([(surface.state as Seen).idle, (surface.state as Seen).snoozing, (surface.state as Seen).frame < 20]).toEqual([true, true, true])
   draw({ ...props, rest: false }, surface)
   expect((surface.state as Seen).snoozing).toBe(false)
 })
@@ -1918,9 +1925,122 @@ test('orcs at the table hold councils and debates, orcs on the floor also show o
   // Krux przy stole: narada i dyskusja, czasem opowieść; bez szermierki i podawania stali.
   const desk = kindsOf(pair, 2500)
   expect([desk.has('council'), desk.has('debate')]).toEqual([true, true])
-  for (const kind of desk) expect(['council', 'debate', 'tale']).toContain(kind)
+  for (const kind of desk) expect(['council', 'debate', 'tale', 'peek']).toContain(kind)
   // Obaj przy kuźni i w sztolni: sprzęt, szermierka, opowieść, dyskusja albo pokaz sztabki.
   const floor = kindsOf({ ...FLOOR, orcs: [{ ...KRUX, scene: 'hammer' }, { ...NIUCH, scene: 'pick' }] }, 3000)
   expect(floor.has('show')).toBe(true)
-  for (const kind of floor) expect(['fence', 'pass', 'tale', 'debate', 'show']).toContain(kind)
+  for (const kind of floor) expect(['fence', 'pass', 'tale', 'debate', 'show', 'dice', 'peek']).toContain(kind)
+  // Po smrodzie nikt nie gra w kości: zły ork kłóci się, dyskutuje albo dopytuje.
+  const grim = kindsOf({ ...FLOOR, orcs: [{ ...KRUX, scene: 'hammer', mood: 'grumpy' }, { ...NIUCH, scene: 'pick' }] }, 1500)
+  expect(grim.size).toBeGreaterThan(0)
+  for (const kind of grim) expect(['argue', 'debate', 'peek']).toContain(kind)
+})
+
+type Lively = Seen & { stroll?: { face: string; door: number; spot: number; peek?: { key: string; x: number }; back?: { at: number } }; visit?: string; wakes?: boolean }
+const RESTING: ForgeProps = { ...FLOOR, rest: true, orcs: [{ ...KRUX, scene: 'watch' }] }
+
+test('the room at rest keeps living: the clock wakes it for a stroll and a visit, and sleeps in between', () => {
+  const seen = surfaceOf()
+  draw(RESTING, seen.surface)
+  const now = () => seen.surface.state as Lively
+  for (let i = 0; i < 40 && !now().idle; i++) { seen.tick(); draw(RESTING, seen.surface) }
+  expect([now().idle, now().wakes]).toEqual([true, true])
+  // Cisza nie rusza klatek; po niej zegar budzi płótno i z kwater wychodzi włóczęga.
+  const frozenAt = now().frame
+  for (let i = 0; i < 45; i++) { seen.tick(); draw(RESTING, seen.surface) }
+  expect([now().idle, now().frame]).toEqual([true, frozenAt])
+  for (let i = 0; i < 12 && now().stroll === undefined; i++) { seen.tick(); draw(RESTING, seen.surface) }
+  const walker = now().stroll!
+  expect(walker).toBeDefined()
+  expect(now().idle).toBe(false)
+  // Idzie do miejsca przy ścianie, wraca do drzwi i znika; płótno zasypia z powrotem.
+  for (let i = 0; i < 400 && now().stroll !== undefined; i++) { seen.tick(); draw(RESTING, seen.surface) }
+  expect(now().stroll).toBe(undefined)
+  for (let i = 0; i < 5; i++) { seen.tick(); draw(RESTING, seen.surface) }
+  expect(now().idle).toBe(true)
+  // Następne przebudzenie przyprowadza gościa do ognia, a po nim znów cisza.
+  let visited: string | undefined
+  for (let i = 0; i < 400 && visited === undefined; i++) { seen.tick(); draw(RESTING, seen.surface); visited = now().visit }
+  expect(visited).toBeDefined()
+  expect(visited).not.toBe(`visit:${walker.face}`)
+  for (let i = 0; i < 400 && !now().idle; i++) { seen.tick(); draw(RESTING, seen.surface) }
+  expect([now().idle, now().visit, Object.keys(now().actors)]).toEqual([true, undefined, ['krux']])
+})
+
+test('a stroller called to work turns back to the quarters, and the mate walks out only after it is gone', () => {
+  const seen = surfaceOf()
+  const work: ForgeProps = { ...FLOOR, orcs: [{ ...KRUX, scene: 'hammer' }] }
+  draw(work, seen.surface)
+  const now = () => seen.surface.state as Lively
+  for (let i = 0; i < 200 && now().stroll === undefined; i++) { seen.tick(); draw(work, seen.surface) }
+  const face = now().stroll!.face as ForgeOrc['face']
+  for (let i = 0; i < 6; i++) { seen.tick(); draw(work, seen.surface) }
+  const called: ForgeProps = { ...FLOOR, orcs: [{ ...KRUX, scene: 'hammer' }, { key: 'a7', face, scene: 'read', mood: 'calm' }] }
+  draw(called, seen.surface)
+  expect([now().stroll!.back !== undefined, now().actors.a7]).toEqual([true, undefined])
+  // Dwóch identycznych orków naraz nie ma: kumpel staje w drzwiach, gdy włóczęga w nie wejdzie.
+  let together = false
+  for (let i = 0; i < 120 && now().actors.a7 === undefined; i++) {
+    seen.tick()
+    draw(called, seen.surface)
+    together ||= now().stroll !== undefined && now().actors.a7 !== undefined
+  }
+  expect([now().stroll, now().actors.a7 !== undefined, together]).toEqual([undefined, true, false])
+})
+
+test('a stroller never wears the apron of an orc on the stage, and reduced motion or a flat band removes it at once', () => {
+  const seen = surfaceOf()
+  const crowd: ForgeProps = { ...FLOOR, slots: 4, orcs: [{ ...KRUX, scene: 'hammer' }, { ...GROM, key: 'a1' }, { key: 'a2', face: 'Piryt', scene: 'read', mood: 'calm' }, { key: 'a3', face: 'Lont', scene: 'tear', mood: 'calm' }] }
+  draw(crowd, seen.surface)
+  const now = () => seen.surface.state as Lively
+  const faces = new Set<string>()
+  for (let i = 0; i < 2500; i++) {
+    seen.tick()
+    draw(crowd, seen.surface)
+    if (now().stroll !== undefined) faces.add(now().stroll!.face)
+  }
+  expect(faces.size).toBeGreaterThan(1)
+  for (const face of faces) expect(['Niuch', 'Ochra', 'Młot']).toContain(face)
+  for (let i = 0; i < 600 && now().stroll === undefined; i++) { seen.tick(); draw(crowd, seen.surface) }
+  expect(now().stroll).toBeDefined()
+  draw({ ...crowd, still: true }, seen.surface)
+  expect(now().stroll).toBe(undefined)
+})
+
+test('orcs in a signing scene talk with signs over their heads and the text bubble steps aside', () => {
+  const seen = surfaceOf()
+  const said: ForgeProps = { ...RESTING, bubble: { key: 'krux', text: 'Palenisko tlić.', speaker: 'Krux' } }
+  draw(said, seen.surface)
+  const now = () => seen.surface.state as Lively
+  // Do Kruxa przy ogniu wpada gość na posiady: szukamy scenki ze znakami.
+  let tree: unknown
+  for (let i = 0; i < 6000 && !(now().duet?.kind === 'chat' && now().duet!.at !== null && now().frame - now().duet!.at! === 12); i++) { seen.tick(); tree = draw(said, seen.surface) }
+  expect(now().duet?.kind).toBe('chat')
+  // Biały znak stoi w wierszach ściany nad głową gospodarza, a dymek z tekstem milczy.
+  const pixels = pixelsOf(tree)
+  const home = now().actors.krux!.home
+  const white = pixels.slice(0, 6).flatMap(row => row.slice(home, home + 8)).filter(cell => cell === PALETTE.j).length
+  expect(white).toBeGreaterThan(8)
+  expect(JSON.stringify(tree)).not.toContain('Palenisko')
+  for (let i = 0; i < 200 && now().duet !== undefined; i++) { seen.tick(); tree = draw(said, seen.surface) }
+  expect(JSON.stringify(tree)).toContain('Palenisko')
+})
+
+test('the gallery is drawn right of the room: the canvas grows by it, orcs and the bubble stay in the room', () => {
+  const plain = surfaceOf()
+  const wide = surfaceOf()
+  const props: ForgeProps = { ...FLOOR, floor: 120, slots: 4, orcs: [{ ...KRUX, scene: 'hammer' }], bubble: { key: 'krux', text: 'Stal trzymać.', speaker: 'Krux' } }
+  const room = pixelsOf(draw(props, plain.surface))
+  const both = pixelsOf(draw({ ...props, annex: 40 }, wide.surface))
+  expect([room.length, both.length, both[11]!.length - room[11]!.length]).toEqual([12, 12, 40])
+  // Pokój rysuje się tak samo; chodnik stoi za nim, także w wierszach, które przecina dymek.
+  for (let y = 6; y < 12; y += 1) expect([y, both[y]!.slice(0, room[y]!.length).join()]).toEqual([y, room[y]!.join()])
+  expect(both[11]!.slice(room[11]!.length).filter(cell => cell === PALETTE.C).length).toBeGreaterThan(10)
+  // Bez pokoju (płaski pas) chodnika nie ma, choćby props go niósł.
+  const flat = surfaceOf()
+  const low = pixelsOf(draw({ ...FLAT, annex: 40 }, flat.surface))
+  expect(low.every(row => row.length <= 60)).toBe(true)
+  // Drzewo zostaje daleko od limitu `Client` także z najdłuższym chodnikiem.
+  const big = surfaceOf()
+  expect(JSON.stringify(draw({ ...props, annex: 64 }, big.surface)).length).toBeLessThan(50_000)
 })

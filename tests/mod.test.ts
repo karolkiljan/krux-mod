@@ -310,7 +310,7 @@ const BAND = {
   component: 'AbovePrompt',
   requestId: 'band',
   viewport: { columns: 120, rows: 40 },
-  props: { hasSurvey: false, isWorking: true, maxRows: 10, bodyColumns: 120, scroll: { offset: 0, bodyRows: 10 }, view: {} },
+  props: { hasSurvey: false, isCollapsed: false, isWorking: true, maxRows: 10, bodyColumns: 120, scroll: { offset: 0, bodyRows: 10 }, view: {} },
 } as const
 
 test('while Claude works, the smith hammers above the prompt and names the tool', async ($, on) => {
@@ -429,6 +429,63 @@ test('on the desktop the band moves on the mod clock while there is motion, and 
   const asleep = String((await rest.find({ type: 'Svg' }))!.props.source)
   for (let i = 0; i < 10; i += 1) await clock.advance(150)
   expect(String((await rest.find({ type: 'Svg' }))!.props.source)).toBe(asleep)
+})
+
+test('on the desktop the resting room wakes on the mod clock: after the quiet a stroller walks, also past the nap', async ($, on) => {
+  let ticks = 0
+  on('clock.every', { ms: FRAME_MS }, ($c, e, next) => { ticks += 1; return next(e) })
+  const clock = engine(on, new Map())
+  await start($)
+  const rest = await $.ui.mount({ ...BAND, surface: 'desktop', props: { ...BAND.props, isWorking: false } })
+  const shot = async () => String((await rest.find({ type: 'Svg' }))!.props.source)
+  for (let i = 0; i < 20; i += 1) await clock.advance(150)
+  const asleep = await shot()
+  // Cisza: klatki stoją, ale zegar liczy ją dalej; po niej pokój budzi się i rysuje ruch.
+  const woken = new Set<string>()
+  for (let i = 0; i < 120; i += 1) {
+    await clock.advance(150)
+    woken.add(await shot())
+  }
+  expect(woken.size).toBeGreaterThan(8)
+  // Po obchodzie znów cisza, dłuższa niż próg drzemki: zegar tyka dalej i budzi pokój drugi raz.
+  let quiet = await shot()
+  let still = 0
+  for (let i = 0; i < 300 && still < 30; i += 1) {
+    await clock.advance(150)
+    const now = await shot()
+    still = now === quiet ? still + 1 : 0
+    quiet = now
+  }
+  expect(still).toBe(30)
+  const before = ticks
+  const later = new Set<string>()
+  for (let i = 0; i < 400; i += 1) {
+    await clock.advance(150)
+    later.add(await shot())
+  }
+  expect(ticks).toBeGreaterThan(before + 300)
+  expect(later.size).toBeGreaterThan(8)
+  expect(asleep.startsWith('<svg')).toBe(true)
+  for (const source of [...woken, ...later]) expect(source.length).toBeLessThan(131_072)
+})
+
+test('a collapsed band draws no canvas, so nothing ticks behind it, on the terminal and on the desktop', async ($, on) => {
+  let ticks = 0
+  on('clock.every', { ms: FRAME_MS }, ($c, e, next) => { ticks += 1; return next(e) })
+  const clock = engine(on, new Map())
+  await start($)
+  await $.turn.start({ text: 'czytaj', turnId: 't1' })
+  await $.tool.call({ tool: 'Read', file_path: '/repo/src/app.ts' })
+  for (const surface of ['terminal', 'desktop'] as const) {
+    const folded = await $.ui.mount({ ...BAND, requestId: `folded-${surface}`, surface, props: { ...BAND.props, isCollapsed: true } })
+    expect([surface, await folded.find({ type: 'Client' }), await folded.find({ type: 'Svg' }), await folded.find({ type: 'Text', text: 'Krux czytać runy' })]).toEqual([surface, undefined, undefined, undefined])
+    await clock.advance(3000)
+    expect([surface, ticks]).toEqual([surface, 0])
+    await folded.unmount()
+  }
+  // Rozwinięty rysuje płótno jak zwykle.
+  const open = await $.ui.mount({ ...BAND, requestId: 'unfolded', surface: 'terminal' })
+  expect(await open.find({ type: 'Client' })).toBeDefined()
 })
 
 test('on the desktop the /krux pane shows the smith as Svg too', async ($, on) => {

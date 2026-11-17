@@ -1,13 +1,13 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { KruxCrew, KruxHordeMember } from '../types'
-import { CAPTION_COLUMNS, bandPlan } from '../hooks/band'
+import { CAPTION_COLUMNS, CAPTION_GAP, STAGE_MAX, bandPlan } from '../hooks/band'
 import type { BandInput } from '../hooks/band'
 import { EMPTY_CREW, crewAfter } from '../hooks/crew'
 import { EMPTY_LORE, recordTool } from '../hooks/lore'
 import { CALM, EVENT_HOLD_MS, SPAR_EVENTS, kruxAnswer, riposteLine, sparLine } from '../hooks/mood'
 import { MATES } from '../hooks/roster'
-import { BUBBLE_TEXT, hasHearth } from '../hooks/sprites'
+import { ANNEX_MAX, ANNEX_MIN, BUBBLE_TEXT, hasHearth } from '../hooks/sprites'
 import { describeTool } from '../hooks/voice'
 
 const NIUCH: KruxHordeMember = { agentId: 'a1', mate: 'Niuch', scene: 'hammer', target: '' }
@@ -300,4 +300,27 @@ test('a mate’s own result gets an answer: the partner on stage when it is the 
   const left = crewAfter(crewAfter(alone, { kind: 'mate-event', agentId: 'a2', event: 'test-pass', lore: single, seed: 0 }, 500), { kind: 'mate-done', agentId: 'a2' }, 600)
   expect(crewAfter(left, { kind: 'expire' }, 500 + EVENT_HOLD_MS).bubble).toBe(null)
   for (const event of SPAR_EVENTS) for (const seed of [0, 2, 4]) expect(kruxAnswer(event, seed).length).toBeLessThanOrEqual(BUBBLE_TEXT)
+})
+
+test('the room grows with the window up to a compact width, then stays put instead of spreading over the band', () => {
+  const stageOf = (columns: number) => bandPlan({ ...AT_WORK, columns }).stage!
+  // Do progu pokój bierze całą szerokość za podpisem: szersze okno pokazuje więcej.
+  const widths = [90, 110, 130, CAPTION_COLUMNS + CAPTION_GAP + STAGE_MAX].map(columns => stageOf(columns).props.floor!)
+  expect(widths).toEqual([60, 80, 100, STAGE_MAX])
+  expect([stageOf(90).props.slots, stageOf(130).props.slots, stageOf(160).props.slots]).toEqual([2, 3, 4])
+  // Za progiem pokój zostaje ten sam: meble nie rozjeżdżają się po pustym pasie. Szersze okno
+  // pokazuje za nim chodnik kopalni, coraz dłuższy, aż do `ANNEX_MAX`.
+  const edge = stageOf(CAPTION_COLUMNS + CAPTION_GAP + STAGE_MAX)
+  expect(edge.props.annex).toBe(undefined)
+  const spare = (columns: number) => columns - CAPTION_COLUMNS - CAPTION_GAP - STAGE_MAX
+  for (const columns of [160, 174, 180, 220, 300]) {
+    const wide = stageOf(columns)
+    const annex = spare(columns) < ANNEX_MIN ? 0 : Math.min(ANNEX_MAX, spare(columns))
+    expect([columns, wide.width, wide.props.floor, wide.props.slots, wide.props.annex ?? 0]).toEqual([columns, edge.width + annex, STAGE_MAX, edge.props.slots, annex])
+  }
+  expect([stageOf(174).props.annex, stageOf(180).props.annex, stageOf(300).props.annex]).toEqual([ANNEX_MIN, 30, ANNEX_MAX])
+  // Niski pas nie ma pokoju, więc i chodnika.
+  expect(bandPlan({ ...AT_WORK, columns: 260, rows: 4 }).stage!.props.annex).toBe(undefined)
+  // Próg mieści cztery miejsca i palenisko.
+  expect(hasHearth(STAGE_MAX, 4)).toBe(true)
 })

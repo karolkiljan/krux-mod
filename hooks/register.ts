@@ -626,7 +626,7 @@ function blessedOf(chronicle: KruxLore): Pick<BandInput, 'blessed'> {
 type Desk = { surface: Headless; timer: Timer | null; drawnAt: number }
 const desks = new Map<string, Desk>()
 
-type DeskState = { frame: number; idle: boolean; reduced?: boolean; snoozing?: boolean }
+type DeskState = { frame: number; idle: boolean; reduced?: boolean; snoozing?: boolean; wakes?: boolean }
 
 async function deskArt($: EngineInterface, site: string, props: ForgeProps, alt: string): Promise<{ source: string; alt: string }> {
   await read($, deskFrame)
@@ -639,7 +639,9 @@ async function deskArt($: EngineInterface, site: string, props: ForgeProps, alt:
     desk.timer = $.clock.every(FRAME_MS, () => {
       const now = desk.surface.state as DeskState
       // Płótno w bezruchu (`still`) nie liczy klatek, więc nie zestarzeje się ani nie zaśnie.
-      if (now.frame - desk.drawnAt > DESK_STALE || now.reduced === true || (now.idle && now.snoozing === true)) {
+      // W spoczynku pokoju (`wakes`) zegar tyka dalej także po drzemce: liczy ciszę do następnego
+      // gościa albo obchodu, a zapis klatki idzie dopiero, gdy płótno się obudzi.
+      if (now.frame - desk.drawnAt > DESK_STALE || now.reduced === true || (now.idle && now.snoozing === true && now.wakes !== true)) {
         desk.timer?.cancel()
         desk.timer = null
         return
@@ -1288,6 +1290,9 @@ export const register: Register = on => {
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     const desk = e.surface === DESK_SURFACE
     if (e.props.hasSurvey || (e.surface !== GRID_SURFACE && !desk)) return next(e)
+    // Zwinięty pas: silnik dalej prosi o drzewo, ale nic z niego nie pokazuje. Bez płótna nie ma
+    // zegara klatek ani budzenia pokoju na darmo; starszy silnik pola nie zna i pas rysuje jak dotąd.
+    if (e.props.isCollapsed === true) return next(e)
     const now = await read($, modes)
     if (!now.persona || !now.animacje) return next(e)
     const working = e.props.isWorking
