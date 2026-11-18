@@ -5,6 +5,7 @@ import type { BoxProps, ElementConstructor, RenderElement, TextProps } from 'cla
 
 import { AVATAR_COLUMNS, avatarRows, speakerColor } from './avatar'
 import type { AvatarSpeaker } from './avatar'
+import type { KruxMood } from '../types'
 
 // Kolumna, od której zaczyna się dymek: awatar i odstęp. Wiersze narzędzi
 // w czacie stoją od niej, równo z ramkami.
@@ -19,6 +20,8 @@ export type ChatData = {
   // Wynik `next(e)`, także nieprzezroczysty węzeł `engine`, albo goły tekst
   // prośby Morry rysowany przez mod: bez podświetlenia wiersza silnika.
   content: RenderElement | string
+  // Mina mówcy z chwili wiadomości; bez niej spokojna.
+  mood?: KruxMood
 }
 
 // Komenda (`/krux czat`) i tryb powłoki (`!ls`) zostają w rysunku silnika.
@@ -37,7 +40,7 @@ export function chatTree({ Box, Text }: ChatElements, data: ChatData): RenderEle
     height: 2,
     // Głowa stoi przy pierwszym wierszu treści, pod krawędzią z nagłówkiem.
     marginTop: 1,
-    children: avatarRows(data.speaker).map(row => Text({
+    children: avatarRows(data.speaker, data.mood).map(row => Text({
       color,
       wrap: 'truncate-end',
       children: row.map(({ text, ...colors }) => Text({ ...colors, children: [text] })),

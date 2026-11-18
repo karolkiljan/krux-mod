@@ -22,7 +22,7 @@ import { PALETTE } from './palette'
 import { MATES, ROSTER } from './roster'
 import { GESTURES, glance } from './fidget'
 import { terminalText } from './terminal-text'
-import { H, STAND, W, actFrame, at, dots, draw, entryOf, finalLoop, flame, inLoop, kitLead, leadIn, legAt, legDone, lerp, moodOf, noise, pad, restFrame, rotation, settleFrames, stander, walker } from './stage'
+import { H, STAND, W, actFrame, at, dots, draw, entryOf, finalLoop, flame, inLoop, kitLead, leadIn, legAt, legDone, lerp, moodOf, noise, pad, restFrame, rotation, settleFrames, croucher, stander, walker } from './stage'
 import type { Act, Frame, Layer, Leg, Look, Route } from './stage'
 
 // Siatki pikseli kowala i hordy. Czyste funkcje: płótno `forge.ts` tylko je rysuje.
@@ -59,6 +59,26 @@ const HEARTH = ['kkkkkkkkkk', 'k........k', 'k........k', 'k........k', 'kcccccc
 function hearthRow(frame: number, y: number): string {
   const row = HEARTH[y]!
   return [...row].map((cell, x) => (cell === '.' ? flame(frame, x, 3 - y) : cell)).join('')
+}
+
+// Palenisko w panelu czuje robotę: przy kuciu pełny ogień, w spoczynku sam żar z rzadką iskrą,
+// a gdy Krux zły po smrodzie, żar kopci dymem.
+export type Heat = 'blaze' | 'ember' | 'smoke'
+
+function heatRow(frame: number, y: number, heat: Heat): string {
+  if (heat === 'blaze') return hearthRow(frame, y)
+  return [...HEARTH[y]!].map((cell, x) => {
+    if (cell !== '.') return cell
+    const up = 3 - y
+    if (up === 0) return noise(frame >> 2, x, 0) < 0.6 ? 'R' : 'o'
+    if (heat === 'smoke') return noise(frame >> 1, x + up, up) < 0.28 ? (up === 2 ? 'V' : 'm') : '.'
+    return up === 1 && noise(frame >> 1, x, 1) < 0.08 ? 'o' : '.'
+  }).join('')
+}
+
+// Podmienia ogień w siatce panelu (palenisko stoi dwie kolumny za orkiem) na ten z `heat`.
+export function paneHeat(grid: readonly string[], frame: number, heat: Heat): string[] {
+  return grid.map((row, y) => `${row.slice(0, W + 2)}${heatRow(frame, y, heat)}`)
 }
 
 // Mrugnięcie co 6 s; dumny ork nie mruga.
@@ -679,6 +699,26 @@ const PUMPKIN: Frame = ['.l.', 'ooo', 'yoy']
 // Pył z zawału: tyle ziaren spada ze stropu.
 const DUST_GRAINS = 9
 
+// Obchód: kumpel z kwater, który akurat nie ma roboty, idzie wzdłuż ściany coś zrobić: nakarmić
+// kanarka, zajrzeć do księgi na regale, poprawić pochodnię przy sztolni albo wyjrzeć przez okienko.
+// Niczego nie zabiera ze ściany na podłogę, więc sprzęt orków w robocie zostaje nietknięty.
+// `cart`: przy szerokim oknie idzie do chodnika i przetacza wózek z rudą; to miejsce zna płótno.
+export type Chore = 'canary' | 'shelf' | 'torch' | 'window' | 'cart'
+export const CHORES: readonly Exclude<Chore, 'cart'>[] = ['canary', 'shelf', 'torch', 'window']
+// Grzbiet księgi, który włóczęga wyjmuje z półki: kolumna od lewej krawędzi regału.
+const SHELF_BOOK = 4
+
+// Kolumna orka przy ścianie w miejscu obchodu; `null`, gdy tego miejsca na tej ścianie nie ma.
+export function choreSpot(chore: Chore, floor: number, hearth: boolean): number | null {
+  const fit = (x: number) => (x < 0 || x + DEEP_WIDE > floor ? null : x)
+  if (chore === 'canary') return fit(wallX('trial', floor, hearth) + 2)
+  if (chore === 'shelf') return fit(wallX('table', floor, hearth) + SHELF_BOOK + 1)
+  if (chore === 'torch') return fit(stashX('torch', floor, hearth) - 1)
+  if (chore === 'cart') return null
+  const pane = wallX('mine', floor, hearth) + 13
+  return pane + PANE_WIDE > floor ? null : pane + 2
+}
+
 // Co dzieje się w pokoju samo, i tylko tyle: dym nad paleniskiem, kanarek w klatce, drzwi kwater.
 // Ściana to meble i sprzęt; ozdoby nie mieszają się z tym, po co ork sięga.
 function roomLife(room: string[][], width: number, frame: number, hearth: boolean, state: RoomState): void {
@@ -694,8 +734,12 @@ function roomLife(room: string[][], width: number, frame: number, hearth: boolea
   put(cage, 2, 'C')
   put(cage + 4, 2, 'C')
   // Kanarek to monitoring: przy czerwonych testach szarzeje i przestaje skakać.
+  // Karmiony kanarek skacze co klatkę, a ziarno leży w klatce; szary przy czerwonych testach nie je.
+  const fed = state.chore?.kind === 'canary' && state.alive
   if (state.red) put(cage + 2, 2, 'V')
-  else put(cage + 1 + (state.alive ? Math.floor(frame / 4) % 3 : 1), 2, 'Z')
+  else put(cage + 1 + (state.alive ? Math.floor(frame / (fed ? 1 : 4)) % 3 : 1), 2, 'Z')
+  // Księga wyjęta z półki zostawia lukę między grzbietami, póki włóczęga ją czyta.
+  if (state.chore?.kind === 'shelf') for (const y of [3, 4]) put(wallX('table', width, hearth) + SHELF_BOOK, y, '.')
   // Drzwi kwater stoją otworem, póki ktoś w nich wchodzi albo wychodzi.
   const door = doorLeft(width, hearth)
   if (door !== null && state.door) DOORWAY.forEach((row, dy) => [...row].forEach((cell, dx) => put(door + dx, dy, cell)))
@@ -737,7 +781,7 @@ function roomGhost(room: string[][], width: number, hearth: boolean, state: Room
 // Co pokój wie o robocie: zdarzenie, którym żyje Krux, ruch, czerwone testy, czyj sprzęt zszedł
 // ze ściany. `blessed`: sesja miała padłe, więc zielone przywołuje Skarbnika. `date`: miesiąc
 // i dzień, z nich zima w okienku i święta. `door`: ktoś właśnie przechodzi przez drzwi kwater.
-export type RoomState = { feel: { kind: KruxEvent | 'handoff'; age: number } | null; alive: boolean; red: boolean; blessed: boolean; phase: DayPhase; date: { month: number; day: number }; taken: readonly StageScene[]; door: boolean }
+export type RoomState = { feel: { kind: KruxEvent | 'handoff'; age: number } | null; alive: boolean; red: boolean; blessed: boolean; phase: DayPhase; date: { month: number; day: number }; taken: readonly StageScene[]; door: boolean; chore?: { kind: Chore; t: number } }
 
 const ROOM_AT_REST: RoomState = { feel: null, alive: true, red: false, blessed: false, phase: 'day', date: { month: 6, day: 15 }, taken: [], door: false }
 
@@ -789,8 +833,10 @@ export function roomGrid(width: number, frame: number, hearth: boolean, state: P
     room[3]![x] = 'E'
     room[4]![x] = 'E'
     if (x !== between && full.taken.includes('torch')) continue
-    room[2]![x] = red ? 'R' : bright ? 'Z' : (frame + x) % 3 === 0 ? 'Z' : 'Q'
-    room[1]![x] = red ? 'Q' : bright ? 'Z' : (frame + x) % 4 === 1 ? 'Q' : room[1]![x]!
+    // Poprawiana pochodnia przy sztolni pali się jasno, póki włóczęga przy niej stoi.
+    const tended = x !== between && full.chore?.kind === 'torch'
+    room[2]![x] = red ? 'R' : bright || tended ? 'Z' : (frame + x) % 3 === 0 ? 'Z' : 'Q'
+    room[1]![x] = red ? 'Q' : bright ? 'Z' : tended ? (frame % 2 === 0 ? 'Z' : 'Q') : (frame + x) % 4 === 1 ? 'Q' : room[1]![x]!
   }
   roomGhost(room, width, hearth, full)
   if (feel?.kind === 'zawał' || feel?.kind === 'tear') {
@@ -801,6 +847,111 @@ export function roomGrid(width: number, frame: number, hearth: boolean, state: P
     }
   }
   return room.map(row => row.join(''))
+}
+
+// ——— Druga izba: chodnik kopalni ———
+// Na oknie szerszym niż pokój za sztolnią widać chodnik, do którego ona prowadzi: stemple, tory,
+// wózek z rudą, lampa, żyła w skale. Orkowie tu nie pracują i niczego stąd nie biorą, więc ruda,
+// wózek, szczur i nietoperz nie mieszają się ze sprzętem pokoju. Wszystko z numeru klatki, bez stanu.
+export const ANNEX_MIN = 24
+export const ANNEX_MAX = 64
+// Co ile kolumn stoi stempel i od jakiej szerokości chodnika dochodzą kolejne rzeczy.
+const ANNEX_BAY = 20
+const ANNEX_VEIN = 36
+const ANNEX_STORE = 52
+const CART: Frame = ['xxxxxxxx', 'xhhhhhhx', '.xxxxxx.', '.C....C.']
+const ORE: Frame = ['..qS.q..', '.qSqqSq.']
+const BARREL: Frame = ['.hh.', 'hhhh', 'CCCC', 'hhhh', 'CCCC', '.hh.']
+const CRATE: Frame = ['xxxxx', 'xhxhx', 'xxhxx', 'xhxhx', 'xxxxx']
+// Wózek stoi tuż za pierwszym stemplem. Sam się nie toczy: rusza go tylko ork na obchodzie,
+// najdalej o `CART_PUSH` kolumn, piksel na klatkę, i odstawia na miejsce.
+const CART_PUSH = 6
+export const CART_WIDE = CART[0]!.length
+
+// Lewa krawędź wózka w chodniku, gdy stoi.
+export function cartHome(): number {
+  return 5
+}
+
+// O ile kolumn wózek da się przetoczyć w chodniku tej szerokości, zanim dojedzie do składu albo ściany.
+export function cartReach(width: number): number {
+  return Math.max(0, Math.min(CART_PUSH, width - cartHome() - CART_WIDE - (width >= ANNEX_STORE ? 14 : 2)))
+}
+
+// Przesunięcie wózka w klatce `t` przetaczania: chwyt, w prawo, chwila, z powrotem.
+export function cartPush(t: number, reach: number): number {
+  const u = t - 2
+  return u < 0 ? 0 : u < reach ? u : u < reach + 3 ? reach : Math.max(0, 2 * reach + 3 - u)
+}
+
+// Chodnik o szerokości `width` w klatce `frame`. Czuje to, co pokój: czerwone testy przygaszają
+// lampę, zawał i rozbiórka sypią pyłem, zielone i commit rozbłyskują rudą na złoto. `cart`: o tyle
+// kolumn ork właśnie przetoczył wózek.
+export function annexGrid(width: number, frame: number, state: Pick<RoomState, 'alive' | 'red' | 'feel'> & { cart?: number }): string[] {
+  const grid = Array.from({ length: ROOM_ROWS }, () => Array.from({ length: width }, (): string => '.'))
+  if (width < ANNEX_MIN) return grid.map(row => row.join(''))
+  const put = (x: number, y: number, cell: string) => { if (cell !== '.' && grid[y]?.[x] !== undefined) grid[y]![x] = cell }
+  const stamp = (rows: Frame, left: number, top: number) => rows.forEach((row, dy) => [...row].forEach((cell, dx) => put(left + dx, top + dy, cell)))
+  const step = state.alive ? frame : 0
+  const kind = state.feel?.kind
+  const bright = kind === 'test-pass' || kind === 'build-pass' || kind === 'commit'
+  // Stemple z kapą: pierwszy tuż za pokojem, potem co przęsło; strop to sama belka nad nimi.
+  const posts: number[] = []
+  for (let x = 2; x + 2 < width; x += ANNEX_BAY) posts.push(x)
+  for (const x of posts) for (let y = 0; y < ROOM_ROWS - 1; y += 1) put(x, y, 'E')
+  for (let x = posts[0]!; x <= posts[posts.length - 1]! + 1 && x < width; x += 1) put(x, 0, 'E')
+  // Tory: szyna i podkłady pod nią.
+  for (let x = posts[0]! + 1; x < width - 1; x += 1) put(x, ROOM_ROWS - 1, x % 3 === 0 ? 'x' : 'C')
+  // Lampa wisi w pierwszym przęśle: jasna, przy czerwonych testach przygasa.
+  const lamp = posts[0]! + Math.floor(ANNEX_BAY / 2)
+  if (lamp < width - 1) {
+    put(lamp, 1, 'h')
+    put(lamp, 2, 'C')
+    put(lamp, 3, state.red ? 'Q' : bright || step % 5 !== 0 ? 'Z' : 'y')
+    put(lamp, 4, 'C')
+  }
+  // Żyła rudy w skale drugiego przęsła: szare okruchy, raz po raz błysk; zielone złoci ją całą.
+  if (width >= ANNEX_VEIN) {
+    const vein = posts[1] === undefined ? width - 9 : posts[1] + 4
+    const flecks: readonly (readonly [number, number])[] = [[0, 4], [1, 3], [2, 4], [3, 5], [4, 4], [6, 3], [5, 6], [2, 6]]
+    flecks.forEach(([dx, y], i) => put(vein + dx, y, bright ? (i % 2 === (state.feel!.age % 2) ? 'y' : 'Z') : (step + i * 7) % 23 === 0 ? 'j' : i % 3 === 0 ? 'S' : 'q'))
+    // Kropla ze stropu przy żyle i kałuża na spągu.
+    const drip = step % 34
+    if (state.alive && drip < 9) put(vein + 8, 1 + drip, 'i')
+    put(vein + 8, ROOM_ROWS - 2, 'W')
+  }
+  // Skład na końcu szerokiego chodnika: beczka i skrzynia przy ostatnim stemplu.
+  if (width >= ANNEX_STORE) {
+    stamp(CRATE, width - 7, ROOM_ROWS - 1 - CRATE.length)
+    stamp(BARREL, width - 12, ROOM_ROWS - 1 - BARREL.length)
+  }
+  // Wózek z rudą w pierwszym przęśle: stoi, póki ork go nie przetacza.
+  const cart = cartHome() + Math.max(0, Math.min(cartReach(width), state.cart ?? 0))
+  stamp(ORE, cart, ROOM_ROWS - 1 - CART.length - ORE.length)
+  stamp(CART, cart, ROOM_ROWS - 1 - CART.length)
+  if (bright) put(cart + 3, ROOM_ROWS - 1 - CART.length - ORE.length, 'y')
+  // Nietoperz wisi pod kapą i co jakiś czas przelatuje przęsło; szczur przebiega po spągu.
+  if (state.alive) {
+    const flight = step % 310
+    const perch = posts[0]! + 5
+    if (flight < 14 && perch + flight + 3 < width) {
+      put(perch + flight, 2 + (flight % 4 < 2 ? 0 : 1), 'n')
+      put(perch + flight + 1, 2, 'n')
+      put(perch + flight + 2, 2 + (flight % 4 < 2 ? 0 : 1), 'n')
+    } else put(perch, 1, 'n')
+    const dash = step % 190
+    const run = width - 4 - dash * 2
+    if (dash < 20 && run > posts[0]! + 12) {
+      put(run, ROOM_ROWS - 2, 'q')
+      put(run + 1, ROOM_ROWS - 2, 'q')
+      put(run + 2, ROOM_ROWS - 2, dash % 2 === 0 ? 'q' : '.')
+    }
+  } else put(posts[0]! + 5, 1, 'n')
+  // Zawał i rozbiórka sypią pyłem także tutaj.
+  if (kind === 'zawał' || kind === 'tear') {
+    for (let i = 0; i < 5; i += 1) put(Math.round(((i * 41 + 7) % 100) * width / 100), 1 + (state.feel!.age + i) % 6, 'q')
+  }
+  return grid.map(row => row.join(''))
 }
 
 // Prostokąt pikseli wklejony w siatkę; '.' przepuszcza to, co pod spodem.
@@ -918,16 +1069,56 @@ export function errandPose(t: number, from: number, route: ErrandRoute, face: Fa
 // `toast`: kumpel z kwater wpada z kuflami, stukają się i piją. `tale`: gość opowiada z rękami
 // w ruchu, gospodarz słucha, a na koniec obaj rechoczą. `debate`: dyskusja na zmianę, aż uścisną
 // sobie dłonie. `council`: narada nad mapą. `show`: gość pokazuje sztabkę, gospodarz ją ocenia.
-export type DuetKind = 'fence' | 'pass' | 'highfive' | 'argue' | 'toast' | 'tale' | 'debate' | 'council' | 'show'
+// `chat`: posiady, obaj przykucają i gadają na zmianę znakami nad głową. `dice`: kości rzucane
+// na podłogę między nimi. `peek`: gość zagaduje o robotę, gospodarz tłumaczy, gość kiwa z uznaniem.
+export type DuetKind = 'fence' | 'pass' | 'highfive' | 'argue' | 'toast' | 'tale' | 'debate' | 'council' | 'show' | 'chat' | 'dice' | 'peek'
 export const DUET_GAP = 14
 export const DUET_FRAMES = 32
+// Posiady i kości trwają dłużej niż zwykła scenka: orkowie siadają, gadają i dopiero wstają.
+export const CHAT_FRAMES = 64
+export const DICE_FRAMES = 44
+
+export function duetFrames(kind: DuetKind): number {
+  return kind === 'chat' ? CHAT_FRAMES : kind === 'dice' ? DICE_FRAMES : DUET_FRAMES
+}
+
+// Znak nad głową: mały biały dymek z jednym obrazkiem zamiast słów. Orkowie gadają nim między
+// sobą w scenkach i przy zagadywaniu; słowa z sesji niesie tylko dymek z tekstem.
+// `talk` trzy kropki, `ask` pytajnik, `bang` wykrzyknik, `note` nutka, `heart` serce, `huff` krzyżyk złości.
+export type Emote = 'talk' | 'ask' | 'bang' | 'note' | 'heart' | 'huff'
+const EMOTES: Record<Emote, Frame> = {
+  talk: ['.jjj.', 'jjjjj', 'jnjnj', '.jjj.', '..j..'],
+  ask: ['.nnj.', 'jjjnj', 'jjnjj', '.jnj.', '..j..'],
+  bang: ['.jdj.', 'jjdjj', 'jjjjj', '.jdj.', '..j..'],
+  note: ['.jnn.', 'jjnjj', 'jnnjj', '.jjj.', '..j..'],
+  heart: ['.djd.', 'jdddj', 'jjdjj', '.jjj.', '..j..'],
+  huff: ['.njn.', 'jjnjj', 'jnjnj', '.jjj.', '..j..'],
+}
+export const EMOTE_ROWS = 5
+export const EMOTE_WIDE = 5
+
+// Znak w klatce `t` z `length`: rośnie od ogonka przez dwie klatki i tak samo maleje, nie wyskakuje.
+export function emoteRows(kind: Emote, t: number, length: number): Frame {
+  const edge = Math.min(t, length - 1 - t)
+  if (edge < 0) return []
+  if (edge === 0) return ['', '', '', '', '..j..']
+  if (edge === 1) return ['', '', '.jjj.', '.jjj.', '..j..']
+  return EMOTES[kind]
+}
+
+// Kto w scence pokazuje znak nad głową.
+export type DuetSign = { who: 'host' | 'guest'; rows: Frame }
+
+function sign(who: DuetSign['who'], kind: Emote, t: number, from: number, to: number): DuetSign[] {
+  return t >= from && t < to ? [{ who, rows: emoteRows(kind, t - from, to - from) }] : []
+}
 
 // Gość patrzy w lewo: lustro stójki z ręką; rama 8 kolumn, więc ręka wchodzi między orków.
 function facing(look: 'mid' | 'right', arm: string): string[] {
   return pad(stander(look, arm)).map(row => [...row.padEnd(8, '.').slice(0, 8)].reverse().join('').replace(/\.+$/u, ''))
 }
 
-type DuetFrame = { host: string[]; guest: string[]; prop: Frame }
+type DuetFrame = { host: string[]; guest: string[]; prop: Frame; signs?: readonly DuetSign[] }
 
 const RIGHT = (arm: string) => pad(stander('right', arm))
 const HIGH_HOST = pad(draw([stander('right'), 0, 0], at('g', 6, 2), at('g', 7, 1)))
@@ -1028,9 +1219,56 @@ function show(t: number): DuetFrame {
   return { host: proud(HIGH_HOST), guest: proud(HIGH_GUEST), prop: held }
 }
 
-// Scenki, które same prowadzą usta (opowieść, dyskusja, narada, pokaz): mówią na zmianę według
-// klatki, więc szczęka z dymka nie może im otworzyć drugiej paszczy naraz.
-export const TALKING_DUETS: ReadonlySet<DuetKind> = new Set<DuetKind>(['tale', 'debate', 'council', 'show'])
+// Przykuc twarzą do partnera: gospodarz patrzy w prawo, gość to jego lustro w ramie 8 kolumn,
+// więc tułów gościa stoi w tych samych kolumnach co w każdej scence.
+const SIT = (arm = ''): string[] => pad(croucher('right', arm))
+const SIT_GUEST = (arm = ''): string[] => raised(SIT(arm))
+const shut = (rows: readonly string[]): string[] => rows.map(row => row.replaceAll('r', 'G'))
+
+// Posiady: obaj przykucają, gospodarz zagaja, gość dopytuje, gospodarz odpowiada z ręką w górze,
+// a na koniec obaj rechoczą z zamkniętymi oczami i wstają. Gadają znakami nad głową, na zmianę.
+function chat(t: number): DuetFrame {
+  const talk = (rows: readonly string[]) => withTalk(rows, t)
+  if (t < 3 || t >= 61) return { host: RIGHT(''), guest: GUEST(''), prop: [] }
+  if (t < 6 || t >= 58) return { host: SIT(), guest: SIT_GUEST(), prop: [] }
+  if (t < 20) return { host: talk(t % 6 < 3 ? SIT('g') : SIT()), guest: SIT_GUEST(), prop: [], signs: sign('host', 'talk', t, 7, 19) }
+  if (t < 32) return { host: SIT(), guest: talk(t % 6 < 3 ? SIT_GUEST('g') : SIT_GUEST()), prop: [], signs: sign('guest', 'ask', t, 21, 31) }
+  // Odpowiedź z ręką w górze: dłoń nad ramieniem, piksel wyżej co drugą trójkę klatek.
+  if (t < 44) return { host: talk(pad(draw([SIT('g'), 0, 0], at('g', 7, t % 6 < 3 ? 3 : 2)))), guest: SIT_GUEST(), prop: [], signs: sign('host', 'bang', t, 33, 43) }
+  return { host: talk(shut(SIT())), guest: withTalk(shut(SIT_GUEST()), t + 1), prop: [], signs: [...sign('guest', 'note', t, 45, 57), ...sign('host', 'note', t, 48, 57)] }
+}
+
+// Kości: gospodarz wyjmuje je spod fartucha, obaj przykucają, gospodarz potrząsa i rzuca, potem
+// gość zbiera, potrząsa i rzuca lepiej: wstaje z rękami w górze, a gospodarz zasłania oczy dłonią.
+// Na koniec gospodarz zbiera kości i chowa je pod fartuch. Współrzędne od lewej krawędzi gospodarza.
+function dice(t: number): DuetFrame {
+  const stand = { host: RIGHT(''), guest: GUEST(''), prop: [] as Frame }
+  if (t < 1 || t >= 43) return stand
+  if (t < 2 || t >= 42) return { host: RIGHT('g'), guest: GUEST(''), prop: draw(at('j', 7, 3)) }
+  // Kości w garści gospodarza: pięść chodzi w górę i w dół.
+  if (t < 10) return { host: SIT('g'), guest: SIT_GUEST(), prop: draw(at('j', 7, t % 2 === 0 ? 4 : 3)) }
+  if (t < 12) return { host: SIT('gg'), guest: SIT_GUEST(), prop: t === 10 ? draw(at('j', 8, 3), at('p', 9, 4)) : draw(at('j', 9, 4), at('p', 10, 4)) }
+  if (t < 20) return { host: SIT(), guest: SIT_GUEST(t >= 18 ? 'gg' : ''), prop: t >= 19 ? draw(at('j', 10, 4), at('p', 11, 4)) : draw(at('j', 9, 5), at('p', 11, 5)), signs: sign('host', 'note', t, 12, 18) }
+  if (t < 28) return { host: SIT(), guest: SIT_GUEST('g'), prop: draw(at('j', 12, t % 2 === 0 ? 4 : 3)) }
+  if (t < 30) return { host: SIT(), guest: SIT_GUEST('gg'), prop: t === 28 ? draw(at('j', 11, 3), at('p', 10, 4)) : draw(at('j', 10, 4), at('p', 9, 4)) }
+  const rolled = draw(at('j', 8, 5), at('p', 10, 5))
+  if (t < 40) return { host: pad(draw([shut(SIT()), 0, 0], at('g', 6, 2))), guest: proud(HIGH_GUEST), prop: rolled, signs: [...sign('guest', 'bang', t, 31, 39), ...sign('host', 'huff', t, 33, 40)] }
+  return { host: SIT(t === 40 ? 'gg' : 'g'), guest: GUEST(''), prop: t === 40 ? draw(at('j', 8, 4), at('p', 9, 5)) : draw(at('j', 7, 4)) }
+}
+
+// Zagadywanie o robotę: gość pokazuje i pyta, gospodarz tłumaczy z ręką w górze, gość waży to
+// z dłonią przy brodzie i kiwa z uznaniem: złote oczy u obu.
+function peek(t: number): DuetFrame {
+  const talk = (rows: readonly string[]) => withTalk(rows, t)
+  if (t < 2 || t >= 29) return { host: RIGHT(''), guest: GUEST(''), prop: [] }
+  if (t < 10) return { host: RIGHT(''), guest: talk(t % 4 < 2 ? GUEST('g') : HIGH_GUEST), prop: [], signs: sign('guest', 'ask', t, 2, 10) }
+  if (t < 20) return { host: talk(t % 4 < 2 ? RIGHT('g') : HIGH_HOST), guest: t >= 14 ? THINK_GUEST : GUEST(''), prop: [], signs: sign('host', 'bang', t, 11, 19) }
+  return { host: t >= 23 ? proud(RIGHT('')) : RIGHT(''), guest: proud(t % 4 < 2 ? GUEST('') : HIGH_GUEST), prop: [], signs: sign('guest', 'heart', t, 21, 28) }
+}
+
+// Scenki, które same prowadzą usta (opowieść, dyskusja, narada, pokaz, posiady, zagadywanie): mówią
+// na zmianę według klatki, więc szczęka z dymka nie może im otworzyć drugiej paszczy naraz.
+export const TALKING_DUETS: ReadonlySet<DuetKind> = new Set<DuetKind>(['tale', 'debate', 'council', 'show', 'chat', 'peek'])
 
 // Klatka scenki `t`. Współrzędne rekwizytu od lewej krawędzi gospodarza.
 export function duetPose(kind: DuetKind, t: number): DuetFrame {
@@ -1038,6 +1276,9 @@ export function duetPose(kind: DuetKind, t: number): DuetFrame {
   if (kind === 'debate') return debate(t)
   if (kind === 'council') return council(t)
   if (kind === 'show') return show(t)
+  if (kind === 'chat') return chat(t)
+  if (kind === 'dice') return dice(t)
+  if (kind === 'peek') return peek(t)
   const step = Math.floor(t / 3)
   if (kind === 'fence') {
     const up = step % 2 === 1

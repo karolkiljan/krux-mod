@@ -1,7 +1,8 @@
 import { expect, test } from 'claude-code/testing'
 
 import type { KruxJournal, KruxJournalEntry } from '../types'
-import { EMPTY_JOURNAL, journalAfter, journalTree, toolLine } from '../hooks/journal'
+import { EMPTY_JOURNAL, journalAfter, journalTree, toolGlyph, toolLine } from '../hooks/journal'
+import { terminalText } from '../hooks/terminal-text'
 import type { JournalCall, JournalElements, ToolLineData } from '../hooks/journal'
 
 // Elementy zachowują propsy, więc testujemy drzewo przekazane silnikowi.
@@ -241,7 +242,7 @@ test('journal rows carry outcome, tool, summary and local HH:MM:SS from the entr
   const at = new Date(2026, 9, 7, 12, 34, 56).getTime()
   for (const [ok, mark, color] of [[true, '✓', '#3fb950'], [false, '✗', '#e0322b'], [null, '·', undefined]] as const) {
     const rows = texts(draw([{ ...ENTRY, tool: 'Edit', ok, summary: '+3 −2', at }]))
-    expect(rows.map(row => row.text)).toEqual(['Krux', mark, 'Edit', 'a.ts', '+3 −2', '12:34:56'])
+    expect(rows.map(row => row.text)).toEqual(['Krux', mark, '✎', 'Edit', 'a.ts', '+3 −2', '12:34:56'])
     expect(rows[1]?.props.color).toBe(color)
   }
 })
@@ -260,10 +261,10 @@ test('long targets truncate and cannot push the clock or wrap a journal row', ()
 
 test('a long target never shrinks the tool name, while a long MCP name has a cap', () => {
   const root = draw([{ ...ENTRY, tool: 'Bash', target: 'git -C /Users/someone/RubymineProjects/krux-mod log' }], 40)
-  const tool = children(children(children(root)[0]!)[1]!)[1]!
+  const tool = children(children(children(root)[0]!)[1]!)[2]!
   expect(texts(tool)[0]!.text).toBe('Bash')
   expect(tool.props.flexShrink).toBe(0)
-  const mcp = children(children(children(draw([{ ...ENTRY, tool: 'mcp__krux-mod__watki' }], 40))[0]!)[1]!)[1]!
+  const mcp = children(children(children(draw([{ ...ENTRY, tool: 'mcp__krux-mod__watki' }], 40))[0]!)[1]!)[2]!
   expect(texts(mcp)[0]!.text).toBe('mcp__krux-mod__…')
 })
 
@@ -278,7 +279,7 @@ test('journal uses the supplied fallback clock only for invalid stored timestamp
 test('a collapsed tool is one dim line with a visible outcome', () => {
   for (const [ok, mark] of [[true, '✓'], [null, '·']] as const) {
     const root = line({ tool: 'Read', target: 'hooks/a.ts', ok })
-    expect(lineText(root)).toBe(`⚒ Read hooks/a.ts ${mark}`)
+    expect(lineText(root)).toBe(`▤ Read hooks/a.ts ${mark}`)
     expect(root.props.height).toBe(1)
     expect(texts(root).every(row => row.props.dimColor === true)).toBe(true)
     expect(texts(root)[0]?.props.wrap).toBe('truncate-end')
@@ -296,18 +297,18 @@ test('a collapsed group fails if any call failed and stays pending if any is unk
   expect(texts(failed)[0]?.props.dimColor).toBe(true)
   expect(texts(failed)[0]?.props.color).toBeUndefined()
   expect(lineText(line([]))).toBe('⚒ 0 narzędzi ·')
-  expect(lineText(line([green]))).toBe('⚒ Read a.ts ✓')
+  expect(lineText(line([green]))).toBe('▤ Read a.ts ✓')
   expect(lineText(line(Array.from({ length: 12 }, () => green)))).toBe('⚒ 12 narzędzi ✓')
   expect(lineText(line(Array.from({ length: 22 }, () => green)))).toBe('⚒ 22 narzędzia ✓')
 })
 
 test('single errors have a red mark and empty or multiline targets keep a single line', () => {
   const failed = line({ tool: 'Bash', target: 'npm test', ok: false })
-  expect(lineText(failed)).toBe('⚒ Bash npm test ✗')
+  expect(lineText(failed)).toBe('❯ Bash npm test ✗')
   expect(texts(failed).at(-1)?.props.color).toBe('#e0322b')
   expect(texts(failed)[0]?.props.dimColor).toBe(true)
-  expect(lineText(line({ tool: 'TodoWrite', target: '', ok: true }))).toBe('⚒ TodoWrite ✓')
-  expect(lineText(line({ tool: 'Bash', target: 'echo\n  ok', ok: null }))).toBe('⚒ Bash echo ok ·')
+  expect(lineText(line({ tool: 'TodoWrite', target: '', ok: true }))).toBe('≡ TodoWrite ✓')
+  expect(lineText(line({ tool: 'Bash', target: 'echo\n  ok', ok: null }))).toBe('❯ Bash echo ok ·')
 })
 
 test('collapsed long targets leave room for the final status', () => {
@@ -322,4 +323,15 @@ test('collapsed long targets leave room for the final status', () => {
     expect(texts(status!)[0]?.text).toBe('✗')
   }
   expect(lineText(line({ tool: 'Read', target: 'a.ts', ok: false }, 1))).toBe('✗')
+})
+
+test('each kind of tool has its trade glyph, one terminal cell wide, and unknown tools keep the hammer', () => {
+  const glyphs = { Read: '▤', Grep: '⌕', Glob: '⌕', Edit: '✎', Write: '✎', Bash: '❯', Agent: '⚑', TodoWrite: '≡', WebFetch: '◍', WebSearch: '◍', 'mcp__krux-mod__watki': '⬡', Nieznane: '⚒' }
+  for (const [tool, glyph] of Object.entries(glyphs)) {
+    expect([tool, toolGlyph(tool)]).toEqual([tool, glyph])
+    // Wąski znak: wiersz liczy się w komórkach tak samo jak z młotem.
+    expect([tool, terminalText(glyph, 9).columns]).toEqual([tool, 1])
+  }
+  // Grupa narzędzi różnych fachów zostaje pod młotem.
+  expect(lineText(line([{ tool: 'Read', target: 'a.ts', ok: true }, { tool: 'Bash', target: 'ls', ok: true }]))).toBe('⚒ 2 narzędzia ✓')
 })

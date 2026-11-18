@@ -4,6 +4,7 @@ import type { KruxTask, KruxUsage } from '../types'
 import { EMPTY_BOARD } from '../hooks/board'
 import { KRUX_COLOR, shaftTabs, shaftTree } from '../hooks/shaft'
 import { EMPTY_THREADS } from '../hooks/threads'
+import { PALETTE } from '../hooks/palette'
 import type { ShaftData, ShaftElements, ShaftTabElements } from '../hooks/shaft'
 
 // Elementy jak z `$.ui.resolve`: zwykłe obiekty z typem i propsami.
@@ -93,7 +94,18 @@ test('a long command gives way, the runner name never wraps', () => {
 test('the horde lists each running orc with its time and last tool', () => {
   const horde = [{ agentId: 'a1', name: 'Niuch', mate: 'Niuch' as const, description: 'szukać crasha', time: '1:05', last: 'Grep parser' }]
   const lines = texts(section(draw({ horde }), 'horde')!).map(line => line.text)
-  expect(lines).toEqual(['Horda', '', '●', 'Niuch', 'szukać crasha', '1:05', '  └ Grep parser'])
+  // Głowa kumpla to dwa wiersze półbloków przed jego dwoma wierszami tekstu.
+  const words = lines.filter(line => !line.includes('[object'))
+  expect(words).toEqual(['Horda', '', '●', 'Niuch', 'szukać crasha', '1:05', '  └ Grep parser'])
+  const head = (moods?: Parameters<typeof draw>[0]['moods']) => JSON.stringify(children(children(section(draw({ horde, ...(moods === undefined ? {} : { moods }) }), 'horde')!).at(-1) as Node)[0])
+  // Fartuch Niucha i czerwone oczy; po zielonych złote, po smrodzie brwi.
+  expect([head().includes(PALETTE.N!), head().includes(PALETTE.r!), head().includes(PALETTE.y!)]).toEqual([true, true, false])
+  const faces = { Krux: 'calm', Niuch: 'calm', Grom: 'calm', Piryt: 'calm', Ochra: 'calm', 'Młot': 'calm', Lont: 'calm' } as const
+  expect([head({ ...faces, Niuch: 'proud' }).includes(PALETTE.y!), head({ ...faces, Niuch: 'proud' }).includes(PALETTE.r!)]).toEqual([true, false])
+  expect(head({ ...faces, Niuch: 'grumpy' })).not.toBe(head())
+  // Kumpel bez ostatniego narzędzia trzyma dwa wiersze: głowa nie wisi nad sąsiadem.
+  const fresh = texts(section(draw({ horde: [{ ...horde[0]!, last: '' }] }), 'horde')!).map(line => line.text)
+  expect(fresh.at(-1)).toBe(' ')
 })
 
 test('open threads show their mark, risks in red, below the repo', () => {

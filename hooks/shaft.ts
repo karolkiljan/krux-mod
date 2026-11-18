@@ -3,7 +3,8 @@
 
 import type { BoxProps, ButtonProps, ElementConstructor, RenderElement, RenderNode, TextProps } from 'claude-code'
 
-import type { KruxBoard, KruxGit, KruxShaftTab, KruxThreads, KruxUsage } from '../types'
+import type { KruxBoard, KruxGit, KruxMoods, KruxShaftTab, KruxThreads, KruxUsage } from '../types'
+import { AVATAR_COLUMNS, avatarRows } from './avatar'
 import { limitName, meter, planCount, planRows, readiness, resetIn, stuckMinutes, testLine, testsStale, tokens } from './board'
 import type { MusterRow } from './muster'
 import { ALARM_COLOR, OK_COLOR, PALETTE, SPEAKER_COLOR } from './sprites'
@@ -46,6 +47,8 @@ export type ShaftData = {
   board: KruxBoard
   // Orkowie w biegu (`musterRows`); skończeni schodzą z tablicy.
   horde: readonly MusterRow[]
+  // Miny kumpli: głowa w apelu ma złote oczy po zielonych i brwi po smrodzie; bez nich spokojna.
+  moods?: KruxMoods['faces']
   usage: KruxUsage | null
   // Stan repo (`null` poza repo) i wątki, których Krux nie domknął.
   git: KruxGit | null
@@ -224,21 +227,39 @@ export function shaftTree({ Box, Text }: ShaftElements, data: ShaftData): Render
             'horde',
             'Horda',
             data.horde.map((row, index) =>
+              // Głowa kumpla w jego fartuchu obok dwóch wierszy: kto, z czym, ile, i czym teraz robi.
               Box({
                 key: `mate-${index}`,
-                flexDirection: 'column',
+                flexDirection: 'row',
+                columnGap: 1,
                 children: [
                   Box({
-                    flexDirection: 'row',
-                    columnGap: 1,
+                    key: `mate-head-${index}`,
+                    flexDirection: 'column',
+                    flexShrink: 0,
+                    width: AVATAR_COLUMNS,
+                    height: 2,
+                    children: avatarRows(row.mate, row.mate === null ? 'calm' : (data.moods?.[row.mate] ?? 'calm')).map(line => Text({ wrap: 'truncate-end', children: line.map(({ text, ...colors }) => Text({ ...colors, children: [text] })) })),
+                  }),
+                  Box({
+                    flexDirection: 'column',
+                    flexGrow: 1,
+                    flexShrink: 1,
+                    minWidth: 0,
                     children: [
-                      Text({ color: ORC_COLOR, children: ['●'] }),
-                      Text({ bold: true, color: SPEAKER_COLOR[row.mate ?? 'ork'], children: [row.name.padEnd(5)] }),
-                      Box({ flexGrow: 1, flexShrink: 1, children: [Text({ wrap: 'truncate-end', children: [row.description || ' '] })] }),
-                      Text({ dimColor: true, children: [row.time] }),
+                      Box({
+                        flexDirection: 'row',
+                        columnGap: 1,
+                        children: [
+                          Text({ color: ORC_COLOR, children: ['●'] }),
+                          Text({ bold: true, color: SPEAKER_COLOR[row.mate ?? 'ork'], children: [row.name.padEnd(5)] }),
+                          Box({ flexGrow: 1, flexShrink: 1, children: [Text({ wrap: 'truncate-end', children: [row.description || ' '] })] }),
+                          Text({ dimColor: true, children: [row.time] }),
+                        ],
+                      }),
+                      Text({ dimColor: true, wrap: 'truncate-middle', children: [row.last ? `  └ ${row.last}` : ' '] }),
                     ],
                   }),
-                  ...(row.last ? [Text({ dimColor: true, wrap: 'truncate-middle', children: [`  └ ${row.last}`] })] : []),
                 ],
               }),
             ),

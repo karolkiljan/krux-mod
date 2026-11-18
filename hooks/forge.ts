@@ -1,8 +1,8 @@
 import type { ClientModule } from 'claude-code'
 
 import type { KruxCue, KruxEvent, KruxMate, KruxMood, KruxSpeaker } from '../types'
-import { CATCH_X, CHEER_FROM, CHEER_TO, CUE_FRAMES, DUET_FRAMES, DUET_GAP, FRAME_MS, MUGS, ORC_GAP, ORC_WIDTH, RISE_FRAMES, SILL_LIFT, SPEAKER_COLOR, TALKING_DUETS, TOAST_HELD, TOAST_RETURN, WALL_MIN, bandColumns, behind, bubbleAt, canvasColumns, carried, catchStep, caughtScroll, cheerSide, cheers, depthSpot, dayPhase, doorX, dress, duetPose, episodeKit, errandEnd, errandLegs, errandPose, errandSwap, farMugs, farPose, floorHomes, floorStart, frameGrid, hasHearth, headX, hearthProp, kitAt, kitReach, nextEpisode, paint, quartersDoor, roomGrid, runsOf, sameStation, sliceRuns, slotX, stageGrid, stationX, tossFlight, tossFrames, tossGrid, tossScroll, trackArrive, trackBare, trackCold, trackDozing, trackDue, trackFace, trackGrid, trackKit, trackLooping, trackOff, trackOut, trackResume, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withGaze, withNap, withRegard, withTalk } from './sprites'
-import type { DuetKind, Episode, Face, Far, FloorOrc, Placed, Run, StageScene, Track } from './sprites'
+import { CATCH_X, CHEER_FROM, CHEER_TO, CHORES, CUE_FRAMES, DUET_GAP, EMOTE_ROWS, FRAME_MS, MUGS, ORC_GAP, ORC_WIDTH, RISE_FRAMES, SILL_LIFT, SPEAKER_COLOR, TALKING_DUETS, TOAST_HELD, TOAST_RETURN, ANNEX_MIN, WALL_MIN, annexGrid, bandColumns, cartHome, cartPush, cartReach, behind, bubbleAt, canvasColumns, carried, catchStep, caughtScroll, cheerSide, cheers, choreSpot, depthSpot, duetFrames, emoteRows, dayPhase, doorX, dress, duetPose, episodeKit, errandEnd, errandLegs, errandPose, errandSwap, farMugs, farPose, floorHomes, floorStart, frameGrid, hasHearth, headX, hearthProp, kitAt, kitReach, nextEpisode, paint, paneHeat, quartersDoor, roomGrid, runsOf, sameStation, sliceRuns, slotX, stageGrid, stationX, tossFlight, tossFrames, tossGrid, tossScroll, trackArrive, trackBare, trackCold, trackDozing, trackDue, trackFace, trackGrid, trackKit, trackLooping, trackOff, trackOut, trackResume, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withGaze, withNap, withRegard, withTalk } from './sprites'
+import type { Chore, DuetKind, Emote, Episode, Face, Far, FloorOrc, Heat, Placed, RoomState, Run, StageScene, Track } from './sprites'
 import { draw } from './stage'
 import type { Frame } from './stage'
 import { MATES, ROSTER } from './roster'
@@ -29,6 +29,10 @@ export type ForgeProps = {
   // więc zielone przywołuje Skarbnika.
   red?: boolean
   blessed?: boolean
+  // Ogień paleniska w panelu `/krux`: pełny przy robocie, żar w spoczynku, dym po smrodzie.
+  heat?: Heat
+  // Kolumny chodnika kopalni za pokojem, na oknie szerszym niż pokój; tylko z pokojem.
+  annex?: number
   // Trzy wiersze nad sceną na dymek, puste, gdy nikt nie mówi: wysokość stoi.
   bubbleRows: boolean
   orcs: ForgeOrc[]
@@ -90,7 +94,19 @@ type Duet = { host: string; guest: string; kind: DuetKind; at: number | null; me
 // Odwiedziny: `visit` to klucz kumpla, który wpadł z kwater do Kruxa; `visitDue` klatka, od której
 // może wpaść następny; `visitor` ostatni gość, żeby ten sam nie wpadał dwa razy z rzędu.
 // `ground`: podłoga z ostatniego zapisu; gdy się zmieni, odchodzący dostają nowe drzwi.
-type ForgeState = { frame: number; actors: Record<string, Actor>; idle: boolean; ground?: string; reduced?: boolean; snoozing?: boolean; said?: { id: string; at: number }; laidAt?: number; duet?: Duet; duetAt?: number; visit?: string; visitDue?: number; visitor?: KruxMate }
+// Obchód: `stroll` to kumpel z kwater, który idzie wzdłuż ściany coś zrobić; `strollDue` klatka, od
+// której może wyjść następny; `stroller` ostatni, żeby ten sam nie chodził dwa razy z rzędu.
+// `wakes`: płótno stoi w spoczynku pokoju, więc zegar budzi je co jakiś czas do życia hordy.
+type ForgeState = { frame: number; actors: Record<string, Actor>; idle: boolean; ground?: string; reduced?: boolean; snoozing?: boolean; said?: { id: string; at: number }; laidAt?: number; duet?: Duet; duetAt?: number; visit?: string; visitDue?: number; visitor?: KruxMate; stroll?: Stroll; strollDue?: number; stroller?: KruxMate; wakes?: boolean }
+
+// Obchód od klatki `at`: z drzwi `door` do miejsca `spot` przy ścianie i z powrotem. `peek`: po
+// drodze schodzi w pół głębi za plecy orka `key` i zagaduje go. `back`: wezwany do roboty albo
+// spłoszony zawraca do drzwi z miejsca, w którym stoi. `ground`: podłoga, na której wyszedł.
+// `deep`: głębia w miejscu obchodu; bez niej ściana. Do wózka w chodniku ork schodzi prawie na spąg.
+type Stroll = { face: KruxMate; at: number; door: number; spot: number; chore: Chore; deep?: number; peek?: { key: string; x: number }; ground: string; back?: { at: number; x: number; depth: number } }
+
+// Wiersz pikseli pokoju, od którego zaczyna się podłoga z orkami: nad nim ściana.
+const H_FLOOR = 6
 
 // Kolumny na klatkę w marszu: szybciej na szerokiej podłodze, ale najwyżej 4, żeby kolejne
 // sylwetki (6 pikseli) na siebie zachodziły i ork szedł, zamiast przeskakiwać własną szerokość.
@@ -123,40 +139,133 @@ const VISIT_FIRST = 200
 const VISIT_EVERY = 600
 const VISIT_SPREAD = 600
 
+// Obchód: pierwszy po 13 s życia płótna, potem co 36–72 s. Włóczęga idzie 2 kolumny na klatkę,
+// bo mała sylwetka przy ścianie nie może przelatywać pokoju.
+const STROLL_FIRST = 90
+const STROLL_EVERY = 240
+const STROLL_SPREAD = 240
+const STROLL_PACE = 2
+const PEEK_FRAMES = 20
+const CHORE_FRAMES = 18
+// Zagaduje z pół głębi pokoju, o tyle kolumn na lewo od orka: zza jego ramienia, nie zza rekwizytu.
+const PEEK_DEPTH = 0.5
+const PEEK_BACK = 5
+// Znak włóczęgi i odpowiedź zagadniętego: klatki zagadywania od–do.
+const PEEK_SAYS = [2, 11] as const
+const PEEK_REPLY = [10, 19] as const
+// Przy wózku ork stoi prawie na spągu chodnika: duża sylwetka, stopy przy torach.
+const CART_DEPTH = 0.15
+const CART_GRIP = 5
+// Znak przy kanarku: klatki obchodu od–do.
+const CANARY_SAYS = [3, 15] as const
+
+// Spoczynek pokoju: zegar stoi, ale co jakiś czas budzi płótno, żeby ktoś wpadł albo przeszedł
+// obchód. Pierwszy raz po 7 s ciszy, potem co 18–42 s; liczone w tyknięciach zegara.
+const REST_FIRST = 50
+const REST_EVERY = 120
+const REST_SPREAD = 160
+
+// Widz wodzi wzrokiem za orkiem, który przechodzi obok, najdalej z tylu kolumn.
+const PASS_REACH = 18
+// Tyle klatek po wyjściu z drzwi nowy ork ściąga spojrzenia.
+const NEWCOMER_FRAMES = 8
+
+type Stride = { x: number; depth: number; phase: 'sill' | 'walk' | 'peek' | 'chore'; t: number }
+
+function strollSpan(from: number, to: number): number {
+  return Math.max(6, Math.ceil(Math.abs(to - from) / STROLL_PACE))
+}
+
+// Gdzie włóczęga jest w tej klatce; `null`, gdy wszedł z powrotem do kwater.
+function strollAt(stroll: Stroll, frame: number): Stride | null {
+  if (stroll.back !== undefined) {
+    const { at, x, depth } = stroll.back
+    const t = (frame - at) / strollSpan(x, stroll.door)
+    return t > 1 ? null : { x: Math.round(x + (stroll.door - x) * t), depth: depth + (1 - depth) * t, phase: 'walk', t: frame - at }
+  }
+  let t = frame - stroll.at
+  if (t < RISE_FRAMES) return { x: stroll.door, depth: 1, phase: 'sill', t }
+  t -= RISE_FRAMES
+  const stops = [
+    ...(stroll.peek === undefined ? [] : [{ x: stroll.peek.x, depth: PEEK_DEPTH, hold: PEEK_FRAMES, phase: 'peek' as const }]),
+    { x: stroll.spot, depth: stroll.deep ?? 1, hold: CHORE_FRAMES, phase: 'chore' as const },
+    { x: stroll.door, depth: 1, hold: 0, phase: 'walk' as const },
+  ]
+  let from = { x: stroll.door, depth: 1 }
+  for (const stop of stops) {
+    const span = strollSpan(from.x, stop.x)
+    if (t < span) return { x: Math.round(from.x + (stop.x - from.x) * t / span), depth: from.depth + (stop.depth - from.depth) * t / span, phase: 'walk', t }
+    t -= span
+    if (t < stop.hold) return { x: stop.x, depth: stop.depth, phase: stop.phase, t }
+    t -= stop.hold
+    from = stop
+  }
+  // Ostatni krok staje w samych drzwiach, więc otwierają się przed nim; klatkę później znika.
+  return t === 0 ? { x: stroll.door, depth: 1, phase: 'walk', t } : null
+}
+
+// Czym włóczęga zagaduje i co słyszy: zły ork odburkuje, dumny się cieszy, spokojny odpowiada.
+const PEEK_SIGNS: readonly Emote[] = ['ask', 'talk', 'bang']
+const CALM_REPLIES: readonly Emote[] = ['talk', 'bang', 'note']
+
+function replySign(mood: KruxMood, seed: number): Emote {
+  return mood === 'grumpy' ? 'huff' : mood === 'proud' ? 'heart' : CALM_REPLIES[seed % CALM_REPLIES.length]!
+}
+
 function hashOf(frame: number, salt: number): number {
   return (Math.imul(frame + 1, 2654435761) ^ Math.imul(salt + 7, 40503)) >>> 0
 }
 
+// Los do wyboru z krótkiej listy: `hashOf` domieszany, bo jego bity idą równo z numerem klatki
+// i terminy co kilkaset klatek wybierałyby z listy czterech rzeczy wciąż tę samą.
+function roll(frame: number, salt: number): number {
+  let n = hashOf(frame, salt)
+  n = Math.imul(n ^ (n >>> 15), 2246822519) >>> 0
+  n = Math.imul(n ^ (n >>> 13), 3266489917) >>> 0
+  return (n ^ (n >>> 16)) >>> 0
+}
+
 // Kto wpada: los z klatki, nigdy ten sam dwa razy z rzędu.
-function visitorOf(frame: number, last: KruxMate | undefined): KruxMate {
-  const pool = MATES.filter(mate => mate !== last)
+function visitorOf(frame: number, last: KruxMate | undefined, out?: KruxMate): KruxMate {
+  const pool = MATES.filter(mate => mate !== last && mate !== out)
   return pool[hashOf(frame, 1) % pool.length]!
 }
 
 // Gość przychodzi z kuflami albo przybija piątkę, po zielonych zawsze piątkę, a do Kruxa przy
 // ogniu czasem z opowieścią. Nic nie pojawia się w dłoniach samo: kufle gość przynosi z kwater,
 // do piątki i opowieści rekwizytu nie trzeba.
+// Przy ogniu gość najchętniej przysiada na posiady, czasem z opowieścią albo z kośćmi; do Kruxa
+// przy robocie wpada zagadać, co kuje. Do złego Kruxa nikt nie przychodzi się bawić: kufel albo pytanie.
+const FIRESIDE_VISITS: readonly DuetKind[] = ['chat', 'toast', 'chat', 'tale', 'dice', 'highfive']
+const WORK_VISITS: readonly DuetKind[] = ['peek', 'toast', 'highfive', 'peek', 'dice', 'toast']
+const GRIM_VISITS: readonly DuetKind[] = ['toast', 'peek']
+
 function visitKind(krux: Actor, frame: number): DuetKind {
   if (krux.mood === 'proud') return 'highfive'
-  const roll = hashOf(frame, 2) % 3
-  if (roll === 1 && krux.track.scene === 'watch') return 'tale'
-  return roll === 0 ? 'highfive' : 'toast'
+  const pool = krux.mood === 'grumpy' ? GRIM_VISITS : krux.track.scene === 'watch' ? FIRESIDE_VISITS : WORK_VISITS
+  return pool[roll(frame, 2) % pool.length]!
 }
 
 // Para ze sporu walczy, kłóci się albo dyskutuje, po zielonych przybija piątkę. Przy stole (czytanie,
 // plan, dumanie, pisanie, pytanie) orkowie naradzają się nad mapą albo dyskutują; reszta podaje
 // sobie sprzęt, szermuje, opowiada, dyskutuje albo pokazuje sztabkę.
 const RIVAL_DUETS: readonly DuetKind[] = ['fence', 'argue', 'debate']
-const DESK_DUETS: readonly DuetKind[] = ['council', 'debate', 'council', 'tale']
-const FLOOR_DUETS: readonly DuetKind[] = ['fence', 'pass', 'tale', 'debate', 'show']
+const DESK_DUETS: readonly DuetKind[] = ['council', 'debate', 'council', 'tale', 'peek']
+const FLOOR_DUETS: readonly DuetKind[] = ['fence', 'pass', 'tale', 'debate', 'show', 'dice', 'peek']
+// Po smrodzie nikt nie gra w kości: zły ork kłóci się, dyskutuje albo dopytuje, co poszło nie tak.
+const GRIM_DUETS: readonly DuetKind[] = ['argue', 'debate', 'peek']
 
 function duetKind(host: Actor, guest: Actor, seed: number): DuetKind {
   if (host.mood === 'proud' || guest.mood === 'proud') return 'highfive'
   const rivals = host.face !== 'Krux' && host.face !== null && ROSTER[host.face].spar === guest.face
   const desk = [host, guest].some(actor => sameStation(actor.worked, 'read'))
-  const pool = rivals ? RIVAL_DUETS : desk ? DESK_DUETS : FLOOR_DUETS
+  const grim = host.mood === 'grumpy' || guest.mood === 'grumpy'
+  const pool = rivals ? RIVAL_DUETS : grim ? GRIM_DUETS : desk ? DESK_DUETS : FLOOR_DUETS
   return pool[seed % pool.length]!
 }
+
+// Scenki, w których orkowie gadają znakami nad głową.
+const SIGN_DUETS: ReadonlySet<DuetKind> = new Set<DuetKind>(['chat', 'dice', 'peek'])
 
 // Słuchacz zerka na mówcę klatkę po nowej linii i patrzy 1,5 s, ale tylko przy co drugiej linii
 // (los z linii i klucza widza): orkowie mają swoją robotę i nie gapią się na każde słowo.
@@ -348,6 +457,9 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
   // je tylko płótnu, które mieści dymek (`canvasColumns`), a takie nie jest węższe od `WALL_MIN`;
   // węższa podłoga z dymkiem (props spoza planu) zostaje płaska, bo meble weszłyby na siebie.
   const room = props.variant === 'band' && props.bubbleRows && stage >= WALL_MIN
+  // Druga izba: chodnik za sztolnią dokleja się z prawej, orkowie i dymek zostają w pokoju.
+  const annex = room ? Math.max(0, props.annex ?? 0) : 0
+  const width = Math.max(canvasColumns(slots, true), stage)
   // Tam, gdzie jest pokój, sprzęt chodzi przez ściany i drzwi, a nie przez płótno.
   const fetching = room && !props.still
   // Podłoga, od której zależą stanowiska: szerokość i palenisko.
@@ -383,7 +495,10 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
   // choćby poza płótnem, i nie może wpaść drugi raz z kwater.
   const hosting = watching !== 'lounge' && watching !== 'horn'
   const calling = fetching && !first && layout && hosting && state.duet === undefined && state.visit === undefined && frame >= visitDue && props.orcs.length === 1 && Object.keys(state.actors).length === 1 && ready && meetAt + DUET_GAP <= stage - ORC_WIDTH
-  const frozen = props.still || (props.rest && !leaving && tucked && !calling)
+  // Obchód: kumpel bez roboty wychodzi z kwater, gdy minął termin; w spoczynku termin daje zegar.
+  const strollDue = state.strollDue ?? frame + STROLL_FIRST
+  const roaming = fetching && !first && layout && state.stroll === undefined && frame >= strollDue && !calling && (!props.rest || tucked)
+  const frozen = props.still || (props.rest && !leaving && tucked && !calling && !roaming && state.stroll === undefined)
   const actors: Record<string, Actor> = { ...cooled }
   // Podłoga zmieniła się pod odchodzącymi: drzwi kwater stoją gdzie indziej. Kto jeszcze nie ruszył,
   // dostaje nowe drzwi; kto już idzie w głąb, rusza do nich od nowa z miejsca, w którym stoi, bez skoku.
@@ -407,6 +522,19 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
   let nextVisit = visitDue
   let visitor = state.visitor
   const visiting = (key: string) => key.startsWith(VISIT)
+  let stroll = state.stroll
+  let nextStroll = strollDue
+  let stroller = state.stroller
+  // Włóczęga nie zostaje na płaskim pasie, w bezruchu ani na innej podłodze: znika od razu.
+  if (stroll !== undefined && (!fetching || stroll.ground !== `${ground}:${annex}`)) {
+    stroll = undefined
+    changed = true
+  }
+  // Wezwany do roboty zawraca do drzwi z miejsca, w którym stoi; do roboty wyjdzie, gdy wejdzie.
+  const strollHome = (now: Stroll): Stroll => {
+    const stride = strollAt(now, frame)
+    return now.back !== undefined || stride === null ? now : { ...now, back: { at: frame, x: stride.x, depth: stride.depth } }
+  }
   // Gość nie zostaje na płaskim pasie ani w bezruchu: znika od razu, scenka się rozpada.
   if (visit !== undefined && !fetching) {
     delete actors[visit]
@@ -445,6 +573,15 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
     // Ten sam kumpel jeszcze wraca z odwiedzin: do roboty wyjdzie, gdy wejdzie do kwater. Dwóch
     // identycznych orków naraz na płótnie nie ma.
     if (prior === undefined && visit !== undefined && actors[visit]?.face === orc.face) continue
+    // Tak samo włóczęga: wezwany wraca z obchodu do kwater i dopiero stamtąd wychodzi do roboty.
+    if (prior === undefined && stroll !== undefined && stroll.face === orc.face) {
+      const home = strollHome(stroll)
+      if (home !== stroll) {
+        stroll = home
+        changed = true
+      }
+      continue
+    }
     if (was === undefined || was.leftAt !== null || lost) {
       const slot = orc.key === 'krux' ? 0 : freeSlot(actors, slots, frame)
       if (slot === null) {
@@ -590,7 +727,7 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
     const { host: hostKey, guest: guestKey } = duet
     const host = actors[hostKey]
     const guest = actors[guestKey]
-    const done = duet.at !== null && frame - duet.at >= DUET_FRAMES
+    const done = duet.at !== null && frame - duet.at >= duetFrames(duet.kind)
     // Kumpel wezwany do roboty przerywa odwiedziny: gość wraca do siebie. Gdy Krux trzyma już
     // kufel, toast przeskakuje do oddania i dogrywa je, żeby kufel nie przeskoczył do gościa.
     const toasting = duet.kind === 'toast' && duet.at !== null ? frame - duet.at : -1
@@ -695,7 +832,7 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
   // Krux stoi, gdzie stał: ten sam aktor co na początku rysunku, więc podłoga go nie ruszyła.
   const kruxNow = actors.krux
   if (calling && duet === undefined && kruxNow !== undefined && kruxNow === kruxBefore) {
-    const face = visitorOf(frame, visitor)
+    const face = visitorOf(frame, visitor, stroll?.face)
     const key = `${VISIT}${face}`
     const kind = visitKind(kruxNow, frame)
     // Krux widzi gościa w drzwiach: odkłada robotę teraz, więc na ziemi zostaje ten sam rekwizyt,
@@ -755,6 +892,43 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
     if (actor === undefined || at === null || at.depth > 0 || at.walking || waiting(actor, frame) || (actor.errand !== undefined && frame >= actor.errand.at)) return null
     return at.x
   }
+  // Obchód rusza: kumpel, którego nie ma na scenie ani w gościach, wychodzi z kwater (zwiad z nory),
+  // po drodze zagaduje orka przy robocie i idzie do swojego miejsca przy ścianie.
+  if (roaming && stroll === undefined) {
+    const busy = new Set<Face>([...props.orcs.map(orc => orc.face), ...Object.values(actors).map(actor => actor.face)])
+    const pool = MATES.filter(mate => !busy.has(mate) && mate !== stroller)
+    // Z chodnikiem dochodzi wózek: ork idzie do niego przez pokój i przetacza go po torach.
+    const carting = annex >= ANNEX_MIN && cartReach(annex) > 0
+    const chores: Chore[] = [...CHORES.filter(chore => choreSpot(chore, stage, hearth) !== null), ...(carting ? ['cart' as const, 'cart' as const] : [])]
+    if (pool.length > 0 && chores.length > 0) {
+      const face = pool[roll(frame, 4) % pool.length]!
+      const chore = chores[roll(frame, 5) % chores.length]!
+      const spot = chore === 'cart' ? width + cartHome() - CART_GRIP : choreSpot(chore, stage, hearth)!
+      const targets = Object.keys(actors).filter(key => !visiting(key) && !inDuet(key) && actors[key]!.leftAt === null && shown(key) !== null)
+      const key = roll(frame, 6) % 4 === 0 || targets.length === 0 ? undefined : targets[roll(frame, 7) % targets.length]!
+      stroll = { face, at: frame, door: doorX(face, stage, hearth), spot, chore, ground: `${ground}:${annex}`, ...(chore === 'cart' ? { deep: CART_DEPTH } : {}), ...(key === undefined ? {} : { peek: { key, x: Math.max(0, shown(key)! - PEEK_BACK) } }) }
+      stroller = face
+    }
+    // Bez wolnego kumpla termin czeka do następnego odstępu, jak po obchodzie.
+    nextStroll = frame + STROLL_EVERY + (roll(frame, 8) % STROLL_SPREAD)
+    changed = true
+  }
+  let stride = stroll === undefined ? null : strollAt(stroll, frame)
+  if (stroll !== undefined && stride === null) {
+    // Wszedł z powrotem do kwater: obchód skończony.
+    stroll = undefined
+    changed = true
+  }
+  // Zagadnięty odwraca wzrok do włóczęgi, gdy ten skończy pytać; odpowiada, póki stoi przy robocie.
+  const peeked = stroll?.peek !== undefined && stride?.phase === 'peek' && stride.t >= PEEK_SAYS[1] - 3 && Math.abs((shown(stroll.peek.key) ?? -99) - PEEK_BACK - stroll.peek.x) <= 3 ? stroll.peek.key : null
+  // Kto idzie po podłodze: stojący obok wodzi za nim wzrokiem, a gdy mija go tuż przed nosem, mruży oczy.
+  const passing = props.still ? [] : Object.entries(actors).flatMap(([key, actor]) => {
+    const at = placeOf(actor, frame, stage)
+    return at !== null && at.walking && at.depth === 0 && !waiting(actor, frame) && !(actor.errand !== undefined && frame >= actor.errand.at) ? [{ key, x: at.x }] : []
+  })
+  // Nowy w drzwiach kwater albo w wylocie nory ściąga na chwilę spojrzenia.
+  const risen = Object.values(actors).find(actor => actor.rise === 1 && actor.leftAt === null && !waiting(actor, frame) && frame >= actor.enter - RISE_FRAMES && frame < actor.enter + NEWCOMER_FRAMES)
+  const newcomer = props.still ? null : stroll !== undefined && stroll.back === undefined && frame - stroll.at < RISE_FRAMES + NEWCOMER_FRAMES ? stroll.door : (risen?.from ?? null)
   const reactor = props.still ? undefined : Object.entries(actors)
     .filter(([key, actor]) => actor.cue !== undefined && actor.cue.held === undefined && frame - actor.cue.at < CUE_FRAMES && !inDuet(key) && shown(key) !== null)
     .sort(([, a], [, b]) => b.cue!.at - a.cue!.at)[0]
@@ -770,7 +944,17 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
     }
     const target = key === 'krux' && thrower !== undefined ? thrower[0] : heard !== null && heard !== key && listens(speech.id, key) ? heard : null
     const dx = target === null ? null : toward(shown(target))
-    return dx === null ? null : { dx }
+    if (dx !== null) return { dx }
+    // Włóczęga stoi za lewym ramieniem: zagadnięty zerka tam i odpowiada.
+    if (peeked === key) return { dx: -1 }
+    const passer = passing.filter(walker => walker.key !== key && Math.abs(walker.x - x) <= PASS_REACH).sort((a, b) => Math.abs(a.x - x) - Math.abs(b.x - x))[0]
+    if (passer !== undefined) {
+      const side = toward(passer.x)
+      // Tuż przed nosem: mgnienie zamkniętych oczu, jak przy cudzym smrodzie.
+      return side === null ? { dx: 1, regard: { kind: 'zawał', t: 1 } } : { dx: side }
+    }
+    const door = newcomer === null || !listens(`door:${newcomer}`, key) ? null : toward(newcomer)
+    return door === null ? null : { dx: door }
   }
   const placed: (Placed & { walking: boolean })[] = []
   const scrolls: Placed[] = []
@@ -778,6 +962,11 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
   const grounded: Placed[] = []
   const deep: Far[] = []
   const standsAt: Record<string, number> = {}
+  // Znaki nad głowami: małe dymki z obrazkiem, w wierszach ściany tuż nad orkiem.
+  const signs: Far[] = []
+  const crownOf = (rows: readonly string[]) => Math.max(0, rows.findIndex(row => /[gG]{4}/u.test(row)))
+  const signAt = (rows: readonly string[], head: number, body: readonly string[]) => signs.push({ rows, x: head, y: H_FLOOR + crownOf(body) - EMOTE_ROWS })
+  const crownsAt: Record<string, readonly string[]> = {}
   // Głowa mówcy: ogonek dymka celuje w nią, a ramka stoi nad jego miejscem na podłodze.
   const headsAt: Record<string, number> = {}
   let moving = false
@@ -851,6 +1040,7 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
       const talks = key === talker && !TALKING_DUETS.has(duet.kind) ? frame - speech.at : undefined
       const rows = withTalking(dress(key === duet.host ? pose.host : pose.guest, actor.face), talks)
       headsAt[key] = headX(key === duet.host ? pose.host : pose.guest, key === duet.host ? at.x : at.x - 2)
+      for (const said of pose.signs ?? []) if ((said.who === 'host') === (key === duet.host)) signAt(said.rows, headsAt[key]!, key === duet.host ? pose.host : pose.guest)
       placed.push({ rows, x: key === duet.host ? at.x : at.x - 2, walking: false })
       if (key === duet.host && pose.prop.length > 0) loads.push({ rows: [...pose.prop], x: at.x })
       moving = true
@@ -923,7 +1113,10 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
     }
     const talks = key === talker && actor.leftAt === null ? frame - speech.at : undefined
     const rows = at.walking ? walkerRows(frame, actor.face, leftward ? 'left' : 'right', talks) : withTalking(dress(raw, actor.face), talks)
-    if (!at.walking) headsAt[key] = headX(raw, at.x)
+    if (!at.walking) {
+      headsAt[key] = headX(raw, at.x)
+      crownsAt[key] = raw
+    }
     if (tossing) {
       const scroll = tossScroll(frame - actor.handoff!.at, at.x + 6, kruxX + CATCH_X, actor.handoff!.flight)
       if (scroll !== null) scrolls.push(scroll)
@@ -939,20 +1132,65 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
     }
     placed.push({ rows, x: at.x, walking: at.walking })
   }
+  // Włóczęga w głębi: w progu stoi na nim, w drodze drepcze, przy zagadywaniu i przy ścianie stoi.
+  let chore: RoomState['chore']
+  let cartAt = 0
+  if (stroll !== undefined && stride !== null) {
+    moving = true
+    const lift = stroll.back === undefined ? Math.max(0, Math.min(SILL_LIFT, stroll.at + RISE_FRAMES + SILL_LIFT - 1 - frame)) : 0
+    // Przy wózku idzie razem z nim: pcha go w prawo i odstawia, piksel na klatkę.
+    const pushed = stride.phase === 'chore' && stroll.chore === 'cart' ? cartPush(stride.t, cartReach(annex)) : 0
+    const rolling = pushed !== (stride.phase === 'chore' && stroll.chore === 'cart' ? cartPush(stride.t - 1, cartReach(annex)) : 0)
+    const far = farPose(stride.depth, stride.x + pushed, stride.phase === 'walk' || rolling ? frame : 0, stroll.face, lift)
+    deep.push(far)
+    cartAt = pushed
+    doorway ||= quarters !== null && stroll.door === quarters && stride.depth >= 0.7 && Math.abs(stride.x - quarters) <= 3
+    if (stride.phase === 'chore') {
+      chore = { kind: stroll.chore, t: stride.t }
+      // Księga wyjęta z półki: jasna karta przy dłoni, póki czyta; potem wraca między grzbiety.
+      // Przy kanarku serce, a przy szarym, gdy testy czerwone, krzyżyk zmartwienia.
+      if (stroll.chore === 'canary') {
+        const said = emoteRows(props.red === true ? 'huff' : 'heart', stride.t - CANARY_SAYS[0], CANARY_SAYS[1] - CANARY_SAYS[0])
+        if (said.length > 0) signs.push({ rows: said, x: far.x - 1, y: far.y - EMOTE_ROWS })
+      }
+      if (stroll.chore === 'shelf' && stride.t >= 2 && stride.t < CHORE_FRAMES - 2) deep.push({ rows: ['p'], x: far.x + far.rows[0]!.length, y: far.y + 1 })
+    }
+    if (stride.phase === 'peek' && stroll.peek !== undefined) {
+      const seed = roll(stroll.at, 9)
+      const asks = emoteRows(PEEK_SIGNS[seed % PEEK_SIGNS.length]!, stride.t - PEEK_SAYS[0], PEEK_SAYS[1] - PEEK_SAYS[0])
+      if (asks.length > 0) signs.push({ rows: asks, x: far.x, y: far.y - EMOTE_ROWS })
+      const target = actors[stroll.peek.key]
+      const body = crownsAt[stroll.peek.key]
+      const answers = peeked === null || target === undefined || body === undefined ? [] : emoteRows(replySign(target.mood, seed >>> 3), stride.t - PEEK_REPLY[0], PEEK_REPLY[1] - PEEK_REPLY[0])
+      if (answers.length > 0) signAt(answers, headsAt[stroll.peek.key]!, body!)
+    }
+  }
   // Zegar stoi, gdy płótno nieruchome i nikt nie maszeruje.
   const idle = props.still || (frozen && !moving && !typing)
-  if (changed || idle !== state.idle || speech !== state.said || state.reduced !== props.still || state.ground !== ground) {
-    surface.setState({ frame, actors, idle, ground, said: speech, reduced: props.still, snoozing: idle ? state.snoozing : false, ...(laid ? { laidAt: frame } : state.laidAt === undefined ? {} : { laidAt: state.laidAt }), ...(duet === undefined ? {} : { duet }), ...(duetAt === undefined ? {} : { duetAt }), ...(visit === undefined ? {} : { visit }), visitDue: nextVisit, ...(visitor === undefined ? {} : { visitor }) })
+  // W spoczynku pokoju zegar budzi płótno do życia hordy; panel `/krux` i płaski pas śpią.
+  const wakes = fetching && props.rest
+  if (changed || idle !== state.idle || speech !== state.said || state.reduced !== props.still || state.ground !== ground || (state.wakes === true) !== wakes) {
+    surface.setState({ frame, actors, idle, ground, said: speech, reduced: props.still, snoozing: idle ? state.snoozing : false, ...(laid ? { laidAt: frame } : state.laidAt === undefined ? {} : { laidAt: state.laidAt }), ...(duet === undefined ? {} : { duet }), ...(duetAt === undefined ? {} : { duetAt }), ...(visit === undefined ? {} : { visit }), visitDue: nextVisit, ...(visitor === undefined ? {} : { visitor }), ...(stroll === undefined ? {} : { stroll }), strollDue: nextStroll, ...(stroller === undefined ? {} : { stroller }), ...(wakes ? { wakes } : {}) })
   }
   if (first) {
     let quietTicks = 0
+    let woken = 0
     surface.every(FRAME_MS, () => {
       const now = surface.state
       if (now === undefined || now.reduced) return
       if (!now.idle) {
         quietTicks = 0
         surface.setState({ ...now, frame: now.frame + 1, snoozing: false })
-      } else if (++quietTicks === 200) surface.setState({ ...now, snoozing: true })
+        return
+      }
+      quietTicks += 1
+      // Spoczynek pokoju: po ciszy zegar rusza klatkę i daje termin na przemian obchodowi i gościowi.
+      // Bez miejsca dla gościa płótno zaśnie z powrotem przy następnym rysunku.
+      if (now.wakes === true && quietTicks >= (woken === 0 ? REST_FIRST : REST_EVERY + (roll(now.frame, woken) % REST_SPREAD))) {
+        quietTicks = 0
+        woken += 1
+        surface.setState({ ...now, idle: false, frame: now.frame + 1, snoozing: false, ...(woken % 2 === 1 ? { strollDue: now.frame + 1 } : { visitDue: now.frame + 1 }) })
+      } else if (quietTicks === 200) surface.setState({ ...now, snoozing: true })
     })
   }
   // Maszerujący na wierzchu: przechodzą przed slotami innych.
@@ -964,9 +1202,8 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
   const hearthFree = hearth && placed.every(orc => orc.x >= floorStart(true))
   const grid =
     props.variant === 'pane'
-      ? dress(krux === undefined ? frameGrid(frame, 'pane') : trackGrid(krux.track, frame, 'pane', krux.mood, frozen), 'Krux')
+      ? paneHeat(dress(krux === undefined ? frameGrid(frame, 'pane') : trackGrid(krux.track, frame, 'pane', krux.mood, frozen), 'Krux'), props.still ? 0 : frame, props.heat ?? 'blaze')
       : stageGrid([...(hearthFree ? [hearthProp(frame)] : []), ...grounded, ...placed, ...loads, ...flying], stage)
-  const width = Math.max(canvasColumns(slots, true), stage)
   // Pokój czuje to, co Krux: zawał sypie pyłem, smród czerwieni pochodnie, zielone je rozpala.
   // Sprzęt schodzi ze ściany, gdy ork sięgnie po niego w wyprawie, i wraca, gdy go odłoży.
   const taken = Object.values(actors).flatMap(actor => {
@@ -977,8 +1214,16 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
   // Ściana reaguje razem z Kruxem: zdarzenie wstrzymane w drodze czeka i tu.
   const felt = krux?.cue !== undefined && krux.cue.held === undefined && frame - krux.cue.at < CUE_FRAMES ? { kind: krux.cue.kind, age: frame - krux.cue.at } : null
   const when = new Date(props.now ?? 43_200_000)
-  const roomState = { feel: felt, alive: !frozen, red: props.red === true, blessed: props.blessed === true, phase: dayPhase(when.getHours(), when.getMonth() + 1), date: { month: when.getMonth() + 1, day: when.getDate() }, taken, door: doorway }
-  const scene = room ? paint(deep.reduce<string[]>((back, orc) => paint(back, orc.rows, orc.x, orc.y), roomGrid(width, frame, hearth, roomState)), grid, 0, 6) : grid
+  const roomState = { feel: felt, alive: !frozen, red: props.red === true, blessed: props.blessed === true, phase: dayPhase(when.getHours(), when.getMonth() + 1), date: { month: when.getMonth() + 1, day: when.getDate() }, taken, door: doorway, ...(chore === undefined ? {} : { chore }) }
+  // Znaki nad głowami idą na wierzch: nad orkami, przed ścianą.
+  // Ściana pokoju i chodnik to jedno tło: ork w głębi przechodzi z jednego do drugiego bez przerwy.
+  const backdrop = () => {
+    const wall = roomGrid(width, frame, hearth, roomState)
+    if (annex === 0) return wall
+    const side = annexGrid(annex, frame, { ...roomState, cart: cartAt })
+    return wall.map((line, y) => line.padEnd(width, '.').slice(0, width) + side[y]!)
+  }
+  const scene = room ? signs.reduce((over, mark) => paint(over, mark.rows, mark.x, mark.y), paint(deep.reduce<string[]>((back, orc) => paint(back, orc.rows, orc.x, orc.y), backdrop()), grid, 0, H_FLOOR)) : grid
   const { Box, Text } = surface.elements
   const lines = runsOf(scene, props.scale)
   const said = props.variant === 'band' ? props.bubble : null
@@ -986,7 +1231,10 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
   // W głębi pomieszczenia ork nie gada: dymek zasłoniłby ścianę, do której właśnie idzie,
   // a w progu drzwi samego orka. Wyjątek to wtręt po zdarzeniu: tego przemilczeć nie wolno.
   const deepIn = speaker !== undefined && (speaker.errand !== undefined || (room && sillLift(speaker, frame) > 0))
-  const quiet = deepIn && !(props.cues ?? []).some(cue => cue.key === said?.key && cue.kind !== 'handoff')
+  // Tak samo, gdy mówca gada akurat znakami nad głową (posiady, kości, zagadywanie): dymek z tekstem
+  // ustępuje im na czas scenki, bo stałby w tych samych wierszach.
+  const signing = said !== null && ((duet !== undefined && duet.at !== null && SIGN_DUETS.has(duet.kind) && inDuet(said.key)) || (stride?.phase === 'peek' && stroll?.peek?.key === said.key))
+  const quiet = (deepIn || signing) && !(props.cues ?? []).some(cue => cue.key === said?.key && cue.kind !== 'handoff')
   const talking = said !== null && speaker !== undefined && speaker.leftAt === null && !quiet && !waiting(speaker, frame) ? said : null
   const spoken = talking === null ? '' : props.still ? talking.text : graphemes(talking.text).slice(0, Math.max(1, (frame - speech.at + 1) * 3)).join('')
   const bubbleText = talking !== null ? bubbleAt(spoken, standsAt[said!.key] ?? speaker!.home, width, headsAt[said!.key] ?? standsAt[said!.key] ?? speaker!.home) : props.variant === 'band' && props.bubbleRows ? [' ', ' ', ' '] : []
@@ -1017,7 +1265,7 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
         if (line === null) return row(y < 3 ? `bubble-${y}` : `row-${y - 3}`, texts(runs))
         const left = line.length - line.trimStart().length
         const right = width - (line.length - line.trimEnd().length)
-        return row(`bubble-${y}`, [...texts(sliceRuns(runs, 0, left)), ...bubbleRow(line.trim(), y), ...texts(sliceRuns(runs, right, width))])
+        return row(`bubble-${y}`, [...texts(sliceRuns(runs, 0, left)), ...bubbleRow(line.trim(), y), ...texts(sliceRuns(runs, right, width + annex))])
       }),
     })
   }
