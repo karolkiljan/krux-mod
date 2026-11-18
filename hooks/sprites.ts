@@ -61,6 +61,26 @@ function hearthRow(frame: number, y: number): string {
   return [...row].map((cell, x) => (cell === '.' ? flame(frame, x, 3 - y) : cell)).join('')
 }
 
+// Palenisko w panelu czuje robotę: przy kuciu pełny ogień, w spoczynku sam żar z rzadką iskrą,
+// a gdy Krux zły po smrodzie, żar kopci dymem.
+export type Heat = 'blaze' | 'ember' | 'smoke'
+
+function heatRow(frame: number, y: number, heat: Heat): string {
+  if (heat === 'blaze') return hearthRow(frame, y)
+  return [...HEARTH[y]!].map((cell, x) => {
+    if (cell !== '.') return cell
+    const up = 3 - y
+    if (up === 0) return noise(frame >> 2, x, 0) < 0.6 ? 'R' : 'o'
+    if (heat === 'smoke') return noise(frame >> 1, x + up, up) < 0.28 ? (up === 2 ? 'V' : 'm') : '.'
+    return up === 1 && noise(frame >> 1, x, 1) < 0.08 ? 'o' : '.'
+  }).join('')
+}
+
+// Podmienia ogień w siatce panelu (palenisko stoi dwie kolumny za orkiem) na ten z `heat`.
+export function paneHeat(grid: readonly string[], frame: number, heat: Heat): string[] {
+  return grid.map((row, y) => `${row.slice(0, W + 2)}${heatRow(frame, y, heat)}`)
+}
+
 // Mrugnięcie co 6 s; dumny ork nie mruga.
 const BLINK_EVERY = 40
 
@@ -682,8 +702,9 @@ const DUST_GRAINS = 9
 // Obchód: kumpel z kwater, który akurat nie ma roboty, idzie wzdłuż ściany coś zrobić: nakarmić
 // kanarka, zajrzeć do księgi na regale, poprawić pochodnię przy sztolni albo wyjrzeć przez okienko.
 // Niczego nie zabiera ze ściany na podłogę, więc sprzęt orków w robocie zostaje nietknięty.
-export type Chore = 'canary' | 'shelf' | 'torch' | 'window'
-export const CHORES: readonly Chore[] = ['canary', 'shelf', 'torch', 'window']
+// `cart`: przy szerokim oknie idzie do chodnika i przetacza wózek z rudą; to miejsce zna płótno.
+export type Chore = 'canary' | 'shelf' | 'torch' | 'window' | 'cart'
+export const CHORES: readonly Exclude<Chore, 'cart'>[] = ['canary', 'shelf', 'torch', 'window']
 // Grzbiet księgi, który włóczęga wyjmuje z półki: kolumna od lewej krawędzi regału.
 const SHELF_BOOK = 4
 
@@ -693,6 +714,7 @@ export function choreSpot(chore: Chore, floor: number, hearth: boolean): number 
   if (chore === 'canary') return fit(wallX('trial', floor, hearth) + 2)
   if (chore === 'shelf') return fit(wallX('table', floor, hearth) + SHELF_BOOK + 1)
   if (chore === 'torch') return fit(stashX('torch', floor, hearth) - 1)
+  if (chore === 'cart') return null
   const pane = wallX('mine', floor, hearth) + 13
   return pane + PANE_WIDE > floor ? null : pane + 2
 }
@@ -841,13 +863,31 @@ const CART: Frame = ['xxxxxxxx', 'xhhhhhhx', '.xxxxxx.', '.C....C.']
 const ORE: Frame = ['..qS.q..', '.qSqqSq.']
 const BARREL: Frame = ['.hh.', 'hhhh', 'CCCC', 'hhhh', 'CCCC', '.hh.']
 const CRATE: Frame = ['xxxxx', 'xhxhx', 'xxhxx', 'xhxhx', 'xxxxx']
-// Wózek stoi, a co jakiś czas toczy się po torach tam i z powrotem; tyle klatek trwa jeden obieg.
-const CART_EVERY = 260
-const CART_RUN = 12
+// Wózek stoi tuż za pierwszym stemplem. Sam się nie toczy: rusza go tylko ork na obchodzie,
+// najdalej o `CART_PUSH` kolumn, piksel na klatkę, i odstawia na miejsce.
+const CART_PUSH = 6
+export const CART_WIDE = CART[0]!.length
+
+// Lewa krawędź wózka w chodniku, gdy stoi.
+export function cartHome(): number {
+  return 5
+}
+
+// O ile kolumn wózek da się przetoczyć w chodniku tej szerokości, zanim dojedzie do składu albo ściany.
+export function cartReach(width: number): number {
+  return Math.max(0, Math.min(CART_PUSH, width - cartHome() - CART_WIDE - (width >= ANNEX_STORE ? 14 : 2)))
+}
+
+// Przesunięcie wózka w klatce `t` przetaczania: chwyt, w prawo, chwila, z powrotem.
+export function cartPush(t: number, reach: number): number {
+  const u = t - 2
+  return u < 0 ? 0 : u < reach ? u : u < reach + 3 ? reach : Math.max(0, 2 * reach + 3 - u)
+}
 
 // Chodnik o szerokości `width` w klatce `frame`. Czuje to, co pokój: czerwone testy przygaszają
-// lampę, zawał i rozbiórka sypią pyłem, zielone i commit rozbłyskują rudą na złoto.
-export function annexGrid(width: number, frame: number, state: Pick<RoomState, 'alive' | 'red' | 'feel'>): string[] {
+// lampę, zawał i rozbiórka sypią pyłem, zielone i commit rozbłyskują rudą na złoto. `cart`: o tyle
+// kolumn ork właśnie przetoczył wózek.
+export function annexGrid(width: number, frame: number, state: Pick<RoomState, 'alive' | 'red' | 'feel'> & { cart?: number }): string[] {
   const grid = Array.from({ length: ROOM_ROWS }, () => Array.from({ length: width }, (): string => '.'))
   if (width < ANNEX_MIN) return grid.map(row => row.join(''))
   const put = (x: number, y: number, cell: string) => { if (cell !== '.' && grid[y]?.[x] !== undefined) grid[y]![x] = cell }
@@ -885,11 +925,8 @@ export function annexGrid(width: number, frame: number, state: Pick<RoomState, '
     stamp(CRATE, width - 7, ROOM_ROWS - 1 - CRATE.length)
     stamp(BARREL, width - 12, ROOM_ROWS - 1 - BARREL.length)
   }
-  // Wózek z rudą w pierwszym przęśle; toczy się kawałek i wraca, piksel na klatkę.
-  const lap = step % CART_EVERY
-  const roll = lap < CART_RUN ? lap : lap < 2 * CART_RUN ? CART_RUN : lap < 3 * CART_RUN ? 3 * CART_RUN - lap : 0
-  const reach = Math.max(0, Math.min(CART_RUN / 2, width - (posts[0]! + 3) - CART[0]!.length - (width >= ANNEX_STORE ? 14 : 2)))
-  const cart = posts[0]! + 3 + Math.round(roll * reach / CART_RUN)
+  // Wózek z rudą w pierwszym przęśle: stoi, póki ork go nie przetacza.
+  const cart = cartHome() + Math.max(0, Math.min(cartReach(width), state.cart ?? 0))
   stamp(ORE, cart, ROOM_ROWS - 1 - CART.length - ORE.length)
   stamp(CART, cart, ROOM_ROWS - 1 - CART.length)
   if (bright) put(cart + 3, ROOM_ROWS - 1 - CART.length - ORE.length, 'y')

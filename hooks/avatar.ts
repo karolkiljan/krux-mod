@@ -5,7 +5,8 @@ import { dress } from './apron'
 import type { Face } from './apron'
 import { runsOf, SPEAKER_COLOR } from './sprites'
 import type { Run } from './sprites'
-import { head, STAND } from './stage'
+import { head, moodOf, STAND } from './stage'
+import type { KruxMood } from '../types'
 
 export type AvatarSpeaker = Face | 'Morra'
 
@@ -18,7 +19,8 @@ export function speakerColor(speaker: AvatarSpeaker): string {
   return speaker === 'Morra' ? MORRA_COLOR : SPEAKER_COLOR[speaker ?? 'ork']
 }
 
-export function avatarRows(speaker: AvatarSpeaker): Run[][] {
+// `mood`: mina orka z chwili wiadomości: złote oczy dumy, brwi złości. Morra miny nie ma.
+export function avatarRows(speaker: AvatarSpeaker, mood: KruxMood = 'calm'): Run[][] {
   if (speaker === 'Morra') {
     // Człowiek bez kłów i uszu orka; przezroczyste piksele tworzą oczy.
     return runsOf(['.gggg.', '.g..g.', '.gggg.', '..gg..'], 1).map(row => row.map(run => ({
@@ -30,7 +32,7 @@ export function avatarRows(speaker: AvatarSpeaker): Run[][] {
   // Nos Niucha i pędzel Ochry wychodzą poza głowę. Ubieramy szerszą
   // siatkę przed przycięciem: ich prawa krawędź zastępuje lewe ucho.
   // Lont zachowuje lewą kolumnę, w której tli się jego znak fachu.
-  const grid = [...head(), STAND[3]!].map(row => row.padEnd(AVATAR_COLUMNS + 1, '.'))
+  const grid = moodOf([...head(), STAND[3]!], mood, false).map(row => row.padEnd(AVATAR_COLUMNS + 1, '.'))
   const left = speaker === 'Niuch' || speaker === 'Ochra' ? 1 : 0
   const rows = dress(grid, speaker).map(row => row.slice(left, left + AVATAR_COLUMNS))
   return runsOf(rows, 1)

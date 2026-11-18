@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface, Register, RenderElement, RenderInput, SessionUsage, Timer } from 'claude-code'
 
-import type { KruxActivity, KruxBoard, KruxEvent, KruxGit, KruxHordeMember, KruxLore, KruxMate, KruxMode, KruxModes, KruxTestRun } from '../types'
+import type { KruxActivity, KruxBoard, KruxEvent, KruxGit, KruxHordeMember, KruxLore, KruxMate, KruxMode, KruxModes, KruxMood, KruxTestRun } from '../types'
 import { CAPTION_COLUMNS, CAPTION_GAP, bandPlan } from './band'
 import type { BandInput } from './band'
 import { EMPTY_CREW, crewAfter } from './crew'
@@ -28,7 +28,7 @@ import { EMPTY_JOURNAL, journalAfter, journalTree, toolLine } from './journal'
 import { echoLine, echoPrompt } from './echo'
 import Forge from './forge'
 import type { ForgeProps } from './forge'
-import { FRAME_MS, forgeColumns } from './sprites'
+import { ALARM_COLOR, FRAME_MS, OK_COLOR, forgeColumns } from './sprites'
 import { drawHeadless, headless, svgOf } from './vector'
 import type { Headless } from './vector'
 import {
@@ -116,6 +116,8 @@ const deskFrame = atom({ plugin: 'krux-mod', key: 'deskFrame' } as const, 0)
 // Godzina pierwszego rysunku po id wiadomości, bez niedozwolonego zapisu $.state
 // w ui.render. Nie ma zegara historii: redraw i resize zachowują tę samą godzinę.
 const messageTimes = new Map<string, number>()
+// Mina mówcy z pierwszego rysunku wiadomości: przerysowany dawny blok jej nie zmienia.
+const messageMoods = new Map<string, KruxMood>()
 // Id narzędzi z grup w czacie: wcięcie daje grupa, jej wiersze `ToolUse` (także
 // zwinięty wiersz, który silnik rysuje przez `ToolUse`) stoją w niej bez drugiego.
 const groupedTools = new Set<string>()
@@ -208,6 +210,7 @@ async function readText($: EngineInterface, name: string): Promise<string> {
 // Tryby i ruch od nowa: na starcie i po komendach, które zerują `$.state`.
 async function loadSession($: EngineInterface): Promise<void> {
   messageTimes.clear()
+  messageMoods.clear()
   groupedTools.clear()
   resetPlates()
   journalWatch?.cancel()
@@ -583,6 +586,27 @@ async function reportMate($: EngineInterface, agentId: string): Promise<AvatarSp
   }
 }
 
+// Mina orka przy wiadomości: humor z chwili jej pierwszego rysunku w żywej turze. Historia
+// sprzed pierwszej tury (start, `clear/resume/fork`) zostaje spokojna: humor odtworzony z kroniki
+// pomalowałby całą dawną rozmowę ostatnim zdarzeniem.
+async function moodAt($: EngineInterface, key: string, face: 'Krux' | KruxMate | null): Promise<KruxMood> {
+  const known = messageMoods.get(key)
+  if (known !== undefined) return known
+  const mood = !plates.live || face === null ? 'calm' : (await read($, moods)).faces[face]
+  if (!messageMoods.has(key)) {
+    messageMoods.set(key, mood)
+    trimOldest(messageMoods, MESSAGE_TIMES_LIMIT)
+  }
+  return messageMoods.get(key) ?? mood
+}
+
+// Kreska odpowiedzi w kolorze zdarzenia: zielona po zielonych i commicie, czerwona po smrodzie.
+// Funkcja, nie stała modułu: testy skryptów ładują ten plik bez importów, więc kolory wolno
+// czytać dopiero w rysunku.
+function ruleColor(mood: KruxMood): string {
+  return mood === 'proud' ? OK_COLOR : mood === 'grumpy' ? ALARM_COLOR : KRUX_COLOR
+}
+
 type MessageInput = RenderInput<'AssistantMessage' | 'UserMessage', 'terminal'>
 
 // Dziś wiadomości nie mają czasu ani bodyColumns w kontrakcie. Przyjmujemy
@@ -611,7 +635,8 @@ async function drawChat($: EngineInterface, e: MessageInput, speaker: AvatarSpea
   }
   const date = new Date(at)
   const time = [date.getHours(), date.getMinutes()].map(value => String(value).padStart(2, '0')).join(':')
-  return chatTree($.ui.resolve(e), { speaker, time, content })
+  const mood = speaker === 'Morra' ? 'calm' : await moodAt($, key, speaker)
+  return chatTree($.ui.resolve(e), { speaker, time, content, mood })
 }
 
 // Ściana pokoju z kroniki: po padłych zielone przywołuje Skarbnika.
@@ -1203,7 +1228,7 @@ export const register: Register = on => {
     if (!now.persona) return next(e)
     const theirs = await next(e)
     const { Box, Text } = $.ui.resolve(e)
-    const block = Box({ borderStyle: 'quote', borderColor: KRUX_COLOR, marginBottom: -1, children: [Box({ marginTop: -1, children: [theirs] })] })
+    const block = Box({ borderStyle: 'quote', borderColor: ruleColor(await moodAt($, `${e.component}:${e.requestId}`, 'Krux')), marginBottom: -1, children: [Box({ marginTop: -1, children: [theirs] })] })
     if (!e.props.isFirstOfReply) return block
     // Tabliczka raz na turę; echo prośby otwiera ją ponownie na bloku po długiej robocie.
     const claimed = claimPlate(e.requestId)
@@ -1368,7 +1393,7 @@ export const register: Register = on => {
     await read($, musterNow)
     const ids = await runningIds($)
     const horde = musterRows(await read($, muster), now, ids, 6)
-    const content = shaftTree(table, { board: plan, horde, usage: await read($, usage), git: await read($, git), threads: await read($, threads), now, columns: e.props.bodyColumns, rows: Math.max(0, e.props.scroll.bodyRows - 1), fill: e.props.placement !== 'inline' })
+    const content = shaftTree(table, { board: plan, horde, usage: await read($, usage), git: await read($, git), threads: await read($, threads), moods: (await read($, moods)).faces, now, columns: e.props.bodyColumns, rows: Math.max(0, e.props.scroll.bodyRows - 1), fill: e.props.placement !== 'inline' })
     return table.Box({ flexDirection: 'column', children: [tabs, content] })
   })
 
@@ -1397,7 +1422,9 @@ export const register: Register = on => {
         },
       })
     const scale = e.props.bodyColumns >= forgeColumns('pane', 2) + 2 ? 2 : 1
-    const smithy: ForgeProps = { variant: 'pane', scale, still: isStill, rest: false, slots: 1, bubbleRows: false, orcs: [{ key: 'krux', face: 'Krux', scene: 'hammer', mood: mood.faces.Krux }], bubble: null }
+    // Ogień czuje robotę: pełny w turze, żar w spoczynku, dym, gdy Krux zły po smrodzie.
+    const heat = mood.faces.Krux === 'grumpy' ? 'smoke' : (await read($, turnAt)) !== null ? 'blaze' : 'ember'
+    const smithy: ForgeProps = { variant: 'pane', scale, still: isStill, rest: false, slots: 1, heat, bubbleRows: false, orcs: [{ key: 'krux', face: 'Krux', scene: 'hammer', mood: mood.faces.Krux }], bubble: null }
     const art =
       e.surface === DESK_SURFACE && 'Svg' in table
         ? [table.Svg({ ...(await deskArt($, `pane:${e.requestId}`, { ...smithy, scale: 1 }, 'Krux kuć przy palenisku')) })]

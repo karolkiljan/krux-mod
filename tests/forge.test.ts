@@ -1936,7 +1936,7 @@ test('orcs at the table hold councils and debates, orcs on the floor also show o
   for (const kind of grim) expect(['argue', 'debate', 'peek']).toContain(kind)
 })
 
-type Lively = Seen & { stroll?: { face: string; door: number; spot: number; peek?: { key: string; x: number }; back?: { at: number } }; visit?: string; wakes?: boolean }
+type Lively = Seen & { stroll?: { face: string; chore?: string; door: number; spot: number; peek?: { key: string; x: number }; back?: { at: number } }; visit?: string; wakes?: boolean }
 const RESTING: ForgeProps = { ...FLOOR, rest: true, orcs: [{ ...KRUX, scene: 'watch' }] }
 
 test('the room at rest keeps living: the clock wakes it for a stroll and a visit, and sleeps in between', () => {
@@ -2043,4 +2043,38 @@ test('the gallery is drawn right of the room: the canvas grows by it, orcs and t
   // Drzewo zostaje daleko od limitu `Client` także z najdłuższym chodnikiem.
   const big = surfaceOf()
   expect(JSON.stringify(draw({ ...props, annex: 64 }, big.surface)).length).toBeLessThan(50_000)
+})
+
+test('with the gallery a stroller walks over to the cart, rolls it a few columns along the rails and puts it back', () => {
+  const seen = surfaceOf()
+  const props: ForgeProps = { ...FLOOR, floor: 120, slots: 4, annex: 64, orcs: [{ ...KRUX, scene: 'hammer' }] }
+  draw(props, seen.surface)
+  const now = () => seen.surface.state as Lively
+  for (let i = 0; i < 6000 && now().stroll?.chore !== 'cart'; i++) { seen.tick(); draw(props, seen.surface) }
+  expect(now().stroll?.chore).toBe('cart')
+  // Miejsce obchodu leży w chodniku: ork staje od prawej krawędzi pokoju, tuż przed wózkiem.
+  expect(now().stroll!.spot).toBeGreaterThanOrEqual(120)
+  const cartOf = (tree: unknown) => {
+    const row = pixelsOf(tree)[8]!.slice(120)
+    return row.findIndex((cell, x) => cell === PALETTE.x && row[x + 1] === PALETTE.h)
+  }
+  const carts: number[] = []
+  let apron = 0
+  for (let i = 0; i < 400 && now().stroll !== undefined; i++) {
+    seen.tick()
+    const tree = draw(props, seen.surface)
+    carts.push(cartOf(tree))
+    apron = Math.max(apron, pixelsOf(tree).slice(5, 11).flatMap(row => row.slice(120)).filter(cell => [PALETTE.N, PALETTE.M, PALETTE.P, PALETTE.O, PALETTE.L, PALETTE.T].includes(cell as string)).length)
+  }
+  // Wózek odjeżdża i wraca na miejsce, nigdy o więcej niż piksel na klatkę; ork w fartuchu stoi przy nim.
+  expect([carts[0], carts[carts.length - 1], Math.max(...carts) - carts[0]!]).toEqual([carts[0], carts[0], 6])
+  for (let i = 1; i < carts.length; i++) expect([i, Math.abs(carts[i]! - carts[i - 1]!) <= 1]).toEqual([i, true])
+  expect(apron).toBeGreaterThan(3)
+  // Bez chodnika do wózka nikt nie chodzi.
+  const plain = surfaceOf()
+  const room: ForgeProps = { ...props, annex: 0 }
+  draw(room, plain.surface)
+  const chores = new Set<string>()
+  for (let i = 0; i < 3000; i++) { plain.tick(); draw(room, plain.surface); const stroll = (plain.surface.state as Lively).stroll; if (stroll?.chore) chores.add(stroll.chore) }
+  expect([chores.size > 1, chores.has('cart')]).toEqual([true, false])
 })

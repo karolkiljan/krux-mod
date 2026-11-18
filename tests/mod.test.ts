@@ -3,7 +3,7 @@ import type { Engine, TestBody } from 'claude-code/testing'
 import type { AgentStatus, CommandSpec, SessionUsage, TurnStepChunk, TurnStepResult } from 'claude-code'
 
 import type { KruxCrew, KruxJournal, KruxLore } from '../types'
-import { FRAME_MS, PALETTE, SPEAKER_COLOR, actsFor } from '../hooks/sprites'
+import { ALARM_COLOR, FRAME_MS, OK_COLOR, PALETTE, SPEAKER_COLOR, actsFor } from '../hooks/sprites'
 import type { StageScene } from '../hooks/sprites'
 import { replay } from '../hooks/lore'
 import { MATES, ROSTER } from '../hooks/roster'
@@ -108,7 +108,7 @@ function engine(on: On, saved: Map<string, unknown>, extras: Extras = {}) {
   })
   on('agent.list', async () => {
     await extras.beforeAgentList?.()
-    return { value: (extras.agents ?? []).map(agent => ({ description: '', type: 'general-purpose', ...agent })) }
+    return { value: (extras.agents ?? []).map(agent => ({ description: '', type: 'general-purpose', kind: 'local_agent' as const, taskStatus: 'running' as const, label: '', startTime: 0, cwd: '/repo', tokenCount: 0, tokenSamples: [], hasRow: false, ...agent })) }
   })
   on('prompt.compose', () => ({ sections: BASE }))
   on('prompt.submit', ($, e) => { extras.onPrompt?.(); return { text: e.text, context: e.context } })
@@ -895,7 +895,7 @@ test('a surface without terminal cells gets no band, not even a text line', asyn
   for (const surface of ['vscode', 'mobile'] as const) {
     const ui = await $.ui.mount({ ...BAND, surface, props: { ...BAND.props, maxRows: 3 } })
     expect(await ui.find({ type: 'Text', text: '─'.repeat(BAND.props.bodyColumns) })).toBeUndefined()
-    expect(await ui.find({ type: 'Text', text: /^⚒ .*app\.ts/ })).toBeUndefined()
+    expect(await ui.find({ type: 'Text', text: /^[⚒▤] .*app\.ts/ })).toBeUndefined()
     await ui.unmount()
   }
 })
@@ -1186,6 +1186,47 @@ test('a nameplate lies on the engine’s blank row instead of adding its own', a
     props: { text: 'siema', origin: { kind: 'composer' }, isExpanded: false },
   })
   expect((await own.find({ key: 'nameplate' }))?.props).toMatchObject({ position: 'absolute', top: 0, left: 0 })
+})
+
+test('the reply edge takes the colour of the event: red after a failed run, green after a green one, and old blocks keep theirs', async ($, on) => {
+  const extras: { toolError?: string } = { toolError: '1 failed' }
+  engine(on, new Map(), extras)
+  await start($)
+  const edgeOf = async (requestId: string) => {
+    const ui = await $.ui.mount({ ...REPLY, requestId, surface: 'terminal', props: { text: 'Build pad.', isFirstOfReply: false } })
+    const edges = (await ui.findAll({ type: 'Box' })).filter(box => box.props.borderStyle === 'quote').map(box => box.props.borderColor)
+    await ui.unmount()
+    return edges
+  }
+  // Historia sprzed pierwszej żywej tury zostaje w kolorze Kruxa, choćby humor był już zły.
+  expect(await edgeOf('old')).toEqual([SPEAKER_COLOR.Krux])
+  await $.turn.start({ text: 'testuj', turnId: 't1' })
+  expect(await edgeOf('calm')).toEqual([SPEAKER_COLOR.Krux])
+  await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  expect(await edgeOf('red')).toEqual([ALARM_COLOR])
+  delete extras.toolError
+  await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  expect(await edgeOf('green')).toEqual([OK_COLOR])
+  // Przerysowany dawny blok nie zmienia koloru razem z humorem.
+  expect([await edgeOf('red'), await edgeOf('calm'), await edgeOf('old')]).toEqual([[ALARM_COLOR], [SPEAKER_COLOR.Krux], [SPEAKER_COLOR.Krux]])
+})
+
+test('the hearth in the /krux pane feels the work: embers at rest, a blaze in a turn, smoke when Krux is grumpy', async ($, on) => {
+  const extras: { toolError?: string } = {}
+  engine(on, new Map(), extras)
+  await start($)
+  const heatOf = async () => {
+    const ui = await $.ui.mount({ ...PANE, surface: 'terminal' })
+    const heat = ((await ui.find({ type: 'Client' }))!.props.props as { heat?: string }).heat
+    await ui.unmount()
+    return heat
+  }
+  expect(await heatOf()).toBe('ember')
+  await $.turn.start({ text: 'kuj', turnId: 't1' })
+  expect(await heatOf()).toBe('blaze')
+  extras.toolError = '1 failed'
+  await $.tool.call({ tool: 'Bash', command: 'npm test' })
+  expect(await heatOf()).toBe('smoke')
 })
 
 test('every block of a reply stands by a left edge in Krux’s colour', async ($, on) => {
@@ -2980,7 +3021,7 @@ test('tool rows collapse only with chat on and a placed, shown journal card', as
   await kruxCommand($, 'dziennik')
   expect(await tool.find({ type: 'Text', text: 'engine' })).toBeDefined()
   await kruxCommand($, 'czat on')
-  expect((await tool.findAll({ type: 'Text' })).map(node => node.text).join('')).toBe('⚒ Read a.ts✓')
+  expect((await tool.findAll({ type: 'Text' })).map(node => node.text).join('')).toBe('▤ Read a.ts✓')
   // Widoczność panelu czyta zegar (250 ms); wiersz bierze jego odczyt.
   extras.paneWaits = true
   await clock.advance(250)
@@ -2995,7 +3036,7 @@ test('tool rows collapse only with chat on and a placed, shown journal card', as
   await pane.press({ key: 'shaft-tab-stan' })
   expect(await tool.find({ type: 'Text', text: 'engine' })).toBeDefined()
   await pane.press({ key: 'shaft-tab-dziennik' })
-  expect(await tool.find({ type: 'Text', text: '⚒ Read a.ts' })).toBeDefined()
+  expect(await tool.find({ type: 'Text', text: '▤ Read a.ts' })).toBeDefined()
   await kruxCommand($, 'sztolnia off')
   expect(await tool.find({ type: 'Text', text: 'engine' })).toBeDefined()
 })
@@ -3008,11 +3049,11 @@ test('tool rows take the journal visibility from the watch instead of listing pa
   await readForJournal($)
   await kruxCommand($, 'dziennik')
   const tool = await $.ui.mount(TOOL_USE)
-  expect(await tool.find({ type: 'Text', text: '⚒ Read a.ts' })).toBeDefined()
+  expect(await tool.find({ type: 'Text', text: '▤ Read a.ts' })).toBeDefined()
   const before = listings
   for (let i = 0; i < 5; i += 1) await tool.redraw()
   expect(listings).toBe(before)
-  expect(await tool.find({ type: 'Text', text: '⚒ Read a.ts' })).toBeDefined()
+  expect(await tool.find({ type: 'Text', text: '▤ Read a.ts' })).toBeDefined()
 })
 
 test('pane visibility changes restore native tools without a manual redraw', async ($, on) => {
@@ -3023,7 +3064,7 @@ test('pane visibility changes restore native tools without a manual redraw', asy
   await readForJournal($)
   await kruxCommand($, 'dziennik')
   const tool = await $.ui.mount(TOOL_USE)
-  expect(await tool.find({ type: 'Text', text: '⚒ Read a.ts' })).toBeDefined()
+  expect(await tool.find({ type: 'Text', text: '▤ Read a.ts' })).toBeDefined()
   // Silnik zmienia isShown przy własnych zakładkach, bez zapisu stanu moda.
   extras.paneHidden = true
   await kruxCommand($, '')
@@ -3031,14 +3072,14 @@ test('pane visibility changes restore native tools without a manual redraw', asy
   expect(await tool.find({ type: 'Text', text: 'engine' })).toBeDefined()
   extras.paneHidden = false
   await clock.advance(250)
-  expect(await tool.find({ type: 'Text', text: '⚒ Read a.ts' })).toBeDefined()
+  expect(await tool.find({ type: 'Text', text: '▤ Read a.ts' })).toBeDefined()
   // Także utrata miejsca albo zamknięcie przez plugin nie zmieniają trybów.
   extras.paneWaits = true
   await clock.advance(250)
   expect(await tool.find({ type: 'Text', text: 'engine' })).toBeDefined()
   extras.paneWaits = false
   await clock.advance(250)
-  expect(await tool.find({ type: 'Text', text: '⚒ Read a.ts' })).toBeDefined()
+  expect(await tool.find({ type: 'Text', text: '▤ Read a.ts' })).toBeDefined()
   extras.paneClosed = true
   await clock.advance(250)
   expect(await tool.find({ type: 'Text', text: 'engine' })).toBeDefined()
@@ -3079,7 +3120,7 @@ test('a reset discards a pending visibility read and a failed read can recover',
   extras.paneHidden = false
   await readForJournal($)
   await kruxCommand($, 'dziennik')
-  expect(await tool.find({ type: 'Text', text: '⚒ Read a.ts' })).toBeDefined()
+  expect(await tool.find({ type: 'Text', text: '▤ Read a.ts' })).toBeDefined()
   extras.paneHidden = true
   extras.beforePaneList = async () => { throw new Error('panes unavailable') }
   await clock.advance(250)
@@ -3112,7 +3153,7 @@ test('chat reenabled during a pending inactive tick keeps watching pane visibili
   const pending = clock.advance(250)
   await reading
   await kruxCommand($, 'czat on')
-  expect(await tool.find({ type: 'Text', text: '⚒ Read a.ts' })).toBeDefined()
+  expect(await tool.find({ type: 'Text', text: '▤ Read a.ts' })).toBeDefined()
   release()
   await pending
   extras.paneHidden = true
@@ -3146,7 +3187,7 @@ test('unmatched tool rows and partly matched groups stay native; matched groups 
   expect(await group.find({ type: 'Text', text: 'engine' })).toBeDefined()
   // ctrl+o rysuje sam ToolUse bez ToolGroup.
   const full = await $.ui.mount({ ...TOOL_USE, requestId: 'fullscreen-row', viewport: { columns: 180, rows: 60, isFullscreen: true } })
-  expect(await full.find({ type: 'Text', text: '⚒ Read a.ts' })).toBeDefined()
+  expect(await full.find({ type: 'Text', text: '▤ Read a.ts' })).toBeDefined()
 })
 
 // Dopytanie o pewność idzie bez fikcji z kuźni i bez nastroju: tura sprawdzania to same fakty.

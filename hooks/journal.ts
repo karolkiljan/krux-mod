@@ -186,6 +186,7 @@ export function journalTree({ Box, Text }: JournalElements, journal: KruxJournal
           children: [
             Box({ flexShrink: 0, children: [Text({ ...outcomeColor(entry.ok), children: [markOf(entry.ok)] })] }),
             // Nazwa narzędzia nie ustępuje długiemu celowi („Bash”, nie „Ba…”); długą nazwę MCP ucina limit.
+            Box({ flexShrink: 0, children: [Text({ dimColor: true, children: [toolGlyph(entry.tool)] })] }),
             Box({ flexShrink: 0, children: [Text({ wrap: 'truncate-end', children: [terminalText(oneLine(entry.tool), TOOL_NAME_MAX).text] })] }),
             Box({ flexGrow: 1, flexShrink: 1, minWidth: 0, children: [Text({ wrap: 'truncate-end', children: [oneLine(entry.target)] })] }),
             ...(entry.summary ? [Box({ flexShrink: 0, children: [Text({ dimColor: true, wrap: 'truncate-end', children: [oneLine(entry.summary)] })] })] : []),
@@ -197,6 +198,24 @@ export function journalTree({ Box, Text }: JournalElements, journal: KruxJournal
   })
 }
 
+// Glif fachu przed narzędziem: czytanie, szukanie, pisanie, powłoka, horda, plan, sieć, MCP.
+// Same wąskie znaki spoza emoji, żeby wiersz liczył się w komórkach tak samo w każdym terminalu.
+const TOOL_GLYPHS: readonly (readonly [RegExp, string])[] = [
+  [/^(?:Read|NotebookRead)$/u, '▤'],
+  [/^(?:Grep|Glob|LS|ToolSearch|LSP)$/u, '⌕'],
+  [/^(?:Edit|Write|MultiEdit|NotebookEdit)$/u, '✎'],
+  [/^(?:Bash|BashOutput|KillShell)$/u, '❯'],
+  [/^(?:Agent|Task|SendMessage)$/u, '⚑'],
+  [/^(?:TodoWrite|TaskCreate|TaskUpdate|TaskList|ExitPlanMode|EnterPlanMode)$/u, '≡'],
+  [/^Web/u, '◍'],
+  [/^mcp__/u, '⬡'],
+]
+export const TOOL_GLYPH = '⚒'
+
+export function toolGlyph(tool: string): string {
+  return TOOL_GLYPHS.find(([pattern]) => pattern.test(tool))?.[1] ?? TOOL_GLYPH
+}
+
 // Silnik ucina opis w komórkach terminala. Osobny znak wyniku nie ustępuje
 // miejsca długiej ścieżce, również z szerokimi znakami Unicode.
 export function toolLine({ Box, Text }: JournalElements, data: ToolLineData | readonly ToolLineData[], width: number): RenderElement {
@@ -205,7 +224,7 @@ export function toolLine({ Box, Text }: JournalElements, data: ToolLineData | re
   const single = calls.length === 1 ? calls[0]! : null
   const n = calls.length
   const noun = n % 10 >= 2 && n % 10 <= 4 && (n % 100 < 12 || n % 100 > 14) ? 'narzędzia' : 'narzędzi'
-  const label = single === null ? `⚒ ${n} ${noun}` : `⚒ ${oneLine(single.tool)}${single.target ? ` ${oneLine(single.target)}` : ''}`
+  const label = single === null ? `${TOOL_GLYPH} ${n} ${noun}` : `${toolGlyph(single.tool)} ${oneLine(single.tool)}${single.target ? ` ${oneLine(single.target)}` : ''}`
   const room = columns(width)
   // Czerwień niesie tylko znak: cały czerwony wiersz krzyczał jak awaria,
   // a ✗ to często zwykły niezerowy kod wyjścia (grep bez trafień).

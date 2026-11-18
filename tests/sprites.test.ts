@@ -3,7 +3,7 @@ import { expect, test } from 'claude-code/testing'
 import { GESTURES, headOf } from '../hooks/fidget'
 import { MATE_APRONS } from '../hooks/palette'
 import { MATES } from '../hooks/roster'
-import { ACTS, BUBBLE_TEXT, WALL_MIN, WALL_ROOMY, depthSpot, wallSpans, errandPose, farPose, CATCH_X, DUET_FRAMES, DUET_GAP, duetFrames, emoteRows, choreSpot, CHORES, annexGrid, ANNEX_MIN, ANNEX_MAX, ROOM_ROWS, carried, doorX, dayPhase, duetPose, floorHomes, kitAt, kitReach, quartersDoor, roomGrid, hasHearth, stationX, CUE_FRAMES, FRAME_MS, HOLD_FRAMES, actsFor, routeOf, trackDozing, trackFace, ORC_GAP, ORC_WIDTH, PALETTE, bandColumns, behind, bubbleLines, canvasColumns, catchStep, caughtScroll, dress, frameGrid, forgeColumns, runsOf, slotX, stageGrid, tossFrames, trackGrid, trackOff, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withGaze, withNap, withRegard, cheerSide, withTalk, CHEER_FROM, CHEER_TO, WINCE_TO } from '../hooks/sprites'
+import { ACTS, BUBBLE_TEXT, WALL_MIN, WALL_ROOMY, depthSpot, wallSpans, errandPose, farPose, CATCH_X, DUET_FRAMES, DUET_GAP, duetFrames, emoteRows, choreSpot, CHORES, annexGrid, ANNEX_MIN, ANNEX_MAX, ROOM_ROWS, paneHeat, cartHome, cartPush, cartReach, carried, doorX, dayPhase, duetPose, floorHomes, kitAt, kitReach, quartersDoor, roomGrid, hasHearth, stationX, CUE_FRAMES, FRAME_MS, HOLD_FRAMES, actsFor, routeOf, trackDozing, trackFace, ORC_GAP, ORC_WIDTH, PALETTE, bandColumns, behind, bubbleLines, canvasColumns, catchStep, caughtScroll, dress, frameGrid, forgeColumns, runsOf, slotX, stageGrid, tossFrames, trackGrid, trackOff, trackStart, trackTo, walkerRows, withCatch, withCue, withEffort, withGaze, withNap, withRegard, cheerSide, withTalk, CHEER_FROM, CHEER_TO, WINCE_TO } from '../hooks/sprites'
 import type { DayPhase, StageScene } from '../hooks/sprites'
 import { H, STAND, W, actFrame, draw, entryOf, head, kitLead, legAt, moodOf, pad, settleFrames, stander } from '../hooks/stage'
 import type { Frame } from '../hooks/stage'
@@ -1442,13 +1442,46 @@ test('the mine gallery behind the room shows more with every bay, lives from the
   const frames = new Set(Array.from({ length: 320 }, (_, frame) => annexGrid(ANNEX_MAX, frame, calm).join('')))
   const frozen = new Set(Array.from({ length: 320 }, (_, frame) => annexGrid(ANNEX_MAX, frame, { ...calm, alive: false }).join('')))
   expect([frames.size > 40, frozen.size]).toEqual([true, 1])
-  // Wózek toczy się najwyżej piksel na klatkę: nic nie przeskakuje.
-  const cartAt = (frame: number) => annexGrid(ANNEX_MAX, frame, calm)[ROOM_ROWS - 3]!.indexOf('xhhhhhhx')
-  for (let frame = 1; frame < 320; frame += 1) expect([frame, Math.abs(cartAt(frame) - cartAt(frame - 1)) <= 1]).toEqual([frame, true])
+  // Wózek sam się nie toczy: stoi, póki ork go nie przetacza, a wtedy idzie piksel na klatkę,
+  // najdalej o `cartReach`, i wraca na miejsce.
+  const cartAt = (frame: number, cart?: number) => annexGrid(ANNEX_MAX, frame, { ...calm, ...(cart === undefined ? {} : { cart }) })[ROOM_ROWS - 4]!.indexOf('xhhhhhhx')
+  expect(new Set(Array.from({ length: 320 }, (_, frame) => cartAt(frame)))).toEqual(new Set([cartHome()]))
+  for (const width of [ANNEX_MIN, 40, ANNEX_MAX]) {
+    const reach = cartReach(width)
+    const path = Array.from({ length: 24 }, (_, t) => cartPush(t, reach))
+    expect([width, reach > 0, path[0], path[23], Math.max(...path)]).toEqual([width, true, 0, 0, reach])
+    for (let t = 1; t < 24; t += 1) expect([width, t, Math.abs(path[t]! - path[t - 1]!) <= 1]).toEqual([width, t, true])
+  }
+  expect([cartAt(40, 4), cartAt(40, 99)]).toEqual([cartHome() + 4, cartHome() + cartReach(ANNEX_MAX)])
   // Czerwone testy przygaszają lampę, zielone złocą rudę, zawał sypie pyłem.
   const lampOf = (rows: readonly string[]) => rows[3]!.replace(/\./gu, '')
   expect([lampOf(annexGrid(ANNEX_MIN, 41, calm)).includes('Z'), lampOf(annexGrid(ANNEX_MIN, 41, { ...calm, red: true }))]).toEqual([true, 'EQ'])
   const gold = (rows: readonly string[]) => rows.join('').split('y').length
   expect(gold(annexGrid(ANNEX_MAX, 41, { ...calm, feel: { kind: 'commit', age: 3 } }))).toBeGreaterThan(gold(annexGrid(ANNEX_MAX, 41, calm)) + 3)
   expect(ink(annexGrid(ANNEX_MAX, 41, { ...calm, feel: { kind: 'zawał', age: 3 } }))).toBeGreaterThan(ink(annexGrid(ANNEX_MAX, 41, calm)))
+})
+
+test('the pane hearth burns by the work: a blaze is the usual fire, embers glow low, smoke rises grey', () => {
+  const pane = frameGrid(0, 'pane')
+  const fire = (rows: readonly string[]) => rows.map(row => row.slice(-10))
+  const count = (rows: readonly string[], cells: string) => [...fire(rows).slice(1, 4).join('')].filter(cell => cells.includes(cell)).length
+  let blaze = 0, ember = 0, smoke = 0, grey = 0
+  for (let frame = 0; frame < 60; frame += 1) {
+    const usual = frameGrid(frame, 'pane')
+    // Pełny ogień to ten sam, który panel miał dotąd; ork i kamień zostają w każdym.
+    expect(paneHeat(usual, frame, 'blaze')).toEqual(usual)
+    for (const heat of ['ember', 'smoke'] as const) {
+      const rows = paneHeat(usual, frame, heat)
+      expect([frame, heat, rows.map(row => row.slice(0, 24)), fire(rows)[0], fire(rows)[5]]).toEqual([frame, heat, usual.map(row => row.slice(0, 24)), 'kkkkkkkkkk', 'kkkkkkkkkk'])
+      expect([frame, heat, [...rows.join('')].every(cell => cell === '.' || PALETTE[cell] !== undefined)]).toEqual([frame, heat, true])
+      // Żar leży zawsze: cały wiersz nad węglem.
+      expect([frame, heat, /^k[Ro]{8}k$/u.test(fire(rows)[3]!)]).toEqual([frame, heat, true])
+    }
+    blaze += count(usual, 'Royo')
+    ember += count(paneHeat(usual, frame, 'ember'), 'Royo')
+    smoke += count(paneHeat(usual, frame, 'smoke'), 'Royo')
+    grey += count(paneHeat(usual, frame, 'smoke'), 'mV')
+  }
+  // W spoczynku ognia wyraźnie mniej niż przy robocie, a dym jest tylko przy złości.
+  expect([ember < blaze * 0.75, smoke <= ember, grey > 40, count(paneHeat(pane, 3, 'ember'), 'mV')]).toEqual([true, true, true, 0])
 })

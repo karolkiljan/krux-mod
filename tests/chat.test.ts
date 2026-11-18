@@ -212,3 +212,21 @@ test('tool rows are indented under the bubble text, without a frame', () => {
   expect(row.props.width).toBeUndefined()
   expect(children(row)).toEqual([CONTENT])
 })
+
+test('an orc avatar wears the mood of its message: gold eyes when proud, brows when grumpy, Morra never changes', () => {
+  const eyes = (rows: ReturnType<typeof avatarRows>, cell: string) => pixels(rows).flat().filter(color => color === PALETTE[cell]).length
+  for (const speaker of ['Krux', 'Niuch', 'Grom', 'Lont', null] as const) {
+    expect([speaker, eyes(avatarRows(speaker), 'r'), eyes(avatarRows(speaker, 'proud'), 'r'), eyes(avatarRows(speaker, 'proud'), 'y') >= 2]).toEqual([speaker, 2, 0, true])
+    // Brwi złości to dwa ciemne piksele nad oczami; oczy zostają czerwone, fartuch i znak fachu swoje.
+    const calm = pixels(avatarRows(speaker))
+    const grim = pixels(avatarRows(speaker, 'grumpy'))
+    const changed = calm.flatMap((row, y) => row.flatMap((cell, x) => (cell === grim[y]![x] ? [] : [grim[y]![x]])))
+    expect([speaker, changed.length >= 1 && changed.length <= 2, changed.every(cell => cell === PALETTE.G), eyes(avatarRows(speaker, 'grumpy'), 'r')]).toEqual([speaker, true, true, 2])
+    expect(avatarRows(speaker, 'proud').map(row => row.reduce((width, run) => width + [...run.text].length, 0))).toEqual([6, 6])
+  }
+  expect(JSON.stringify(avatarRows('Morra', 'grumpy'))).toBe(JSON.stringify(avatarRows('Morra')))
+  // Dymek niesie minę do awatara, ramka zostaje w kolorze mówcy.
+  const proud = draw({ speaker: 'Krux', mood: 'proud' })
+  expect(JSON.stringify(part(proud, 'chat-avatar')).includes(PALETTE.y!)).toBe(true)
+  expect(part(proud, 'chat-body').props.borderColor).toBe(speakerColor('Krux'))
+})
