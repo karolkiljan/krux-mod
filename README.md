@@ -71,6 +71,7 @@ claude plugin disable krux@krux-marketplace
 | `/krux sztolnia [on\|off]` | panel ze stanem roboty obok transkryptu |
 | `/krux czat [on\|off]` | ramki rozmowy i awatary w terminalu |
 | `/krux audyt [on\|off]` | przed końcem tury mały model (Haiku) sprawdza zdania podane jako zobaczone z wyjściem narzędzi; domyślnie off, bo każda odpowiedź ze słowami o sprawdzaniu kosztuje jedno wywołanie |
+| `/krux tlo [on\|off]` | kopalnia za rozmową na całe okno, tylko w aplikacji Desktop (prototyp): iskry przy robocie, pył przy czerwonych testach, błysk rudy, gdy Krux dumny; domyślnie off, bo motyw sesji jest jeden i zastępuje motyw innego moda |
 | `/krux dziennik` | otwarcie karty Dziennik w Sztolni |
 | `/krux zapisz <tekst>` | zapis otwartego wątku w tablicy sesji |
 | `/krux raport` | raport sesji do skopiowania |

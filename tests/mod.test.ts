@@ -252,7 +252,7 @@ test('/krux status and an unknown argument answer as text', async ($, on) => {
   await start($)
   const presentation = { isFullscreen: false, columns: 120 }
   const status = await $.command.run({ command: 'krux', args: 'status', origin: ORIGIN, presentation })
-  expect(status.text).toBe('persona: on · konkret: off · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off · audyt: off')
+  expect(status.text).toBe('persona: on · konkret: off · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off · audyt: off · tlo: off')
   const help = await $.command.run({ command: 'krux', args: 'kopać', origin: ORIGIN, presentation })
   expect(help.text).toContain('/krux status')
 })
@@ -2427,7 +2427,7 @@ test('/krux status reports auto, manual and off konkret without saving the autom
   await start($, clock)
   const command = { command: 'krux', origin: ORIGIN, presentation: { isFullscreen: false, columns: 120 } }
   const automatic = await $.command.run({ ...command, args: 'status' })
-  expect(automatic.text).toBe('persona: on · konkret: auto · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off · audyt: off')
+  expect(automatic.text).toBe('persona: on · konkret: auto · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off · audyt: off · tlo: off')
   expect(automatic.context).toBeUndefined()
   expect(saved.get('mode.konkret')).toBe(false)
   expect(saved.size).toBe(1)
@@ -2458,7 +2458,7 @@ test('a measured limit reset wins over a start read that returns late', async ($
   const command = { command: 'krux', args: 'status', origin: ORIGIN, presentation: { isFullscreen: false, columns: 120 } }
   const off = {
     sections: ['intro', 'krux-mod:persona'],
-    status: 'persona: on · konkret: off · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off · audyt: off',
+    status: 'persona: on · konkret: off · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off · audyt: off · tlo: off',
   }
   const snapshot = async () => ({ sections: await sectionIds($), status: (await $.command.run(command)).text })
   // Odczyt ze startu czeka; w tym czasie silnik pcha świeższe liczby.
@@ -2799,6 +2799,40 @@ async function kruxCommand($: Engine, args: string) {
 async function readForJournal($: Engine, id = 'read-1', agentId?: string) {
   return $.tool.call({ tool: 'Read', file_path: '/repo/a.ts', tool_use_id: id, ...(agentId === undefined ? {} : { agentId }) } as Parameters<Engine['tool']['call']>[0])
 }
+
+test('the backdrop mode sets the mine theme, draws it on the desktop with session numbers, and clears it only when asked', async ($, on) => {
+  const saved = new Map<string, unknown>()
+  const themes: unknown[] = []
+  let cleared = 0
+  on('theme.set', (_$, e) => { themes.push(e.backdrop); return { value: { isDrawn: true, requestId: 'theme-1' } } })
+  on('theme.clear', () => { cleared += 1; return { value: { isDrawn: false, reason: 'cleared' } } })
+  engine(on, saved)
+  await start($)
+  // Domyślnie wyłączone: mod nie rusza wyglądu aplikacji.
+  expect(themes).toEqual([])
+  const command = await kruxCommand($, 'tło on')
+  expect(command.text).toContain('tlo: on')
+  expect(saved.get('mode.tlo')).toBe(true)
+  expect(themes).toEqual([{ scene: 'kopalnia', glass: { blur: 10, tint: '#14110f', opacity: 0.78 } }])
+  const BACKDROP = { plugin: 'krux-mod', surface: 'desktop', component: 'Backdrop', requestId: 'b1', props: { scene: 'kopalnia', plugin: 'krux-mod', glass: false } } as const
+  const rest = await $.ui.mount(BACKDROP)
+  const shader = (await rest.find({ type: 'Shader' }))!
+  // Silnik rozwija ścieżkę pliku shadera względem moda: plik istnieje i przeszedł jego kontrolę.
+  expect(shader.props.module).toBe('hooks/kopalnia.ts')
+  expect(shader.props.values).toEqual({ heat: 0.3, dust: 0, gold: 0 })
+  expect(String((await rest.find({ type: 'Svg' }))!.props.source).startsWith('<svg')).toBe(true)
+  // Robota rozpala żar.
+  await $.turn.start({ text: 'czytaj', turnId: 't1' })
+  await $.tool.call({ tool: 'Read', file_path: '/repo/src/app.ts' })
+  const work = await $.ui.mount({ ...BACKDROP, requestId: 'b2' })
+  expect((await work.find({ type: 'Shader' }))!.props.values).toEqual({ heat: 1, dust: 0, gold: 0 })
+  // Cudzej sceny mod nie rysuje.
+  const other = await $.ui.mount({ ...BACKDROP, requestId: 'b3', props: { scene: 'lagoon', plugin: 'other', glass: false } })
+  expect(await other.find({ type: 'Shader' })).toBeUndefined()
+  expect(cleared).toBe(0)
+  await kruxCommand($, 'tlo off')
+  expect(cleared).toBe(1)
+})
 
 test('chat toggles persist independently, queue a note and appear in status and footer', async ($, on) => {
   on('ui.render', { component: 'SessionMode' }, ($, e) => ({ type: 'Text', props: {}, children: [e.props.modes.join(',')] }))

@@ -26,6 +26,7 @@ import { MORRA_COLOR } from './avatar'
 import type { AvatarSpeaker } from './avatar'
 import { EMPTY_JOURNAL, journalAfter, journalTree, toolLine } from './journal'
 import { echoLine, echoPrompt } from './echo'
+import { BACKDROP_ALT, BACKDROP_GLASS, BACKDROP_SCENE, backdropSvg, backdropValues } from './backdrop'
 import Forge from './forge'
 import type { ForgeProps } from './forge'
 import { ALARM_COLOR, FRAME_MS, OK_COLOR, forgeColumns } from './sprites'
@@ -196,6 +197,18 @@ async function setModes($: EngineInterface, toggle: Toggle): Promise<{ next: Kru
   // Persona wraca po przerwie: pierwsza tura znowu dostaje pełną kotwicę.
   if (toggle.mode === 'persona' && on) await update($, turns, () => 0)
   return { next, on, note: modelNote(toggle.mode, on) }
+}
+
+// Tło Desktopu (tryb `tlo`): scena za rozmową. Motyw sesji jest jeden i wygrywa ostatni ustawiony,
+// więc stawiamy go tylko przy włączonym trybie, a zdejmujemy tylko na prośbę Morry (`/krux tlo off`).
+// Powierzchnia bez tła (terminal) odmawia: to nie błąd, tryb zostaje na następny Desktop.
+async function syncBackdrop($: EngineInterface, on: boolean): Promise<void> {
+  try {
+    const result = on ? await $.theme.set({ backdrop: { scene: BACKDROP_SCENE, glass: BACKDROP_GLASS } }) : await $.theme.clear()
+    if (on && !result.isDrawn) $.ui.log(`tło: ${JSON.stringify(result)}`, { to: 'debug' })
+  } catch (error) {
+    $.ui.log(`tło: ${error instanceof Error ? error.message : String(error)}`, { to: 'debug' })
+  }
 }
 
 async function readText($: EngineInterface, name: string): Promise<string> {
@@ -850,6 +863,7 @@ export const register: Register = on => {
     }
     await warnAboutPlugin($)
     if ((await read($, modes)).sztolnia) await syncShaftPane($, true)
+    if ((await read($, modes)).tlo) await syncBackdrop($, true)
     // Reload modułu kasuje zegar apelu; orkowie z `$.state` biegną dalej.
     if (anyRunning(await read($, muster))) tickMuster($)
     tickBoard($, await read($, board), await $.clock.now())
@@ -862,7 +876,7 @@ export const register: Register = on => {
       await $.command.register({
         name: 'krux',
         description: 'Kuźnia Kruxa: persona, konkret, flow, animacje, kowal, czat, dziennik, horda',
-        argumentHint: '[on|off|konkret|flow|animacje|kowal|sztolnia|czat|dziennik|zapisz <tekst>|raport|status]',
+        argumentHint: '[on|off|konkret|flow|animacje|kowal|sztolnia|czat|tlo|dziennik|zapisz <tekst>|raport|status]',
         immediate: true,
       })
     } catch (error) {
@@ -1043,6 +1057,7 @@ export const register: Register = on => {
     if (command.kind === 'toggle') {
       const { next: now, on: isOn, note } = await setModes($, command.toggle)
       if (command.toggle.mode === 'sztolnia') await syncShaftPane($, isOn)
+      if (command.toggle.mode === 'tlo') await syncBackdrop($, isOn)
       const text = `${userLine(command.toggle.mode, isOn)}\n${statusLine(now, await read($, autoKonkret))}`
       return note ? { text, context: [note] } : { text }
     }
@@ -1369,6 +1384,18 @@ export const register: Register = on => {
       flexDirection: 'column',
       children: [...rule, Box({ flexDirection: 'row', columnGap: CAPTION_GAP, alignItems: 'flex-start', children: [caption, forge] }), theirs],
     })
+  })
+
+  // Tło Desktopu: kopalnia za rozmową. Liczby dla shadera to stan sesji; zapis atomów, które
+  // hook czyta, sam prosi o nowy rysunek, a aplikacja płynnie dochodzi do nowych liczb.
+  on('ui.render', { component: 'Backdrop' }, async ($, e, next) => {
+    if (e.props.plugin !== 'krux-mod' || e.props.scene !== BACKDROP_SCENE) return next(e)
+    const table = $.ui.resolve(e)
+    if (!('Svg' in table)) return next(e)
+    const art = table.Svg({ source: backdropSvg(), alt: BACKDROP_ALT })
+    if (!('Shader' in table) || await read($, still)) return art
+    const values = backdropValues({ working: (await read($, activity)) !== null, red: (await read($, board)).test?.ok === false, mood: (await read($, moods)).faces.Krux })
+    return table.Shader({ module: './kopalnia.ts', values, children: [art] })
   })
 
   // Krzyżyk Morry na Sztolni gasi tryb, żeby panel nie wracał przy następnym starcie.
