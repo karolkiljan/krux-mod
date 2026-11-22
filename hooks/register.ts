@@ -29,7 +29,7 @@ import { echoLine, echoPrompt } from './echo'
 import { BACKDROP_ALT, BACKDROP_GLASS, BACKDROP_SCENE, backdropSvg, backdropValues } from './backdrop'
 import Forge from './forge'
 import type { ForgeProps } from './forge'
-import { ALARM_COLOR, FRAME_MS, OK_COLOR, forgeColumns } from './sprites'
+import { ALARM_COLOR, ANNEX_MIN, FRAME_MS, OK_COLOR, ROOM_ROWS, forgeColumns } from './sprites'
 import { drawHeadless, headless, svgOf } from './vector'
 import type { Headless } from './vector'
 import {
@@ -876,7 +876,7 @@ export const register: Register = on => {
       await $.command.register({
         name: 'krux',
         description: 'Kuźnia Kruxa: persona, konkret, flow, animacje, kowal, czat, dziennik, horda',
-        argumentHint: '[on|off|konkret|flow|animacje|kowal|sztolnia|czat|tlo|dziennik|zapisz <tekst>|raport|status]',
+        argumentHint: '[on|off|konkret|flow|animacje|kowal|sztolnia|czat|tlo|dziennik|kopalnia|zapisz <tekst>|raport|status]',
         immediate: true,
       })
     } catch (error) {
@@ -1046,8 +1046,8 @@ export const register: Register = on => {
       const since = (await $.session.usage().catch(() => null))?.startedAt ?? null
       return { text: dayReport(await read($, git), await read($, board), await read($, threads), await read($, lore), since) }
     }
-    if (command.kind === 'journal') {
-      await update($, shaftTab, () => 'dziennik')
+    if (command.kind === 'journal' || command.kind === 'mine') {
+      await update($, shaftTab, () => (command.kind === 'mine' ? 'kopalnia' : 'dziennik'))
       const opened = (await $.ui.panes()).some(pane => pane.id === SHAFT_PANE)
       if (!(await read($, modes)).sztolnia) await setModes($, { mode: 'sztolnia', on: true })
       // Ponowne open pokazuje także panel czekający na szerokość albo ukrytą kartę.
@@ -1414,6 +1414,19 @@ export const register: Register = on => {
     const tab = await read($, shaftTab)
     const tabs = shaftTabs(table, tab, async selected => { await update($, shaftTab, () => selected) })
     const now = await $.clock.now()
+    if (tab === 'kopalnia') {
+      // Żywa kopalnia obok rozmowy: te same liczby co tło Desktopu. Płótno tylko w terminalu;
+      // Desktop dostaje nieruchomy rysunek tła, a bez żadnego z nich zostaje jedna linia.
+      const values = backdropValues({ working: (await read($, activity)) !== null, red: (await read($, board)).test?.ok === false, mood: (await read($, moods)).faces.Krux })
+      const columns = e.props.bodyColumns
+      const rows = Math.max(0, e.props.scroll.bodyRows - 1)
+      const art = e.surface === GRID_SURFACE && 'Client' in table && columns >= ANNEX_MIN && rows >= ROOM_ROWS / 2
+        ? table.Client({ key: 'mine', module: './mine.ts', props: { ...values, columns, rows, still: (await read($, still)) || !(await read($, modes)).animacje }, width: columns, height: rows })
+        : e.surface === DESK_SURFACE && 'Svg' in table
+          ? table.Svg({ source: backdropSvg(), alt: BACKDROP_ALT })
+          : table.Text({ dimColor: true, wrap: 'truncate-end', children: ['Kopalnia potrzebować szerszego panelu.'] })
+      return table.Box({ flexDirection: 'column', children: [tabs, art] })
+    }
     if (tab === 'dziennik') return table.Box({ flexDirection: 'column', children: [tabs, journalTree(table, await read($, journal), e.props.bodyColumns, now)] })
     const plan = await read($, board)
     // Odczyt tyknięcia apelu zapisuje panel na przerysowanie co 1 s: czas orków płynie.

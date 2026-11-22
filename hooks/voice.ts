@@ -342,6 +342,7 @@ export type KruxCommand =
   | { kind: 'save'; text: string }
   | { kind: 'report' }
   | { kind: 'journal' }
+  | { kind: 'mine' }
   | { kind: 'help'; unknown: string }
   | { kind: 'toggle'; toggle: Toggle }
 
@@ -385,6 +386,7 @@ export function parseCommand(args: string): KruxCommand {
   }
   if (first === 'raport' && words.length === 1) return { kind: 'report' }
   if (first === 'dziennik' && words.length === 1) return { kind: 'journal' }
+  if (first === 'kopalnia' && words.length === 1) return { kind: 'mine' }
   if (first === 'status') return { kind: 'status' }
   if (ON_WORDS.has(first!) && words.length === 1) return { kind: 'toggle', toggle: { mode: 'persona', on: true } }
   if (OFF_WORDS.has(first!) && words.length === 1) return { kind: 'toggle', toggle: { mode: 'persona', on: false } }
@@ -464,6 +466,7 @@ export const HELP = [
   '/krux audyt [on|off] — mały model sprawdza odpowiedź z wyjściem narzędzi',
   '/krux tlo [on|off] — kopalnia za rozmową (tylko Desktop)',
   '/krux dziennik — karta dziennika narzędzi w Sztolni',
+  '/krux kopalnia — karta z żywą kopalnią w Sztolni (terminal)',
   '/krux zapisz <tekst> — dodaj notatkę do otwartych wątków',
   '/krux raport — raport dnia do wklejenia',
   '/krux status — stan trybów',

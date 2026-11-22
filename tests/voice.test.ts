@@ -100,6 +100,7 @@ test('chat defaults off and commands toggle it without changing the voice sectio
 
 test('the journal command selects a card instead of toggling a persistent mode', () => {
   expect(parseCommand('  DZIENNIK ')).toEqual({ kind: 'journal' })
+  expect(parseCommand('kopalnia')).toEqual({ kind: 'mine' })
   expect(parseCommand('dziennik off')).toEqual({ kind: 'help', unknown: 'dziennik off' })
 })
 

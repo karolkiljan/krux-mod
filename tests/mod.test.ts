@@ -2834,6 +2834,34 @@ test('the backdrop mode sets the mine theme, draws it on the desktop with sessio
   expect(cleared).toBe(1)
 })
 
+test('the mine card draws a live canvas beside the conversation in the terminal, fed the session numbers', async ($, on) => {
+  const opened: string[] = []
+  engine(on, new Map(), { opened })
+  await start($)
+  await kruxCommand($, 'kopalnia')
+  expect(opened).toContain('sztolnia')
+  const ui = await $.ui.mount({ ...SHAFT_PANE, surface: 'terminal', props: SHAFT_PROPS })
+  expect(await ui.find({ key: 'shaft-tabs' })).toBeDefined()
+  const rest = (await ui.find({ type: 'Client' }))!
+  // Płótno bierze cały panel pod kartami: 40 kolumn, 30 wierszy bez wiersza kart.
+  expect([rest.props.width, rest.props.height]).toEqual([40, 29])
+  expect(rest.props.props).toEqual({ heat: 0.3, dust: 0, gold: 0, columns: 40, rows: 29, still: false })
+  // Robota rozpala palenisko także tutaj.
+  await $.turn.start({ text: 'czytaj', turnId: 't1' })
+  await $.tool.call({ tool: 'Read', file_path: '/repo/src/app.ts' })
+  expect(((await ui.find({ type: 'Client' }))!.props.props as { heat: number }).heat).toBe(1)
+  // Inne karty zostają bez płótna.
+  await ui.press({ key: 'shaft-tab-stan' })
+  expect(await ui.find({ type: 'Client' })).toBeUndefined()
+  await ui.press({ key: 'shaft-tab-kopalnia' })
+  expect(await ui.find({ type: 'Client' })).toBeDefined()
+  // Za wąski panel nie dostaje płótna, tylko jedną linię.
+  await ui.unmount()
+  const narrow = await $.ui.mount({ ...SHAFT_PANE, surface: 'terminal', props: { ...SHAFT_PROPS, bodyColumns: 20 } })
+  expect(await narrow.find({ type: 'Client' })).toBeUndefined()
+  expect(await narrow.find({ type: 'Text', text: /Kopalnia potrzebować/u })).toBeDefined()
+})
+
 test('chat toggles persist independently, queue a note and appear in status and footer', async ($, on) => {
   on('ui.render', { component: 'SessionMode' }, ($, e) => ({ type: 'Text', props: {}, children: [e.props.modes.join(',')] }))
   const saved = new Map<string, unknown>([['mode.flow', true]])
