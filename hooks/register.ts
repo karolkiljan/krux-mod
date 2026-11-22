@@ -894,6 +894,8 @@ export const register: Register = on => {
     await loadSession($)
     await update($, journal, () => EMPTY_JOURNAL)
     await update($, shaftTab, () => 'stan')
+    // Motyw nie wraca sam po wznowieniu ani po rozwidleniu: przy włączonym trybie stawiamy go od nowa.
+    if ((await read($, modes)).tlo) await syncBackdrop($, true)
     refreshSessionLater($, true)
     return next(e)
   })
