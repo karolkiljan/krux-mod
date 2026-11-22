@@ -1,4 +1,4 @@
-export type KruxMode = 'persona' | 'konkret' | 'flow' | 'animacje' | 'kowal' | 'sztolnia' | 'czat' | 'audyt'
+export type KruxMode = 'persona' | 'konkret' | 'flow' | 'animacje' | 'kowal' | 'sztolnia' | 'czat' | 'audyt' | 'tlo'
 
 export type KruxModes = Record<KruxMode, boolean>
 
@@ -203,7 +203,7 @@ export type KruxJournalEntry = {
 export type KruxJournal = { entries: KruxJournalEntry[] }
 
 // Karta panelu Sztolni: stan roboty albo dziennik narzędzi.
-export type KruxShaftTab = 'stan' | 'dziennik'
+export type KruxShaftTab = 'stan' | 'dziennik' | 'kopalnia'
 
 declare module 'claude-code' {
   interface PluginState {

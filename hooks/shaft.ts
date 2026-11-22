@@ -21,6 +21,9 @@ export type ShaftElements = { Box: ElementConstructor<BoxProps>; Text: ElementCo
 
 export type ShaftTabElements = ShaftElements & { Button: ElementConstructor<ButtonProps> }
 
+// Karty Sztolni: nazwa, napis i klawisz.
+const SHAFT_TABS: readonly (readonly [KruxShaftTab, string, string])[] = [['stan', 'Stan', '1'], ['dziennik', 'Dziennik', '2'], ['kopalnia', 'Kopalnia', '3']]
+
 // Nagłówek wspólnego panelu. Wywołujący przekazuje zapis wybranej karty;
 // samo tworzenie drzewa nie zmienia stanu i nie uruchamia callbacka.
 export function shaftTabs({ Box, Text, Button }: ShaftTabElements, active: KruxShaftTab, onPress: (tab: KruxShaftTab) => void | Promise<void>): RenderElement {
@@ -29,7 +32,7 @@ export function shaftTabs({ Box, Text, Button }: ShaftTabElements, active: KruxS
     flexDirection: 'row',
     flexWrap: 'wrap',
     columnGap: 1,
-    children: (['stan', 'dziennik'] as const).map(tab => Box({
+    children: SHAFT_TABS.map(([tab, label, hotkey]) => Box({
       key: `shaft-tab-cell-${tab}`,
       flexDirection: 'row',
       columnGap: 1,
@@ -37,7 +40,7 @@ export function shaftTabs({ Box, Text, Button }: ShaftTabElements, active: KruxS
         // Button nie przyjmuje koloru. Znak aktywnej karty rysuje Text.
         Text({ dimColor: tab !== active, ...(tab === active ? { color: KRUX_COLOR } : {}), children: [tab === active ? '▸' : '·'] }),
         // Cyfra jak w `hello-tabs`: przy fokusie panelu karta jednym klawiszem.
-        Button({ key: `shaft-tab-${tab}`, label: tab === 'stan' ? 'Stan' : 'Dziennik', hotkey: tab === 'stan' ? '1' : '2', plain: true, dimColor: tab !== active, onPress: () => onPress(tab) }),
+        Button({ key: `shaft-tab-${tab}`, label, hotkey, plain: true, dimColor: tab !== active, onPress: () => onPress(tab) }),
       ],
     })),
   })

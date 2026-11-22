@@ -249,21 +249,20 @@ const TAB_ELEMENTS = {
   Button: (props: Record<string, unknown>) => ({ type: 'Button', props }),
 } as unknown as ShaftTabElements
 
-test('shaft tabs highlight either active card with a sign and spark color', () => {
-  for (const active of ['stan', 'dziennik'] as const) {
+test('shaft tabs highlight the active card with a sign and spark color', () => {
+  const TABS = ['stan', 'dziennik', 'kopalnia'] as const
+  for (const active of TABS) {
+    const at = TABS.indexOf(active)
     const root = shaftTabs(TAB_ELEMENTS, active, () => {}) as unknown as Node
     const cells = children(root) as Node[]
     const buttons = cells.map(cell => children(cell)[1] as Node)
     const marks = cells.map(cell => children(cell)[0] as Node)
-    expect(buttons.map(button => button.props.label)).toEqual(['Stan', 'Dziennik'])
-    expect(marks.map(mark => texts(mark)[0]?.text)).toEqual(active === 'stan' ? ['▸', '·'] : ['·', '▸'])
-    expect(buttons.map(button => button.props.plain)).toEqual([true, true])
-    const chosen = buttons[active === 'stan' ? 0 : 1]!
-    const other = buttons[active === 'stan' ? 1 : 0]!
-    expect(marks[active === 'stan' ? 0 : 1]!.props.color).toBe(KRUX_COLOR)
+    expect(buttons.map(button => button.props.label)).toEqual(['Stan', 'Dziennik', 'Kopalnia'])
+    expect(marks.map(mark => texts(mark)[0]?.text)).toEqual(TABS.map(tab => (tab === active ? '▸' : '·')))
+    expect(buttons.map(button => button.props.plain)).toEqual([true, true, true])
+    expect(marks[at]!.props.color).toBe(KRUX_COLOR)
     expect(buttons.every(button => button.props.color === undefined)).toBe(true)
-    expect(chosen.props.dimColor).not.toBe(true)
-    expect(other.props.dimColor).toBe(true)
+    expect(buttons.map(button => button.props.dimColor === true)).toEqual(TABS.map(tab => tab !== active))
     expect(root.props.flexWrap).toBe('wrap')
   }
 })
@@ -276,8 +275,8 @@ test('tab rendering never calls onPress and each button passes its own card', as
   await (buttons[1]!.props.onPress as () => Promise<void>)()
   await (buttons[0]!.props.onPress as () => Promise<void>)()
   expect(chosen).toEqual(['dziennik', 'stan'])
-  expect(buttons.map(button => button.props.key)).toEqual(['shaft-tab-stan', 'shaft-tab-dziennik'])
-  expect(buttons.map(button => button.props.hotkey)).toEqual(['1', '2'])
+  expect(buttons.map(button => button.props.key)).toEqual(['shaft-tab-stan', 'shaft-tab-dziennik', 'shaft-tab-kopalnia'])
+  expect(buttons.map(button => button.props.hotkey)).toEqual(['1', '2', '3'])
 })
 
 test('tab buttons also accept a synchronous handler', () => {

@@ -76,6 +76,11 @@ function heatRow(frame: number, y: number, heat: Heat): string {
   }).join('')
 }
 
+// Palenisko samo, w stanie `heat`: sześć wierszy kamienia z ogniem, żarem albo dymem.
+export function hearthRows(frame: number, heat: Heat): string[] {
+  return HEARTH.map((_, y) => heatRow(frame, y, heat))
+}
+
 // Podmienia ogień w siatce panelu (palenisko stoi dwie kolumny za orkiem) na ten z `heat`.
 export function paneHeat(grid: readonly string[], frame: number, heat: Heat): string[] {
   return grid.map((row, y) => `${row.slice(0, W + 2)}${heatRow(frame, y, heat)}`)

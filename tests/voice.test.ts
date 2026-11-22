@@ -100,6 +100,7 @@ test('chat defaults off and commands toggle it without changing the voice sectio
 
 test('the journal command selects a card instead of toggling a persistent mode', () => {
   expect(parseCommand('  DZIENNIK ')).toEqual({ kind: 'journal' })
+  expect(parseCommand('kopalnia')).toEqual({ kind: 'mine' })
   expect(parseCommand('dziennik off')).toEqual({ kind: 'help', unknown: 'dziennik off' })
 })
 
@@ -110,19 +111,19 @@ test('a flip toggles one mode and leaves the others', async () => {
 })
 
 test('status distinguishes automatic konkret from a manual mode and keeps the other modes', () => {
-  expect(statusLine(DEFAULT_MODES)).toBe('persona: on · konkret: off · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off · audyt: off')
-  expect(statusLine(DEFAULT_MODES, true)).toBe('persona: on · konkret: auto · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off · audyt: off')
+  expect(statusLine(DEFAULT_MODES)).toBe('persona: on · konkret: off · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off · audyt: off · tlo: off')
+  expect(statusLine(DEFAULT_MODES, true)).toBe('persona: on · konkret: auto · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off · audyt: off · tlo: off')
   for (const automatic of [false, true]) {
-    expect(statusLine({ ...DEFAULT_MODES, konkret: true }, automatic)).toBe('persona: on · konkret: on · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off · audyt: off')
+    expect(statusLine({ ...DEFAULT_MODES, konkret: true }, automatic)).toBe('persona: on · konkret: on · flow: off · animacje: on · kowal: on · sztolnia: on · czat: off · audyt: off · tlo: off')
   }
 })
 
 test('sections follow the plugin order: persona, konkret, flow', async () => {
   const texts = { persona: 'P', konkret: 'K', flow: 'F' }
-  const all = personaSections({ persona: true, konkret: true, flow: true, animacje: false, kowal: false, sztolnia: false, czat: true, audyt: false }, texts)
+  const all = personaSections({ persona: true, konkret: true, flow: true, animacje: false, kowal: false, sztolnia: false, czat: true, audyt: false, tlo: false }, texts)
   expect(all.map(section => section.id)).toEqual(['krux-mod:persona', 'krux-mod:konkret', 'krux-mod:flow'])
   expect(all.every(section => section.scope === 'session')).toBe(true)
-  expect(personaSections({ persona: false, konkret: false, flow: false, animacje: true, kowal: true, sztolnia: false, czat: true, audyt: true }, texts)).toEqual([])
+  expect(personaSections({ persona: false, konkret: false, flow: false, animacje: true, kowal: true, sztolnia: false, czat: true, audyt: true, tlo: false }, texts)).toEqual([])
 })
 
 test('the anchor keeps the plugin budget of 1000 characters', async () => {
