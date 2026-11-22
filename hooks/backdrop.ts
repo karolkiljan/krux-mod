@@ -6,8 +6,9 @@ import type { KruxMood } from '../types'
 
 export const BACKDROP_SCENE = 'kopalnia'
 export const BACKDROP_ALT = 'Chodnik kopalni Kruxa: stemple, tory i żar paleniska.'
-// Szkło paneli nad tłem: ciemne i dość kryjące, żeby tekst rozmowy zostawał czytelny.
-export const BACKDROP_GLASS = { blur: 10, tint: '#14110f', opacity: 0.78 } as const
+// Szkło paneli nad tłem: ciemne, żeby tekst rozmowy zostawał czytelny, ale na tyle przejrzyste,
+// żeby kopalnia prześwitywała też pod rozmową, nie tylko na marginesach.
+export const BACKDROP_GLASS = { blur: 8, tint: '#14110f', opacity: 0.66 } as const
 
 // Liczby dla shadera, każda 0–1: `heat` żar przy robocie, `dust` pył przy czerwonych testach,
 // `gold` błysk rudy, gdy Krux dumny. To stan, nie strumień: aplikacja sama płynnie do nich dochodzi.
@@ -40,18 +41,18 @@ function noise(n: number): number {
 export function backdropSvg(): string {
   const parts: string[] = [rect(0, 0, WIDE, TALL, '#14110f')]
   // Warstwy skały: pasy o różnej ciemności i pojedyncze kamienie.
-  for (let band = 0; band < 6; band += 1) parts.push(rect(0, 18 + band * 28, WIDE, 2, '#1d1915'))
+  for (let band = 0; band < 6; band += 1) parts.push(rect(0, 18 + band * 28, WIDE, 2, '#2b241c'))
   for (let n = 0; n < 90; n += 1) {
     const x = Math.floor(noise(n) * WIDE)
     const y = Math.floor(noise(n + 500) * (TALL - 30))
-    parts.push(rect(x, y, 2 + Math.floor(noise(n + 900) * 4), 2, noise(n + 1300) < 0.5 ? '#211c17' : '#1a1612'))
+    parts.push(rect(x, y, 2 + Math.floor(noise(n + 900) * 4), 2, noise(n + 1300) < 0.5 ? '#30281f' : '#241e18'))
   }
   // Stemple z kapą.
   for (let x = 8; x < WIDE; x += BAY) {
-    parts.push(rect(x, 6, 4, TALL - 22, '#3d2b1f'), rect(x + 4, 6, 1, TALL - 22, '#2a1e16'))
-    parts.push(rect(x - 6, 6, 16, 4, '#4a3423'))
+    parts.push(rect(x, 6, 4, TALL - 22, '#4f3826'), rect(x + 4, 6, 1, TALL - 22, '#33241a'))
+    parts.push(rect(x - 6, 6, 16, 4, '#5e4430'))
   }
-  parts.push(rect(0, 6, WIDE, 3, '#3d2b1f'))
+  parts.push(rect(0, 6, WIDE, 3, '#4f3826'))
   // Lampy na co drugim stemplu.
   for (let x = 8 + BAY; x < WIDE; x += BAY * 2) parts.push(rect(x + 6, 12, 1, 6, '#2a1e16'), rect(x + 5, 18, 3, 4, '#f2c14e'), rect(x + 5, 22, 3, 1, '#b5651d'))
   // Tory: podkłady i dwie szyny.

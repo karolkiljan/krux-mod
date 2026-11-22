@@ -2808,6 +2808,7 @@ test('the backdrop mode sets the mine theme, draws it on the desktop with sessio
   let cleared = 0
   on('theme.set', (_$, e) => { themes.push(e.backdrop); return { value: { isDrawn: true, requestId: 'theme-1' } } })
   on('theme.clear', () => { cleared += 1; return { value: { isDrawn: false, reason: 'cleared' } } })
+  on('classic.SessionStart', () => ({}))
   engine(on, saved)
   await start($)
   // Domyślnie wyłączone: mod nie rusza wyglądu aplikacji.
@@ -2815,7 +2816,10 @@ test('the backdrop mode sets the mine theme, draws it on the desktop with sessio
   const command = await kruxCommand($, 'tło on')
   expect(command.text).toContain('tlo: on')
   expect(saved.get('mode.tlo')).toBe(true)
-  expect(themes).toEqual([{ scene: 'kopalnia', glass: { blur: 10, tint: '#14110f', opacity: 0.78 } }])
+  expect(themes).toEqual([{ scene: 'kopalnia', glass: { blur: 8, tint: '#14110f', opacity: 0.66 } }])
+  // Po wznowieniu albo rozwidleniu motyw nie wraca sam: mod stawia go od nowa.
+  await $.classic.SessionStart({ source: 'resume' })
+  expect(themes.length).toBe(2)
   const BACKDROP = { plugin: 'krux-mod', surface: 'desktop', component: 'Backdrop', requestId: 'b1', props: { scene: 'kopalnia', plugin: 'krux-mod', glass: false } } as const
   const rest = await $.ui.mount(BACKDROP)
   const shader = (await rest.find({ type: 'Shader' }))!

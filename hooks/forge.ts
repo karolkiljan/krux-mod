@@ -103,7 +103,7 @@ type ForgeState = { frame: number; actors: Record<string, Actor>; idle: boolean;
 // drodze schodzi w pół głębi za plecy orka `key` i zagaduje go. `back`: wezwany do roboty albo
 // spłoszony zawraca do drzwi z miejsca, w którym stoi. `ground`: podłoga, na której wyszedł.
 // `deep`: głębia w miejscu obchodu; bez niej ściana. Do wózka w chodniku ork schodzi prawie na spąg.
-type Stroll = { face: KruxMate; at: number; door: number; spot: number; chore: Chore; deep?: number; peek?: { key: string; x: number }; ground: string; back?: { at: number; x: number; depth: number } }
+type Stroll = { face: KruxMate; at: number; door: number; spot: number; chore: Chore; deep?: number; peek?: { key: string; x: number; off: number }; ground: string; back?: { at: number; x: number; depth: number } }
 
 // Wiersz pikseli pokoju, od którego zaczyna się podłoga z orkami: nad nim ściana.
 const H_FLOOR = 6
@@ -150,6 +150,9 @@ const CHORE_FRAMES = 18
 // Zagaduje z pół głębi pokoju, o tyle kolumn na lewo od orka: zza jego ramienia, nie zza rekwizytu.
 const PEEK_DEPTH = 0.5
 const PEEK_BACK = 5
+// Gdy za lewym ramieniem stoi palenisko, zagaduje z prawej, o szerokość stanowiska dalej: zza
+// rekwizytu, gdzie widać go całego.
+const PEEK_FRONT = ORC_WIDTH
 // Znak włóczęgi i odpowiedź zagadniętego: klatki zagadywania od–do.
 const PEEK_SAYS = [2, 11] as const
 const PEEK_REPLY = [10, 19] as const
@@ -939,10 +942,12 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
       const face = pool[roll(frame, 4) % pool.length]!
       const chore = chores[roll(frame, 5) % chores.length]!
       const spot = chore === 'cart' ? width + cartHome() - CART_GRIP : choreSpot(chore, stage, hearth)!
-      // Za lewym ramieniem musi być wolna podłoga: zza paleniska widać by było parę pikseli i znak znikąd.
-      const targets = Object.keys(actors).filter(key => !visiting(key) && !inDuet(key) && actors[key]!.leftAt === null && shown(key) !== null && shown(key)! - PEEK_BACK >= floorStart(hearth))
+      // Za lewym ramieniem musi być wolna podłoga: zza paleniska widać by było parę pikseli i znak
+      // znikąd. Orka tuż przy palenisku (Krux przy kuźni i przy ogniu) zagaduje więc z prawej.
+      const peekOff = (key: string) => (shown(key)! - PEEK_BACK >= floorStart(hearth) ? -PEEK_BACK : PEEK_FRONT)
+      const targets = Object.keys(actors).filter(key => !visiting(key) && !inDuet(key) && actors[key]!.leftAt === null && shown(key) !== null && shown(key)! + peekOff(key) + ORC_WIDTH <= stage)
       const key = roll(frame, 6) % 4 === 0 || targets.length === 0 ? undefined : targets[roll(frame, 7) % targets.length]!
-      stroll = { face, at: frame, door: doorX(face, stage, hearth), spot, chore, ground: `${ground}:${annex}`, ...(chore === 'cart' ? { deep: CART_DEPTH } : {}), ...(key === undefined ? {} : { peek: { key, x: shown(key)! - PEEK_BACK } }) }
+      stroll = { face, at: frame, door: doorX(face, stage, hearth), spot, chore, ground: `${ground}:${annex}`, ...(chore === 'cart' ? { deep: CART_DEPTH } : {}), ...(key === undefined ? {} : { peek: { key, x: shown(key)! + peekOff(key), off: peekOff(key) } }) }
       stroller = face
     }
     // Bez wolnego kumpla termin czeka do następnego odstępu, jak po obchodzie.
@@ -956,7 +961,7 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
     changed = true
   }
   // Zagadnięty odwraca wzrok do włóczęgi, gdy ten skończy pytać; odpowiada, póki stoi przy robocie.
-  const peeked = stroll?.peek !== undefined && stride?.phase === 'peek' && stride.t >= PEEK_SAYS[1] - 3 && Math.abs((shown(stroll.peek.key) ?? -99) - PEEK_BACK - stroll.peek.x) <= 3 ? stroll.peek.key : null
+  const peeked = stroll?.peek !== undefined && stride?.phase === 'peek' && stride.t >= PEEK_SAYS[1] - 3 && Math.abs((shown(stroll.peek.key) ?? -99) + stroll.peek.off - stroll.peek.x) <= 3 ? stroll.peek.key : null
   // Kto idzie po podłodze: stojący obok wodzi za nim wzrokiem, a gdy mija go tuż przed nosem, mruży oczy.
   const passing = props.still ? [] : Object.entries(actors).flatMap(([key, actor]) => {
     const at = placeOf(actor, frame, stage)
@@ -981,8 +986,8 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
     const target = key === 'krux' && thrower !== undefined ? thrower[0] : heard !== null && heard !== key && listens(speech.id, key) ? heard : null
     const dx = target === null ? null : toward(shown(target))
     if (dx !== null) return { dx }
-    // Włóczęga stoi za lewym ramieniem: zagadnięty zerka tam i odpowiada.
-    if (peeked === key) return { dx: -1 }
+    // Włóczęga stoi za ramieniem: zagadnięty zerka w jego stronę i odpowiada.
+    if (peeked === key) return { dx: stroll!.peek!.off < 0 ? -1 : 1 }
     const passer = passing.filter(walker => walker.key !== key && Math.abs(walker.x - x) <= PASS_REACH).sort((a, b) => Math.abs(a.x - x) - Math.abs(b.x - x))[0]
     if (passer !== undefined) {
       const side = toward(passer.x)

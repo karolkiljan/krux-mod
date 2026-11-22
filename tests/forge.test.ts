@@ -1960,7 +1960,7 @@ test('orcs at the table hold councils and debates, orcs on the floor also show o
   for (const kind of grim) expect(['argue', 'debate', 'peek']).toContain(kind)
 })
 
-type Lively = Seen & { stroll?: { face: string; chore?: string; door: number; spot: number; peek?: { key: string; x: number }; back?: { at: number } }; visit?: string; wakes?: boolean }
+type Lively = Seen & { stroll?: { face: string; chore?: string; door: number; spot: number; peek?: { key: string; x: number; off?: number }; back?: { at: number } }; visit?: string; wakes?: boolean }
 const RESTING: ForgeProps = { ...FLOOR, rest: true, orcs: [{ ...KRUX, scene: 'watch' }] }
 
 test('the room at rest keeps living: the clock wakes it for a stroll and a visit, and sleeps in between', () => {
@@ -2031,16 +2031,29 @@ test('a stroller never wears the apron of an orc on the stage, and reduced motio
   expect(now().stroll).toBe(undefined)
 })
 
-test('a stroller never chats up an orc from behind the hearth', () => {
+test('a stroller never chats up an orc from behind the hearth: Krux by the fire is asked from the right', () => {
   // Krux przy kuźni stoi tuż za paleniskiem: zza ognia widać by było parę pikseli włóczęgi i znak znikąd.
   const seen = surfaceOf()
-  const props: ForgeProps = { ...FLOOR, floor: 120, slots: 4, orcs: [{ ...KRUX, scene: 'hammer' }, { key: 'a1', face: 'Młot', scene: 'test', mood: 'calm' }] }
+  const props: ForgeProps = { ...FLOOR, floor: 120, slots: 4, orcs: [{ ...KRUX, scene: 'hammer' }] }
   const now = () => seen.surface.state as Lively
   const peeks: number[] = []
-  for (let i = 0; i < 6000; i++) { draw(props, seen.surface); const peek = now().stroll?.peek; if (peek !== undefined) peeks.push(peek.x); seen.tick() }
-  // Zagaduje dalej, ale tylko tam, gdzie stanie na wolnej podłodze.
+  let glances = 0
+  for (let i = 0; i < 6000; i++) {
+    const tree = draw(props, seen.surface)
+    const peek = now().stroll?.peek
+    if (peek !== undefined) {
+      peeks.push(peek.x)
+      // Zagadnięty zerka w prawo, do włóczęgi: źrenice przy prawej krawędzi oczu.
+      const home = now().actors.krux!.home
+      if (pixelsOf(tree)[7]!.slice(home, home + 6).map(cell => (cell === PALETTE.r ? 'r' : '.')).join('') === '..r..r') glances += 1
+    }
+    seen.tick()
+  }
+  // Zagaduje dalej, ale zza rekwizytu z prawej, na wolnej podłodze.
   expect(peeks.length).toBeGreaterThan(0)
+  expect(Math.min(...peeks)).toBeGreaterThan(now().actors.krux!.home + 6)
   expect(Math.min(...peeks)).toBeGreaterThanOrEqual(floorStart(true))
+  expect(glances).toBeGreaterThan(0)
 })
 
 test('orcs in a signing scene talk with signs over their heads and the text bubble steps aside', () => {
