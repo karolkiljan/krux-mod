@@ -39,6 +39,16 @@ test('the band takes six rows and a rule when tall, three without the rule when 
   expect(bandPlan({ ...AT_WORK, columns: 40 }).stage).toBe(null)
 })
 
+test('with the caption above, the stage takes the whole band: the room keeps its hearth and every mate slot', () => {
+  // Desktop daje pasowi mniej niż 90 kolumn: z podpisem obok pokój kurczył się do minimum, bez paleniska.
+  const beside = bandPlan({ ...AT_WORK, columns: 84, rows: 12 }).stage!.props
+  const above = bandPlan({ ...AT_WORK, columns: 84, rows: 12, captionAbove: true }).stage!.props
+  expect([beside.floor, beside.slots, hasHearth(beside.floor!, beside.slots)]).toEqual([54, 2, false])
+  expect([above.floor, above.slots, hasHearth(above.floor!, above.slots)]).toEqual([84, 3, true])
+  // Pokój rośnie do `STAGE_MAX`, dalej idzie chodnik, jak przy podpisie obok.
+  expect(bandPlan({ ...AT_WORK, columns: 160, rows: 12, captionAbove: true }).stage!.props).toMatchObject({ floor: 120, annex: 40 })
+})
+
 test('the caption names the work, the bubble sits over its speaker', async () => {
   const plan = bandPlan(AT_WORK)
   expect(plan.verb).toBe('Krux czytać runy')

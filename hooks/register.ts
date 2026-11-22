@@ -1355,6 +1355,9 @@ export const register: Register = on => {
       columns: e.props.bodyColumns,
       rows: e.props.maxRows,
       hasClient: desk || ('Client' in table && !forgeFault),
+      // Desktop daje pasowi mało kolumn: z podpisem obok pokój kurczył się do minimum, bez
+      // paleniska i z uciętą sztolnią. Podpis idzie nad rysunek, a pokój bierze całą szerokość.
+      captionAbove: desk && 'Svg' in table,
       red: (await read($, board)).test?.ok === false,
       ...blessedOf(await read($, lore)),
     }
@@ -1368,18 +1371,18 @@ export const register: Register = on => {
       const line = Text({ dimColor: true, wrap: 'truncate-end', children: [`⚒ ${caption}`] })
       return Box({ flexDirection: 'column', children: [...rule, line, theirs] })
     }
-    const caption = Box({
-      flexDirection: 'column',
-      width: CAPTION_COLUMNS,
-      children: [
-        Text({ bold: true, color: KRUX_COLOR, wrap: 'truncate-end', children: [plan.verb] }),
-        ...(plan.target ? [Text({ dimColor: true, wrap: 'truncate-middle', children: [plan.target] })] : []),
-        ...(plan.tally ? [Text({ dimColor: true, wrap: 'truncate-end', children: [plan.tally] })] : []),
-      ],
-    })
-    const forge = desk && 'Svg' in table
-      ? table.Svg({ ...(await deskArt($, `band:${e.requestId}`, plan.stage.props, [plan.verb, plan.target].filter(Boolean).join(' '))) })
-      : table.Client({ key: 'forge', module: './forge.ts', props: plan.stage.props, width: plan.stage.width, height: plan.stage.height })
+    const captionLines = [
+      Text({ bold: true, color: KRUX_COLOR, wrap: 'truncate-end', children: [plan.verb] }),
+      ...(plan.target ? [Text({ dimColor: true, wrap: 'truncate-middle', children: [plan.target] })] : []),
+      ...(plan.tally ? [Text({ dimColor: true, wrap: 'truncate-end', children: [plan.tally] })] : []),
+    ]
+    if (desk && 'Svg' in table) {
+      const art = table.Svg({ ...(await deskArt($, `band:${e.requestId}`, plan.stage.props, [plan.verb, plan.target].filter(Boolean).join(' '))) })
+      // Podpis w jednym wierszu nad rysunkiem: czasownik, cel i ukryci kumple obok siebie.
+      return Box({ flexDirection: 'column', children: [Box({ flexDirection: 'row', columnGap: CAPTION_GAP, children: captionLines }), art, theirs] })
+    }
+    const caption = Box({ flexDirection: 'column', width: CAPTION_COLUMNS, children: captionLines })
+    const forge = table.Client({ key: 'forge', module: './forge.ts', props: plan.stage.props, width: plan.stage.width, height: plan.stage.height })
     return Box({
       flexDirection: 'column',
       children: [...rule, Box({ flexDirection: 'row', columnGap: CAPTION_GAP, alignItems: 'flex-start', children: [caption, forge] }), theirs],
