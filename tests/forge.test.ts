@@ -5,7 +5,7 @@ import Forge from '../hooks/forge'
 import type { ForgeOrc, ForgeProps } from '../hooks/forge'
 import { CALM } from '../hooks/mood'
 import { MATES } from '../hooks/roster'
-import { ACTS, CHEER_FROM, CHEER_TO, CUE_FRAMES, WINCE_TO, DUET_FRAMES, SPEAKER_COLOR, WALL_MIN, DUET_GAP, ERRAND_FRAMES, PALETTE, RISE_FRAMES, TOAST_RETURN, carried, doorX, errandEnd, errandPose, kitAt, kitReach, quartersDoor, routeOf, stationX, tossFrames, trackGrid } from '../hooks/sprites'
+import { ACTS, CHEER_FROM, CHEER_TO, CUE_FRAMES, WINCE_TO, DUET_FRAMES, SPEAKER_COLOR, WALL_MIN, DUET_GAP, ERRAND_FRAMES, PALETTE, RISE_FRAMES, TOAST_RETURN, carried, doorX, errandEnd, errandPose, floorStart, kitAt, kitReach, quartersDoor, routeOf, stationX, tossFrames, trackGrid } from '../hooks/sprites'
 import type { Track } from '../hooks/sprites'
 import { STAND, legAt, pad } from '../hooks/stage'
 import { drawHeadless, headless, svgOf } from '../hooks/vector'
@@ -435,9 +435,10 @@ test('mates called in the same frame leave the quarters one by one and never wal
 test('mates who finish in the same frame walk back to the quarters apart, not as one silhouette', () => {
   // Młot i Grom kończą razem i idą do tych samych drzwi: bez odstępu Grom zakrywał Młota całego.
   // Budowa i fotel: po odniesieniu sprzętu ruszają tak, że drogi w głąb schodzą się na wiele klatek.
-  for (const floor of [110, 125, 140, 170]) {
+  // Dwa fotele na wąskiej podłodze mijały się w samym progu, a na szerokiej ork wchodził na włóczęgę przy ścianie.
+  for (const floor of [90, 110, 125, 140, 170, 220]) for (const scene of ['build', 'lounge'] as const) {
     const { surface, tick } = surfaceOf()
-    const working: ForgeProps = { ...FLOOR, floor, orcs: [{ ...KRUX, scene: 'hammer' }, { key: 'a1', face: 'Młot', scene: 'build', mood: 'calm' }, { key: 'a2', face: 'Grom', scene: 'lounge', mood: 'calm' }] }
+    const working: ForgeProps = { ...FLOOR, floor, orcs: [{ ...KRUX, scene: 'hammer' }, { key: 'a1', face: 'Młot', scene, mood: 'calm' }, { key: 'a2', face: 'Grom', scene: 'lounge', mood: 'calm' }] }
     for (let i = 0; i < 200; i++) { draw(working, surface); tick() }
     const done: ForgeProps = { ...working, orcs: [{ ...KRUX, scene: 'hammer' }] }
     const hidden: number[] = []
@@ -449,7 +450,9 @@ test('mates who finish in the same frame walk back to the quarters apart, not as
       if (both && shown.length < 2) hidden.push(frame)
       tick()
     }
-    expect([floor, hidden]).toEqual([floor, []])
+    expect([floor, scene, hidden]).toEqual([floor, scene, []])
+    // Czekanie ma kres: obaj znikają w kwaterach.
+    expect([floor, scene, Object.keys((surface.state as Seen).actors).filter(key => key === 'a1' || key === 'a2')]).toEqual([floor, scene, []])
   }
 })
 
@@ -2026,6 +2029,18 @@ test('a stroller never wears the apron of an orc on the stage, and reduced motio
   expect(now().stroll).toBeDefined()
   draw({ ...crowd, still: true }, seen.surface)
   expect(now().stroll).toBe(undefined)
+})
+
+test('a stroller never chats up an orc from behind the hearth', () => {
+  // Krux przy kuźni stoi tuż za paleniskiem: zza ognia widać by było parę pikseli włóczęgi i znak znikąd.
+  const seen = surfaceOf()
+  const props: ForgeProps = { ...FLOOR, floor: 120, slots: 4, orcs: [{ ...KRUX, scene: 'hammer' }, { key: 'a1', face: 'Młot', scene: 'test', mood: 'calm' }] }
+  const now = () => seen.surface.state as Lively
+  const peeks: number[] = []
+  for (let i = 0; i < 6000; i++) { draw(props, seen.surface); const peek = now().stroll?.peek; if (peek !== undefined) peeks.push(peek.x); seen.tick() }
+  // Zagaduje dalej, ale tylko tam, gdzie stanie na wolnej podłodze.
+  expect(peeks.length).toBeGreaterThan(0)
+  expect(Math.min(...peeks)).toBeGreaterThanOrEqual(floorStart(true))
 })
 
 test('orcs in a signing scene talk with signs over their heads and the text bubble steps aside', () => {

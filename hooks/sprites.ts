@@ -1095,7 +1095,7 @@ const EMOTES: Record<Emote, Frame> = {
   talk: ['.jjj.', 'jnnnj', 'jjjjj', '.nnj.', '..j..'],
   ask: ['.nnj.', 'jjjnj', 'jjnjj', '.jnj.', '..j..'],
   bang: ['.jdj.', 'jjdjj', 'jjjjj', '.jdj.', '..j..'],
-  note: ['.jnn.', 'jjnjj', 'jnnjj', '.jjj.', '..j..'],
+  note: ['.jnn.', 'jjnnj', 'jjnjj', '.nnj.', '..j..'],
   heart: ['.djd.', 'jdddj', 'jjdjj', '.jjj.', '..j..'],
   huff: ['.jjj.', 'jdjdj', 'jjdjj', '.djd.', '..j..'],
 }
