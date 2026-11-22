@@ -899,7 +899,7 @@ export function annexGrid(width: number, frame: number, state: Pick<RoomState, '
   const posts: number[] = []
   for (let x = 2; x + 2 < width; x += ANNEX_BAY) posts.push(x)
   for (const x of posts) for (let y = 0; y < ROOM_ROWS - 1; y += 1) put(x, y, 'E')
-  for (let x = posts[0]!; x <= posts[posts.length - 1]! + 1 && x < width; x += 1) put(x, 0, 'E')
+  for (let x = posts[0]!; x < width; x += 1) put(x, 0, 'E')
   // Tory: szyna i podkłady pod nią.
   for (let x = posts[0]! + 1; x < width - 1; x += 1) put(x, ROOM_ROWS - 1, x % 3 === 0 ? 'x' : 'C')
   // Lampa wisi w pierwszym przęśle: jasna, przy czerwonych testach przygasa.
@@ -1084,15 +1084,15 @@ export function duetFrames(kind: DuetKind): number {
 
 // Znak nad głową: mały biały dymek z jednym obrazkiem zamiast słów. Orkowie gadają nim między
 // sobą w scenkach i przy zagadywaniu; słowa z sesji niesie tylko dymek z tekstem.
-// `talk` trzy kropki, `ask` pytajnik, `bang` wykrzyknik, `note` nutka, `heart` serce, `huff` krzyżyk złości.
+// `talk` linijki tekstu (trzy kropki w 5 kolumnach czytały się jak czaszka), `ask` pytajnik, `bang` wykrzyknik, `note` nutka, `heart` serce, `huff` czerwony krzyżyk złości.
 export type Emote = 'talk' | 'ask' | 'bang' | 'note' | 'heart' | 'huff'
 const EMOTES: Record<Emote, Frame> = {
-  talk: ['.jjj.', 'jjjjj', 'jnjnj', '.jjj.', '..j..'],
+  talk: ['.jjj.', 'jnnnj', 'jjjjj', '.nnj.', '..j..'],
   ask: ['.nnj.', 'jjjnj', 'jjnjj', '.jnj.', '..j..'],
   bang: ['.jdj.', 'jjdjj', 'jjjjj', '.jdj.', '..j..'],
   note: ['.jnn.', 'jjnjj', 'jnnjj', '.jjj.', '..j..'],
   heart: ['.djd.', 'jdddj', 'jjdjj', '.jjj.', '..j..'],
-  huff: ['.njn.', 'jjnjj', 'jnjnj', '.jjj.', '..j..'],
+  huff: ['.jjj.', 'jdjdj', 'jjdjj', '.djd.', '..j..'],
 }
 export const EMOTE_ROWS = 5
 export const EMOTE_WIDE = 5
