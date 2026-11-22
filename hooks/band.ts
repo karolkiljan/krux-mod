@@ -46,6 +46,8 @@ export type BandInput = {
   rows: number
   // Czy powierzchnia potrafi narysować płótno `Client`.
   hasClient: boolean
+  // Podpis stoi nad płótnem zamiast obok (Desktop): płótno bierze całą szerokość pasa.
+  captionAbove?: boolean
   // Stan roboty na ścianie pokoju: czerwone testy; `blessed`: w sesji coś już padło.
   red?: boolean
   blessed?: boolean
@@ -64,7 +66,9 @@ export type BandPlan = {
 
 export function bandPlan(input: BandInput): BandPlan {
   const { working, members } = input
-  const room = Math.min(STAGE_MAX, input.columns - CAPTION_COLUMNS - CAPTION_GAP)
+  // Podpis obok płótna zabiera mu kolumny; nad płótnem nie zabiera nic.
+  const side = input.captionAbove === true ? 0 : CAPTION_COLUMNS + CAPTION_GAP
+  const room = Math.min(STAGE_MAX, input.columns - side)
   const fit = input.hasClient ? Math.floor((room + ORC_GAP) / (ORC_WIDTH + ORC_GAP)) : 0
   // Stała liczba miejsc: płótno nie zmienia szerokości, gdy horda przychodzi i odchodzi.
   // Palenisko ma pierwszeństwo przed ostatnim miejscem kumpla: przy nim Krux czuwa w spoczynku,
@@ -104,7 +108,7 @@ export function bandPlan(input: BandInput): BandPlan {
   // Orkowie chodzą po jednej podłodze przez cały pas, od podpisu do prawej krawędzi.
   const floor = Math.max(bandColumns(slots), room)
   // Chodnik tylko za pełnym pokojem na wysokim pasie i tylko, gdy mieści choć jedno przęsło.
-  const spare = input.columns - CAPTION_COLUMNS - CAPTION_GAP - STAGE_MAX
+  const spare = input.columns - side - STAGE_MAX
   const annex = tall && room === STAGE_MAX && spare >= ANNEX_MIN ? Math.min(ANNEX_MAX, spare) : 0
   const props: ForgeProps = {
     variant: 'band',

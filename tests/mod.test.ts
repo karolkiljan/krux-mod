@@ -405,6 +405,8 @@ test('on the desktop the band draws the room as one Svg, square pixels instead o
   expect(source).not.toMatch(/[▀▄█]/u)
   expect(source.length).toBeLessThan(131_072)
   expect(String(svg.props.alt)).toContain('Krux czytać runy')
+  // Podpis stoi nad rysunkiem, więc pokój bierze całą szerokość pasa: 120 kolumn, nie 90.
+  expect(source).toContain('viewBox="0 0 120 12"')
   // Podpis zostaje tekstem Desktopu, kreski nad pasem Desktop nie potrzebuje.
   expect(await ui.find({ type: 'Text', text: 'Krux czytać runy' })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /^─+$/u })).toBeUndefined()

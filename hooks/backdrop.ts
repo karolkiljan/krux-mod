@@ -17,10 +17,14 @@ export function backdropValues(input: { working: boolean; red: boolean; mood: Kr
   return { heat: input.working ? 1 : 0.3, dust: input.red ? 1 : 0, gold: input.mood === 'proud' ? 1 : 0 }
 }
 
-const WIDE = 320
-const TALL = 200
-// Stemple co tyle jednostek, tory na dole, żyła rudy w skale.
+// Pole rysunku; okno przycina je do swoich proporcji (`slice`), środek zostaje w środku.
+export const WIDE = 320
+export const TALL = 200
+// Stemple co tyle jednostek, tory na dole.
 const BAY = 64
+// Środek paleniska i jego górna krawędź w jednostkach rysunku.
+export const HEARTH_X = 96
+export const HEARTH_TOP = TALL - 34
 
 function rect(x: number, y: number, w: number, h: number, fill: string, opacity = 1): string {
   return `<rect x="${x}" y="${y}" width="${w}" height="${h}" fill="${fill}"${opacity === 1 ? '' : ` opacity="${opacity}"`}/>`
@@ -42,12 +46,6 @@ export function backdropSvg(): string {
     const y = Math.floor(noise(n + 500) * (TALL - 30))
     parts.push(rect(x, y, 2 + Math.floor(noise(n + 900) * 4), 2, noise(n + 1300) < 0.5 ? '#211c17' : '#1a1612'))
   }
-  // Żyła rudy: ukośny pas złotych i miedzianych ziaren.
-  for (let n = 0; n < 26; n += 1) {
-    const x = 150 + n * 5 + Math.floor(noise(n + 40) * 4)
-    const y = 44 + Math.floor(n * 1.6) + Math.floor(noise(n + 80) * 6)
-    parts.push(rect(x, y, 2, 2, noise(n + 120) < 0.35 ? '#d9a520' : '#8a5a2b', 0.8))
-  }
   // Stemple z kapą.
   for (let x = 8; x < WIDE; x += BAY) {
     parts.push(rect(x, 6, 4, TALL - 22, '#3d2b1f'), rect(x + 4, 6, 1, TALL - 22, '#2a1e16'))
@@ -60,8 +58,10 @@ export function backdropSvg(): string {
   for (let x = 2; x < WIDE; x += 10) parts.push(rect(x, TALL - 12, 6, 3, '#3d2b1f'))
   parts.push(rect(0, TALL - 14, WIDE, 2, '#6b6b70'), rect(0, TALL - 9, WIDE, 1, '#4c4c52'))
   parts.push(rect(0, TALL - 6, WIDE, 6, '#0f0d0b'))
-  // Palenisko w lewym dolnym rogu: kamień, węgiel i żar.
-  parts.push(rect(10, TALL - 34, 30, 20, '#5a5a5f'), rect(13, TALL - 31, 24, 14, '#0f0d0b'), rect(13, TALL - 21, 24, 4, '#b22222'), rect(16, TALL - 24, 6, 3, '#f28c28'), rect(26, TALL - 25, 5, 4, '#f2c14e'))
-  const glow = `<defs><radialGradient id="zar" cx="0.08" cy="0.9" r="0.5"><stop offset="0" stop-color="#f28c28" stop-opacity="0.22"/><stop offset="1" stop-color="#f28c28" stop-opacity="0"/></radialGradient></defs>`
+  // Palenisko: kamień, węgiel i żar. Stoi w `HEARTH_X`, na prawo od listy sesji aplikacji, która
+  // zakrywa lewy brzeg okna; stamtąd shader puszcza iskry (`kopalnia.ts` zna te same liczby).
+  const left = HEARTH_X - 15
+  parts.push(rect(left, HEARTH_TOP, 30, 20, '#5a5a5f'), rect(left + 3, HEARTH_TOP + 3, 24, 14, '#0f0d0b'), rect(left + 3, HEARTH_TOP + 13, 24, 4, '#b22222'), rect(left + 6, HEARTH_TOP + 10, 6, 3, '#f28c28'), rect(left + 16, HEARTH_TOP + 9, 5, 4, '#f2c14e'))
+  const glow = `<defs><radialGradient id="zar" cx="${HEARTH_X / WIDE}" cy="0.9" r="0.5"><stop offset="0" stop-color="#f28c28" stop-opacity="0.22"/><stop offset="1" stop-color="#f28c28" stop-opacity="0"/></radialGradient></defs>`
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${WIDE} ${TALL}" preserveAspectRatio="xMidYMid slice" shape-rendering="crispEdges">${glow}${parts.join('')}<rect x="0" y="0" width="${WIDE}" height="${TALL}" fill="url(#zar)"/></svg>`
 }
