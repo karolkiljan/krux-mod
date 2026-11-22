@@ -413,26 +413,33 @@ function released(actor: Actor, frame: number): Pick<Actor, 'cue'> {
   return actor.cue?.held === true ? { cue: { id: actor.cue.id, kind: actor.cue.kind, at: frame } } : {}
 }
 
-// Odchodzący do tych samych drzwi nie idą jedną zlepioną sylwetką: późniejszy postoi, aż
-// poprzedni odejdzie o szerokość orka w marszu (`APART`), najdłużej `APART_MAX` klatek.
+// Odchodzący do tych samych drzwi nie idą jedną zlepioną sylwetką i nie mijają się w progu:
+// późniejszy postoi, aż poprzedni odejdzie o szerokość orka w marszu (`APART`), najdłużej
+// `APART_MAX` klatek. Włóczęgę na obchodzie przepuszcza tak samo, ale tylko w tej samej głębi:
+// ork na podłodze przechodzi przed tym przy ścianie.
 const APART = 7
 const APART_MAX = 40
+const APART_DEEP = 0.35
 
-function glued(actor: Actor, ahead: readonly Actor[], stage: number): boolean {
+// Droga kogoś, kto już idzie: gdzie jest w klatce `f`; `null`, gdy go nie ma. `deep`: liczy się tylko w tej samej głębi.
+type Path = { at: (f: number) => { x: number; depth: number } | null; deep?: true }
+
+function glued(actor: Actor, ahead: readonly Path[], stage: number): boolean {
   for (let f = actor.leftAt!; f < actor.leftAt! + 240; f += 1) {
     const at = placeOf(actor, f, stage)
     if (at === null) return false
     for (const other of ahead) {
-      const there = f >= other.leftAt! ? placeOf(other, f, stage) : null
-      if (there !== null && Math.abs(at.x - there.x) < APART && Math.abs(at.depth - there.depth) < 0.35) return true
+      const there = other.at(f)
+      if (there !== null && Math.abs(at.x - there.x) < APART && (other.deep === undefined || Math.abs(at.depth - there.depth) < APART_DEEP)) return true
     }
   }
   return false
 }
 
-function apart(actor: Actor, others: readonly Actor[], stage: number): Actor {
+function apart(actor: Actor, others: readonly Actor[], stroll: Stroll | undefined, stage: number): Actor {
   if (actor.leftAt === null) return actor
-  const ahead = others.filter(other => other !== actor && other.leftAt !== null && other.door === actor.door)
+  const ahead: Path[] = others.filter(other => other !== actor && other.leftAt !== null && other.door === actor.door).map(other => ({ at: f => (f >= other.leftAt! ? placeOf(other, f, stage) : null) }))
+  if (stroll !== undefined && actor.door !== undefined) ahead.push({ at: f => strollAt(stroll, f), deep: true })
   if (ahead.length === 0) return actor
   for (let delay = 0; delay <= APART_MAX; delay += 1) {
     const later = { ...actor, leftAt: actor.leftAt + delay }
@@ -574,7 +581,7 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
   const leave = (key: string, actor: Actor) => {
     const next = depart(actor, frame, props.still, props.variant === 'band' && (props.cues ?? []).some(cue => cue.key === key && cue.kind === 'handoff'), stage, kruxAt(), hearth, room)
     if (next === null) delete actors[key]
-    else actors[key] = apart(next, Object.entries(actors).filter(([other]) => other !== key).map(([, other]) => other), stage)
+    else actors[key] = apart(next, Object.entries(actors).filter(([other]) => other !== key).map(([, other]) => other), stroll, stage)
     changed = true
   }
   // Gość z kwater nie jest w propsach: wychodzi sam, po scence.
@@ -932,9 +939,10 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
       const face = pool[roll(frame, 4) % pool.length]!
       const chore = chores[roll(frame, 5) % chores.length]!
       const spot = chore === 'cart' ? width + cartHome() - CART_GRIP : choreSpot(chore, stage, hearth)!
-      const targets = Object.keys(actors).filter(key => !visiting(key) && !inDuet(key) && actors[key]!.leftAt === null && shown(key) !== null)
+      // Za lewym ramieniem musi być wolna podłoga: zza paleniska widać by było parę pikseli i znak znikąd.
+      const targets = Object.keys(actors).filter(key => !visiting(key) && !inDuet(key) && actors[key]!.leftAt === null && shown(key) !== null && shown(key)! - PEEK_BACK >= floorStart(hearth))
       const key = roll(frame, 6) % 4 === 0 || targets.length === 0 ? undefined : targets[roll(frame, 7) % targets.length]!
-      stroll = { face, at: frame, door: doorX(face, stage, hearth), spot, chore, ground: `${ground}:${annex}`, ...(chore === 'cart' ? { deep: CART_DEPTH } : {}), ...(key === undefined ? {} : { peek: { key, x: Math.max(0, shown(key)! - PEEK_BACK) } }) }
+      stroll = { face, at: frame, door: doorX(face, stage, hearth), spot, chore, ground: `${ground}:${annex}`, ...(chore === 'cart' ? { deep: CART_DEPTH } : {}), ...(key === undefined ? {} : { peek: { key, x: shown(key)! - PEEK_BACK } }) }
       stroller = face
     }
     // Bez wolnego kumpla termin czeka do następnego odstępu, jak po obchodzie.
