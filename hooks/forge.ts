@@ -413,6 +413,34 @@ function released(actor: Actor, frame: number): Pick<Actor, 'cue'> {
   return actor.cue?.held === true ? { cue: { id: actor.cue.id, kind: actor.cue.kind, at: frame } } : {}
 }
 
+// Odchodzący do tych samych drzwi nie idą jedną zlepioną sylwetką: późniejszy postoi, aż
+// poprzedni odejdzie o szerokość orka w marszu (`APART`), najdłużej `APART_MAX` klatek.
+const APART = 7
+const APART_MAX = 40
+
+function glued(actor: Actor, ahead: readonly Actor[], stage: number): boolean {
+  for (let f = actor.leftAt!; f < actor.leftAt! + 240; f += 1) {
+    const at = placeOf(actor, f, stage)
+    if (at === null) return false
+    for (const other of ahead) {
+      const there = f >= other.leftAt! ? placeOf(other, f, stage) : null
+      if (there !== null && Math.abs(at.x - there.x) < APART && Math.abs(at.depth - there.depth) < 0.35) return true
+    }
+  }
+  return false
+}
+
+function apart(actor: Actor, others: readonly Actor[], stage: number): Actor {
+  if (actor.leftAt === null) return actor
+  const ahead = others.filter(other => other !== actor && other.leftAt !== null && other.door === actor.door)
+  if (ahead.length === 0) return actor
+  for (let delay = 0; delay <= APART_MAX; delay += 1) {
+    const later = { ...actor, leftAt: actor.leftAt + delay }
+    if (!glued(later, ahead, stage)) return later
+  }
+  return actor
+}
+
 // Kumpel w kolejce za drzwiami: jeszcze go nie widać, w progu stoi ten przed nim.
 function waiting(actor: Actor, frame: number): boolean {
   return actor.queued !== undefined && actor.rise !== undefined && actor.leftAt === null && frame < actor.queued
@@ -546,7 +574,7 @@ const Forge: ClientModule<ForgeProps, ForgeState> = (props, surface) => {
   const leave = (key: string, actor: Actor) => {
     const next = depart(actor, frame, props.still, props.variant === 'band' && (props.cues ?? []).some(cue => cue.key === key && cue.kind === 'handoff'), stage, kruxAt(), hearth, room)
     if (next === null) delete actors[key]
-    else actors[key] = next
+    else actors[key] = apart(next, Object.entries(actors).filter(([other]) => other !== key).map(([, other]) => other), stage)
     changed = true
   }
   // Gość z kwater nie jest w propsach: wychodzi sam, po scence.

@@ -432,6 +432,27 @@ test('mates called in the same frame leave the quarters one by one and never wal
   expect(actors.a2!.enter - actors.a1!.enter).toBe(RISE_FRAMES + 1)
 })
 
+test('mates who finish in the same frame walk back to the quarters apart, not as one silhouette', () => {
+  // Młot i Grom kończą razem i idą do tych samych drzwi: bez odstępu Grom zakrywał Młota całego.
+  // Budowa i fotel: po odniesieniu sprzętu ruszają tak, że drogi w głąb schodzą się na wiele klatek.
+  for (const floor of [110, 125, 140, 170]) {
+    const { surface, tick } = surfaceOf()
+    const working: ForgeProps = { ...FLOOR, floor, orcs: [{ ...KRUX, scene: 'hammer' }, { key: 'a1', face: 'Młot', scene: 'build', mood: 'calm' }, { key: 'a2', face: 'Grom', scene: 'lounge', mood: 'calm' }] }
+    for (let i = 0; i < 200; i++) { draw(working, surface); tick() }
+    const done: ForgeProps = { ...working, orcs: [{ ...KRUX, scene: 'hammer' }] }
+    const hidden: number[] = []
+    for (let i = 0; i < 120; i++) {
+      const pixels = pixelsOf(draw(done, surface))
+      const { actors, frame } = surface.state as Seen
+      const both = ['a1', 'a2'].every(key => actors[key] !== undefined && actors[key]!.leftAt !== null && frame > actors[key]!.leftAt!)
+      const shown = ['L', 'M'].filter(apron => pixels.some(row => row.includes(PALETTE[apron]!)))
+      if (both && shown.length < 2) hidden.push(frame)
+      tick()
+    }
+    expect([floor, hidden]).toEqual([floor, []])
+  }
+})
+
 test('a mate called from the quarters stands on the sill in the open door, then steps down into the room', () => {
   const { surface, tick } = surfaceOf()
   draw({ ...FLOOR, orcs: [{ ...KRUX, scene: 'hammer' }] }, surface)
